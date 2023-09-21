@@ -1,0 +1,372 @@
+---
+title: "Cook County Parcel Sales"
+format: html
+editor: visual
+---
+
+## Source
+
+Code from [CCAO](https://ccao-data.github.io/assessr/articles/example-ratio-study.html).
+
+Description of functions and [measurements](https://ccao-data.github.io/assessr/reference/index.html).
+
+```{r setup, warning=FALSE, message=FALSE}
+
+library(dplyr)
+library(here)
+library(httr)
+library(jsonlite)
+library(stringr)
+library(DBI)
+library(glue)
+library(sf)
+
+#remotes::install_github("ccao-data/assessr")
+library(assessr)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+
+ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2021.0.4.db")
+```
+
+```{r}
+
+# Load 500k rows of 2020 residential (major class 2) assessment data
+assessments <- read_json(
+  paste0(
+    "https://datacatalog.cookcountyil.gov/resource/uzyt-m557.json?",
+    "$where=starts_with(class,'2')&year=2020&$limit=500000"
+  ),
+  simplifyVector = TRUE
+)
+
+# Load 100k rows of 2020 sales data
+sales <- read_json(
+  paste0(
+    "https://datacatalog.cookcountyil.gov/resource/wvhk-k5uv.json?",
+    "year=2020&$limit=500000"
+  ),
+  simplifyVector = TRUE
+) %>%
+  # read_json removes leading zeroes, add them back
+  mutate(pin = str_pad(pin, 14, "left", "0"))
+
+
+
+base_url <- "https://datacatalog.cookcountyil.gov/resource/tx2p-k2g9.json"
+
+
+# link to the API output as a JSON file
+nh_shp <- read_sf("https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.json")
+
+# https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.geojson
+
+
+# flood_pins <- GET(
+#   base_url,
+#   query = list(
+#     env_flood_fema_sfha = TRUE,
+#     `$select` = paste0(c("pin", "env_flood_fs_risk_direction", "year",
+#                         # "long", "lat",
+#                          "env_flood_fema_data_year"
+#                        ),
+#    collapse = ","),   
+# 
+#     `$limit` = 500000L
+#   )
+# )
+
+
+flood_pins <- GET(
+  base_url,
+  query = list(
+    env_flood_fema_sfha = TRUE,
+    `$select` = c("pin"),
+    `$limit` = 500000L
+  )
+)
+
+# change data type to character
+flood_pins2 <- fromJSON(rawToChar(flood_pins$content))$pin
+
+```
+
+```{r}
+
+#flood_pins2 %>% unique() # 29,000 + unique pins?
+
+# not the variable name
+#fema_year <- fromJSON(rawToChar(flood_pins$content))$flood_fema_data_year
+
+fema_year <- fromJSON(rawToChar(flood_pins$content))$env_flood_fema_data_year
+tax_year <- fromJSON(rawToChar(flood_pins$content))$year
+
+table(fema_year)
+table(tax_year)
+#riskdirection <- fromJSON(rawToChar(flood_pins$content))$env_flood_fs_risk_direction
+
+#flood_pins2 <- cbind(flood_pins2, fema_year) %>% as_tibble()
+#area_taxcodes <- fromJSON(rawToChar(flood_pins$content))$township_code
+
+
+flood_pins_ptax <- DBI::dbGetQuery(
+  ptaxsim_db_conn,
+  glue_sql(
+  "SELECT pin, year, class, tax_code_num
+  FROM pin
+  WHERE pin IN ({flood_pins2*})
+  ",
+  .con = ptaxsim_db_conn
+))
+
+```
+
+Above, we pulled assessment and sales data from the Open Data Portal. In order to produce our sales ratio statistics, our data needs to be formatted in 'long form,' meaning that each row is a property in a given year. The county provides *assessed value* on the Open Data Portal. For residential properties, we need to multiply assessed value by 10 to get fair market value. [Assessment levels](https://prodassets.cookcountyassessor.com/s3fs-public/form_documents/classcode.pdf) can differ for other classes.
+
+```{r}
+
+# Join the two datasets based on PIN, keeping only those that have assessed
+# values AND sales
+combined <- inner_join(
+  assessments %>%
+    select(pin, year, township_name, mailed_tot, certified_tot, board_tot),
+  sales %>%
+    select(pin, year, sale_price, is_multisale),
+  by = c("pin", "year")
+)  |> 
+  filter(township_name %in% c("New Trier", "Palatine"))
+
+
+# Remove multisales, pivot to longer, then calculate the ratio for each property
+# and assessment stage
+
+multisales <- combined %>%
+  filter(is_multisale == TRUE)
+
+
+combined <- combined %>%
+  filter(!is_multisale) %>%
+  pivot_longer(
+    mailed_tot:board_tot,
+    names_to = "stage",
+    values_to = "assessed"
+  ) %>%
+  mutate_at(vars(sale_price, assessed), as.numeric) %>%
+  mutate(ratio = (assessed * 10) / sale_price)
+
+```
+
+```{r}
+# For each town and stage, calculate COD, PRD, and PRB, and their respective
+# confidence intervals then arrange by town name and stage of assessment
+combined %>%
+  filter(assessed > 0) %>%
+  group_by(township_name, stage) %>%
+  summarise(
+    n = n(),
+    cod = cod(ratio, na.rm = TRUE),
+    cod_ci = paste(
+      round(cod_ci(ratio, nboot = 1000, na.rm = TRUE), 3),
+      collapse = ", "
+    ),
+    cod_met = cod_met(cod),
+    prb = prb(assessed, sale_price, na.rm = TRUE),
+    prb_ci = paste(
+      round(prb_ci(assessed, sale_price, na.rm = TRUE), 3),
+      collapse = ", "
+    ),
+    prb_met = prb_met(prb)
+  ) %>%
+  filter(n >= 70) %>%
+  mutate(stage = factor(
+    stage,
+    levels = c("mailed_tot", "certified_tot", "board_tot")
+  )) %>%
+  arrange(township_name, stage) %>%
+  rename_all(toupper) %>%
+  kable(format = "markdown", digits = 3)
+```
+
+## Median ratios by sale price
+
+Suppose you are concerned that an assessment role is unfair to lower value homes. One way to visually see whether ratios are systematically biased with respect to property value is to plot median ratios by decile. In our sample data, we can see each decile of sale price using the `quantile` function:
+
+```{r}
+library(DT)
+
+data.frame(quantile(combined$sale_price, probs = 1:9 / 10)) %>%
+  setNames("Sale Price") %>%
+  tibble::rownames_to_column(var = "Decile") %>%
+  DT::datatable(
+    class = "cell-border stripe",
+    rownames = FALSE,
+    options = list(dom = "t")
+  ) %>%
+  formatCurrency("Sale Price", digits = 0)
+```
+
+```{r}
+library(ggplot2)
+library(scales)
+
+# Prepare the data by getting the minimum and maximum sale price of each decile
+graph_data <- combined %>%
+  mutate(decile = ntile(sale_price, 10)) %>%
+  group_by(decile) %>%
+  mutate(decile_label = paste(
+    dollar(min(sale_price) / 1000, accuracy = 1, suffix = "K"),
+    dollar(max(sale_price) / 1000, accuracy = 1, suffix = "K"),
+    sep = " - "
+  )) %>%
+  mutate(decile_label = ifelse(decile == 10, "$540K+", decile_label)) %>%
+  mutate(decile_label = forcats::fct_reorder(decile_label, decile)) %>%
+  group_by(decile_label) %>%
+  summarise(
+    n = n(),
+    `Median Sales Ratio` = median(ratio)
+  ) %>%
+  dplyr::filter(n > 70)
+
+# Create a plot of sales ratio by decile
+ggplot(graph_data) +
+  geom_point(aes(x = decile_label, y = `Median Sales Ratio`), size = 3) +
+  scale_y_continuous(labels = function(x) paste0(x * 100, "%")) +
+  labs(
+    title = "Median Sale Ratios: Open Data Sample",
+    subtitle = "By decile of sale price in 2020",
+    x = "Price Decile Range",
+    y = "Sale Ratio"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+    axis.title.x = element_text(margin = margin(t = 6)),
+    legend.position = "bottom"
+  )
+```
+
+### **Gini-based measures of vertical equity**
+
+Another way to measure the vertical equity of assessments is to look at differences in Gini coefficients, a widely used metric to analyze inequality.
+
+The first step in this process is to order the data (ascending) by sale price. Next, calculate the Gini coefficient of sales and assessed values (both ordered by sale price). The difference between these Gini coefficients is known as the Kakwani Index (KI), while the ratio is known as the Modified Kakwani Index (MKI). See [this paper](https://researchexchange.iaao.org/jptaa/vol17/iss2/2/) for more information on these metrics.
+
+#### **Lorenz curves**
+
+Using the ordered data, you can plot the classic [Lorenz curve](https://en.wikipedia.org/wiki/Lorenz_curve):
+
+```{r}
+gini_data <- combined %>%
+  select(sale_price, assessed) %>%
+  arrange(sale_price)
+
+sale_price <- gini_data$sale_price
+assessed <- gini_data$assessed
+
+lorenz_data_price <- data.frame(
+  pct = c(0, cumsum(sale_price) / sum(sale_price)),
+  cum_pct = c(0, seq_along(sale_price)) / length(sale_price)
+)
+
+lorenz_data_assessed <- data.frame(
+  pct = c(0, cumsum(assessed) / sum(assessed)),
+  cum_pct = c(0, seq_along(assessed)) / length(assessed)
+)
+
+ggplot() +
+  geom_line(
+    data = lorenz_data_price,
+    aes(x = cum_pct, y = pct), color = "blue"
+  ) +
+  geom_line(
+    data = lorenz_data_assessed,
+    aes(x = cum_pct, y = pct), color = "red"
+  ) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "green") +
+  geom_text(
+    data = data.frame(x = 0.8, y = 0.48, label = "Sale Price"),
+    aes(x, y, label = label), color = "blue", vjust = 1
+  ) +
+  geom_text(
+    data = data.frame(x = 0.5, y = 0.45, label = "Assessed Value"),
+    aes(x, y, label = label), color = "red", vjust = 1
+  ) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  scale_y_continuous(labels = scales::label_percent()) +
+  labs(
+    title = "Lorenz Curve for Sales and Assessed Values",
+    x = "Percent of Properties",
+    y = "Percent of Value"
+  ) +
+  theme_minimal()
+```
+
+In this graphic, the green line (Line of Equality) represents a hypothetical environment, where property valuations are completely equitable. The axes represent the cumulative percentage of value (y-axis) as the percentage of properties (x-axis) increases.
+
+The curves show that for the vast majority of the income distribution, assessed values are closer to the Line of Equality. This can be interpreted two ways:
+
+1.  When the assessed value curve is above the sale price curve, the gap between the the two lines at any individual point, represents the cumulative over-assessment for all houses at that value or below.
+
+2.  Gini coefficient for sale price is going to be higher than the Gini coefficient for assessed price (larger area between the the curve and the Line of Equality).
+
+In this situation, the graph shows slightly regressive property valuations. This is not immediately intuitive, but to conceptualize this, think of an exaggerated "progressive" policy, where all houses were valued at \$0 with one house responsible for all the assessed value. In this distribution, curve would be at 0 until the final house, where it would jump to 100% of the cumulative value (a Gini of 1). Thus, a higher Gini represents more progressive assessments, where tax assessments become larger as property value increases.
+
+#### **KI and MKI**
+
+To translate these curves to a single metric, the Kakwani Index (KI) and Modified Kakwani Index (MKI) are used (as proposed by [Quintos](https://researchexchange.iaao.org/jptaa/vol17/iss2/2/)). These are straightforward, with the following definitions:
+
+-   **Kakwani Index:** `Assessed Gini - Sale Price Gini`
+
+-   **Modified Kakwani Index:** `Assessed Gini / Sale Price Gini`
+
+```{r}
+# Calculate the sum of the n elements of the assessed vector
+n <- length(assessed)
+g_assessed <- sum(assessed * seq_len(n))
+
+# Compute the Gini coefficient based on the previously calculated sum
+# and the increasing sum of all elements in the assessed vector
+g_assessed <- 2 * g_assessed / sum(assessed) - (n + 1L)
+
+# Normalize the Gini coefficient by dividing it by n.
+gini_assessed <- g_assessed / n
+
+# Follow the same process for the sale_price vector
+g_sale <- sum(sale_price * seq_len(n))
+g_sale <- 2 * g_sale / sum(sale_price) - (n + 1L)
+gini_sale <- g_sale / n
+
+MKI <- round(gini_assessed / gini_sale, 4)
+KI <- round(gini_assessed - gini_sale, 4)
+```
+
+### **Detecting selective appraisals**
+
+Selective appraisal, sometimes referred to as sales chasing, happens when a property is reappraised to shift its assessed value toward its actual sale price. The CCAO requires selective appraisal detection in every sales ratio study. This is because selective appraisal renders all other sales ratio statistics suspect. In the code below, we construct two sets of ratios, one normally distributed, and one 'chased.'
+
+```{r}
+# Generate distributions of fake ratios, including one with "sales chasing"
+normal_ratios <- c(rnorm(1000, 1, 0.15))
+chased_ratios <- c(rnorm(900, 1, 0.15), rep(1, 100))
+
+# Plot the CDFs of each vector. Notice the flat spot on the red CDF
+ggplot() +
+  stat_ecdf(data = data.frame(x = normal_ratios), aes(x), color = "blue") +
+  stat_ecdf(data = data.frame(x = chased_ratios), aes(x), color = "red") +
+  geom_vline(xintercept = 0.98) +
+  geom_vline(xintercept = 1.02) +
+  xlim(0.7, 1.3) +
+  labs(x = "Ratio", y = "F(x)") +
+  theme_minimal()
+
+# Detect chasing for each vector
+tibble(
+  "Blue Chased?" = detect_chasing(normal_ratios),
+  "Red Chased?" = detect_chasing(chased_ratios)
+) %>%
+  kable(format = "markdown", digits = 3)
+```
+
+Ratios that include selective appraisals will be clustered around the value of 1 much more than ratios produced by a CAMA system. We can see this visually in the graph where the cumulative distribution curve shows a discontinuous jump, or 'flat spot', near 1.

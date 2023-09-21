@@ -1,0 +1,467 @@
+---
+title: "Effect of Flood Zones on Cook County Properties"
+author: "Alea Wilbur"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, message = FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+
+library(tidyverse)
+library(DBI)
+library(data.table)
+library(ggspatial)
+library(gstat)
+library(here)
+library(httr)
+library(jsonlite)
+library(ptaxsim)
+library(sf)
+library(stars)
+library(glue)
+
+
+#remotes::install_gitlab("ccao-data-science---modeling/packages/ptaxsim")
+
+#renv::install("gitlab::ccao-data-science---modeling/packages/ptaxsim")
+
+
+# Create the DB connection with the default name expected by PTAXSIM functions
+ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2021.0.4.db")
+
+# has all potential property classes for pins
+# downloaded from CCAO gitlab website
+## I used this to merge additional information to the pins and class data later on.
+class_dict <- read_csv("class_dict.csv")
+```
+
+
+~~591 parcels have FEMA SFHA designations~~ Notsure where I got this number?
+
+
+    flood_fema_sfha = env_flood_fema_sfha
+    flood_fema_data_year = env_flood_fema_data_year,
+    flood_fs_factor = env_flood_fs_factor,
+    flood_fs_risk_direction = env_flood_fs_risk_direction,
+    flood_fs_data_year = env_flood_fs_data_year,
+    
+    
+    
+SFHA is the land area covered by the floodwaters of the “base flood” on flood insurance rate maps (FIRMs). The “base flood” is the flood having a 1% chance of being equaled or exceeded in any given year. This is the regulatory standard, also referred to as the “100-year flood”, and the SFHA is thus also referred to as the “100-year flood zone”. The base flood is the national standard used by the NFIP and all federal agencies for the purposes of requiring the purchase of flood insurance and regulating new development. Base Flood Elevation (BFE), which is the computed elevation to which floodwater is anticipated to rise during the base flood, is typically shown on FIRMs.
+
+
+```{r eval=FALSE}
+base_url <- "https://datacatalog.cookcountyil.gov/resource/tx2p-k2g9.json"
+
+
+flood_pins <- GET(
+  base_url,
+  query = list(
+    env_flood_fema_sfha = TRUE,
+    `$select` = paste0(c("pin", "env_flood_fs_risk_direction", "year",
+                        # "long", "lat",
+                         "env_flood_fema_data_year"
+                       ),
+   collapse = ","),   
+
+    `$limit` = 500000L
+  )
+)
+
+
+# flood_pins <- GET(
+#   base_url,
+#   query = list(
+#     env_flood_fema_sfha = TRUE,
+#     `$select` = c("pin"),
+#     `$limit` = 500000L
+#   )
+# )
+```
+
+
+```{r}
+base_url <- "https://datacatalog.cookcountyil.gov/resource/tx2p-k2g9.json"
+
+nbh_pins <- GET(
+  base_url,
+  query = list(
+   # tax_year = 2021,
+ #   ward_num = 49,
+   # property_city = "ROGERS PARK",
+     env_flood_fema_sfha = TRUE,
+    `$select` = paste0(c("pin", "pin10", 
+                         "class", "year",
+                         "township_code", "township_name",
+                         "nbhd_code", "census_puma_geoid",
+                         "lat", "lon", 
+                         "triad_name" ,
+                          "env_flood_fema_sfha","env_flood_fema_data_year",
+                         "env_flood_fs_risk_direction", "env_flood_fs_factor"
+                         ),
+   collapse = ","),
+   `$limit` = 500000000L
+  )
+)
+
+nbh_pins2 <- fromJSON(rawToChar(nbh_pins$content))
+head(nbh_pins2)
+
+nbh_pins2 %>% filter(env_flood_fema_sfha== TRUE)
+
+nbh_pins2 %>% arrange(pin, year )
+
+nbh_pins2 %>% arrange(desc(year))
+nbh_pins2 %>% arrange(desc(env_flood_fema_data_year))
+
+table(nbh_pins2$class)
+nbh_pins2 %>% distinct(pin)
+
+```
+
+Cook county assessor's office added FEMA floodplain data to its assesment models in 2019 [link)](https://www.cookcountyassessor.com/news/floodplain-status-now-included-cook-county-property-assessments)
+
+
+
+
+```{r}
+# flood_pins <- GET(
+#   base_url,
+#   query = list(
+#     env_flood_fema_sfha = TRUE,
+#     `$select` = paste0(c("pin", "class",  "env_flood_fema_data_year","env_flood_fs_risk_direction", "long", "lat", "nbhd_code", "township_code", "township_name"
+#                          ),
+#    collapse = ","),
+# 
+#     `$limit` = 500000L
+#   )
+# )
+
+# change data type to character
+flood_pins2 <- fromJSON(rawToChar(flood_pins$content))$pin
+
+#flood_pins2 %>% unique() # 29,000 + unique pins?
+
+# not the variable name
+#fema_year <- fromJSON(rawToChar(flood_pins$content))$flood_fema_data_year
+
+fema_year <- fromJSON(rawToChar(flood_pins$content))$env_flood_fema_data_year
+tax_year <- fromJSON(rawToChar(flood_pins$content))$year
+
+table(fema_year)
+table(tax_year)
+#riskdirection <- fromJSON(rawToChar(flood_pins$content))$env_flood_fs_risk_direction
+
+flood_pins2 <- cbind(flood_pins2, fema_year) %>% as_tibble()
+#area_taxcodes <- fromJSON(rawToChar(flood_pins$content))$township_code
+
+
+flood_pins_ptax <- DBI::dbGetQuery(
+  ptaxsim_db_conn,
+  glue_sql(
+  "SELECT pin, year, class, tax_code_num
+  FROM pin
+  WHERE pin IN ({flood_pins2*})
+  ",
+  .con = ptaxsim_db_conn
+))
+```
+
+
+```{r eval = FALSE, include = FALSE}
+eq_factor <- DBI::dbGetQuery(
+  ptaxsim_db_conn,
+  glue_sql(
+  "SELECT *
+  FROM eq_factor
+  ",
+  .con = ptaxsim_db_conn
+))
+
+write_csv(eq_factor, "eq_factor.csv")
+
+tif_distribution <- DBI::dbGetQuery(
+  ptaxsim_db_conn,
+  glue_sql(
+  "SELECT *
+  FROM tif_distribution
+  ",
+  .con = ptaxsim_db_conn
+))
+write_csv(tif_distribution, "tif_distribution.csv")
+
+tif <- DBI::dbGetQuery(
+  ptaxsim_db_conn,
+  glue_sql(
+  "SELECT *
+  FROM tif
+  ",
+  .con = ptaxsim_db_conn
+))
+write_csv(tif, "tif_start_stop.csv")
+
+cpi <- DBI::dbGetQuery(
+  ptaxsim_db_conn,
+  glue_sql(
+  "SELECT *
+  FROM cpi
+  ",
+  .con = ptaxsim_db_conn
+))
+write_csv(cpi, "cpi.csv")
+```
+
+
+```{r}
+unique_pins_in_fz = flood_pins_ptax %>%  group_by(pin, year) %>% summarize(count = n()) %>% arrange(count)
+table(unique_pins_in_fz$year)
+
+
+unique_pins_in_fz = flood_pins_ptax %>%  group_by(pin) %>% summarize(count = n()) %>% arrange(count)
+
+
+
+unique_parcels_in_fz = flood_pins_ptax %>% mutate(parcel_num = str_sub(pin, 1, 10)) %>%  group_by(parcel_num, year) %>% summarize(count = n()) %>% arrange(count)
+
+#flood_pins_ptax %>% arrange(pin) %>% distinct(tax_code_num)
+table(unique_parcels_in_fz$year)
+
+flood_pins_ptax %>% arrange(pin) %>% group_by(tax_code_num) %>% summarize(count = n()) %>% arrange(count)
+
+
+flood_pins_ptax  %>% group_by(year) %>% summarize(count = n()) %>% arrange(count) %>% ggplot()+geom_line(aes(x=year, y=count)) + labs(title = "Cook County Parcels in Flood Plains", caption = "Data from Cook County Data Portal")
+
+```
+
+962 taxcodes in Cook County   
+29,545 unique pins in Cook County over all years have been in a flood plain at some point in time.    
+
+```{r}
+
+flood_pins_ptax %>% 
+  pivot_wider(id_cols = c(pin), names_from = "year", values_from =  "class") %>%
+  mutate(change = as.numeric(`2021`)-as.numeric(`2006`)) %>% 
+  filter(change !=0
+         )
+
+zone_change <- flood_pins_ptax %>% 
+  pivot_wider(id_cols = c(pin), names_from = "year", values_from =  "class") %>%
+  mutate(change = as.numeric(`2021`)-as.numeric(`2006`)) %>% 
+  filter(change == 1) %>%
+  select(pin)
+
+
+```
+
+
+```{r}
+flood_taxbills <- tax_bill(2008:2021, unique_pins_in_fz$pin, simplify = FALSE)
+
+grouped_bills <- flood_taxbills %>% #left_join(class_dict, by = c("class" = "class_code")) %>% # add major property types to pin data
+  group_by( tax_code) %>%
+  summarize(pin_count = n(),
+            final_tax_to_dist = sum(final_tax_to_dist),
+            final_tax_to_tif = sum(final_tax_to_tif),
+            tax_amt_exe = sum(tax_amt_exe), # revenue lost due to exemptions
+            tax_amt_pre_exe = sum(tax_amt_pre_exe), # total rev before all exemptions
+            tax_amt_post_exe = sum(tax_amt_post_exe), # total rev after all exemptions
+        rpm_tif_to_cps = sum(rpm_tif_to_cps), # not used
+        rpm_tif_to_rpm = sum(rpm_tif_to_rpm), # not used
+         rpm_tif_to_dist = sum(rpm_tif_to_dist), # not used
+          tif_share = mean(tif_share), # not used
+       )
+```
+
+
+> want to create a variable for when it was added to the flood zone. 
+
+Pin geometries for pins with flood zone SFHA status. 
+
+
+Example Link: [https://ccao-data.github.io/ptaxsim/articles/mapping.html]
+
+At the 10 digit pin number, there are 23,332 pins.
+
+- Last 4 digits of the 14 digit pin are for indicating the unit number within a building. Single family homes with only one tax payer end with 0000; condos with more than one unit end with additional identifiers. The 10-digit pin corresponds to a geographic location of the building.  
+
+> make smaller maps. Either by Triad or township or something else smaller than Cook County. 
+
+```{r eval=FALSE}
+flood_pin10s <- unique(substr(flood_pins2, 1, 10))
+
+flood_pins_geo <- lookup_pin10_geometry(year = 2021, pin10 = flood_pin10s) %>%
+  st_as_sf(wkt = "geometry", crs = 4326)
+
+flood_pins_geo <- flood_pins_geo %>%
+  left_join(
+    flood_pins_ptax %>%
+      mutate(pin10 = substr(pin, 1, 10)) %>%
+      group_by(pin10) %>%
+      summarize(class = first(class)),
+    by = "pin10"
+  ) %>%
+  mutate(
+    major_class = substr(class, 1, 1),
+    major_class_fct = recode_factor(
+      major_class,
+      "0" = "0 & 1 - Vacant and Exempt",
+      "1" = "0 & 1 - Vacant and Exempt",
+      "2" = "2 - Residential",
+      "3" = "3 & 5 - Commercial",
+      "5" = "3 & 5 - Commercial",
+      "6" = "6, 7, 8 - Incentive",
+      "7" = "6, 7, 8 - Incentive",
+      "8" = "6, 7, 8 - Incentive"
+    )
+  )
+table(flood_pins_geo$major_class)
+
+flood_pins_geo <- flood_pins_geo %>% left_join(muni_)
+
+# add border for cook County
+cook_border <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/plss/MapServer/1/query?outFields=*&where=1%3D1&f=geojson")
+
+flood_pins_map_north <- ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = -1) +
+  geom_sf(
+    data = flood_pins_geo %>% filter(),
+    aes(fill = major_class_fct),
+    alpha = 0.5,
+    linewidth = 0.1
+  ) +
+  geom_sf(data = cook_border, fill = "transparent", linewidth = 1) +
+  annotation_scale(location = "br") +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "0 & 1 - Vacant and Exempt" = "#984ea3",
+      "2 - Residential" = "#e41a1c",
+      "3 & 5 - Commercial" = "#377eb8",
+      "6, 7, 8 - Incentive" = "#4daf4a"
+    )
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme_void() +
+  theme(
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(18, "points"),
+    legend.position = "bottom"
+  )
+
+flood_pins_map
+
+flood_pins_map_south <- ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = -1) +
+  geom_sf(
+    data = flood_pins_geo,
+    aes(fill = major_class_fct),
+    alpha = 0.5,
+    linewidth = 0.1
+  ) +
+  geom_sf(data = cook_border, fill = "transparent", linewidth = 1) +
+  annotation_scale(location = "br") +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "0 & 1 - Vacant and Exempt" = "#984ea3",
+      "2 - Residential" = "#e41a1c",
+      "3 & 5 - Commercial" = "#377eb8",
+      "6, 7, 8 - Incentive" = "#4daf4a"
+    )
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme_void() +
+  theme(
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(18, "points"),
+    legend.position = "bottom"
+  )
+
+
+flood_pins_map_chi <- ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = -1) +
+  geom_sf(
+    data = flood_pins_geo,
+    aes(fill = major_class_fct),
+    alpha = 0.5,
+    linewidth = 0.1
+  ) +
+  geom_sf(data = cook_border, fill = "transparent", linewidth = 1) +
+  annotation_scale(location = "br") +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "0 & 1 - Vacant and Exempt" = "#984ea3",
+      "2 - Residential" = "#e41a1c",
+      "3 & 5 - Commercial" = "#377eb8",
+      "6, 7, 8 - Incentive" = "#4daf4a"
+    )
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme_void() +
+  theme(
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(18, "points"),
+    legend.position = "bottom"
+  )
+
+```
+
+
+```{r}
+#save.image("flood_pins_map.pdf")
+```
+
+
+```{r}
+
+chg_bills <- DBI::dbGetQuery(
+  ptaxsim_db_conn, glue_sql("
+    SELECT year, pin, class, tax_bill_total
+    FROM pin
+    WHERE year IN (2011, 2016, 2021)
+    AND pin IN ({unique_pins_in_fz$pin*})
+  ",
+    .con = ptaxsim_db_conn
+  )
+)
+
+chg_bills %>%
+  group_by(year) %>% 
+  summarize(count = n()) %>%
+              ggplot() + 
+              geom_line(aes(x=year, y=count))
+
+
+bill_change <- chg_bills %>%
+  pivot_wider(
+    id_cols = c(pin, class),
+    names_from = year,
+    values_from = tax_bill_total,
+  ) %>%
+  mutate(pct_change = (`2021` - `2011`) / `2011`) %>%
+  mutate(pin10 = substr(pin, 1, 10)) %>%
+  group_by(pin10) %>%
+  summarise(class = first(class),
+    avg_bill_change = mean(pct_change, na.rm = TRUE),
+    avg_bill_change = ifelse(is.nan(avg_bill_change), 0, avg_bill_change),
+    # Bucket the continuous % change amount into bins for easier visualization
+    bill_chg_fct = cut(
+      x = avg_bill_change,
+      breaks = c(-Inf, 0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, Inf),
+      labels = c(
+        "Decreased", "0-25%", "25-50%", "50-75%", "75-100%",
+        "100-125%", "125-150%", "150%+"
+      ),
+      include.lowest = TRUE
+    )
+  )
+
+bill_change %>% arrange(desc(class))
+```
+

@@ -123,7 +123,7 @@ data <- as_tibble(lapply(data, function(data) gsub("\n", "", data)))
 data
 ```
 
-> NOTE: variable names for `fimanfipclaims` and `FimaNfipPolicies` are DIFFERENT! \
+> NOTE: variable names for `fimanfipclaims` and `FimaNfipPolicies` are DIFFERENT!\
 > state is propertyState depending on dataset.
 
 ```{r eval=FALSe}
@@ -212,7 +212,7 @@ us_counties <- map_data("county")
 
 usacounties<- county_complete %>% 
     filter(state %in% c("Mississippi","Alabama"))%>%
-  select(fips, state, name, pop2017, pop_2019, median_household_income_2017, median_household_income_2019, bachelors_2019,mean_household_income_2019) %>%
+  select(fips, state, name, pop2017, pop_2019, median_household_income_2017, median_household_income_2019, bachelors_2019, mean_household_income_2019) %>%
   mutate(fips = str_pad(as.character(fips),  
           width = 5,  side = "left", pad = "0"))
 
@@ -1067,7 +1067,7 @@ There are 29,109 observations listed in data file.
 
 There are 3,378 communities within the five selected states. This includes those that are and are not part of the NFIP. Those that are included in the NFIP are then broken down into those that do and do not participate in the CRS program.
 
-Second, of the more than 22,000 NFIP communities in the United States, only 5% of them participate in the CRS (FEMA 2017a). This is a misleading statistic, however, because policies are not uniformly distributed across communities. A more useful statistic is that out of the 5.6 million NFIP policies-in-force, 68% of them are in CRSparticipating communities - frimpong
+Second, of the more than 22,000 NFIP communities in the United States, only 5% of them participate in the CRS (FEMA 2017a). This is a misleading statistic, however, because policies are not uniformly distributed across communities. A more useful statistic is that out of the 5.6 million NFIP policies-in-force, 68% of them are in CRS participating communities (Frimpong, Petrolia, Harri, Cartwright, 2020 submitted article in Applied Economic Perspectives and Policy)
 
 **To do**
 
