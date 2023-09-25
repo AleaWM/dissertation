@@ -9,6 +9,12 @@ output:
     df_print: paged
 ---
 
+_This document is a duplicate of the "Clean" document that I am editing, as of August 8th._
+
+__Editing again on January 26__
+
+**Note**: FEMA updated their API and datasets (framework version 7.1) in October 2022. Updated versions of hazard mitigation assistance properties version 3, projects version 3, and others were updated. Some gained variables, some got rid of unnecessary variables. 
+
 Goal: Have historic mitigation projects and property acquisitions for selected states during the selected time frame. Once data is wrangled, an evaluation of the federal mitigation programs effectiveness will be provided. 
  
 This analysis will also provide insights on buyout trends and larger mitigation efforts supported by federal programs.
@@ -40,16 +46,16 @@ library(pscl)
 library(tigris)
 })
 theme_set(theme_bw(base_size=16))
-
-CapStr <- function(y) {
-  c <- strsplit(y, " ")[[1]]
-  paste(toupper(substring(c, 1,1)), substring(c, 2),
-      sep="", collapse=" ")
-}
-
-capitalize_str <- function(charcter_string){
-  sapply(charcter_string, CapStr)
-}
+# 
+# CapStr <- function(y) {
+#   c <- strsplit(y, " ")[[1]]
+#   paste(toupper(substring(c, 1,1)), substring(c, 2),
+#       sep="", collapse=" ")
+# }
+# 
+# capitalize_str <- function(charcter_string){
+#   sapply(charcter_string, CapStr)
+# }
 
 ```
 
@@ -59,9 +65,13 @@ capitalize_str <- function(charcter_string){
 us_states <- map_data("state")
 us_counties <- map_data("county")
 
+
+# population data from package usdata()
+# has tons of census data variables
+
 usacounties<- county_complete %>% 
     filter(state %in% c("Texas", "Florida", "Mississippi", "Louisiana", "Alabama"))%>%
-  select(fips, state, name, pop2017, median_household_income_2017, bachelors_2019, mean_household_income_2019) %>%
+  select(fips, state, name, pop2017, pop_2019, median_household_income_2017, median_household_income_2019, bachelors_2019,mean_household_income_2019) %>%
   mutate(fips = str_pad(as.character(fips),  
           width = 5,  side = "left", pad = "0"))
 
@@ -69,7 +79,7 @@ usacounties2 <-  usacounties  %>%
   select(fips, state, name) %>% 
   filter(state %in% c("Texas", "Florida", "Mississippi", "Louisiana", "Alabama"))
 
-#534
+#534 counties in the 5 states
 
 
 states <- c("Texas", "Florida", "Mississippi", "Louisiana", "Alabama")
@@ -83,7 +93,7 @@ Data downloadable from [FEMA website](https://www.fema.gov/about/openfema/data-s
 
 NFIP CRS Community Projects & Mitigation Projects Data files:  
 
-- MitigationProjects.csv: Historic mitigation projects contain information on federal grants distributed at county andcity level.  
+- MitigationProjects.csv: Historic mitigation projects contain information on federal grants distributed at county and city level.  
 - FEMA says these can be joined by projectIdentifier (beware of duplicates)  
 - The mitigation projects file has each projectIdentifier and the number of properties that were mitigated.   
 - Only kept 5 states in this practice data cleaning. Can easily edit `filter(stateNumberCode)` code to change state selection  
@@ -91,30 +101,34 @@ NFIP CRS Community Projects & Mitigation Projects Data files:
 
 Hazard Mitigation Assistance Projects  
 
-- The dataset contains funded **projects** (financial obligation to grantee) under the Hazard Mitigation Assistance (HMA) grant programs. FEMA administers three programs that provide funding for eligible mitigation planning and projects that reduces disaster losses and protect life and property from future disaster damages. The three programs are the Hazard Mitigation Grant Program (HMGP), Flood Mitigation Assistance (FMA) grant program, and Pre-Disaster Mitigation (PDM) grant program. This dataset also contains data from the HMA grant programs that were eliminated by the Biggert Water Flood Insurance Reform Act of 2012: Repetitive Flood Claims (RFC) grant program and Severe Repetitive Loss (SRL) grant program. 
+- The dataset contains funded **projects** (financial obligation to grantee) under the Hazard Mitigation Assistance (HMA) grant programs. FEMA administers three programs that provide funding for eligible mitigation planning and projects that reduces disaster losses and protect life and property from future disaster damages. The three programs are the Hazard Mitigation Grant Program (HMGP), Flood Mitigation Assistance (FMA) grant program, and Pre-Disaster Mitigation (PDM) grant program. This dataset also contains data from the HMA grant programs that were eliminated by the Biggert Water Flood Insurance Reform Act of 2012: Repetitive Flood Claims (RFC) grant program and Severe Repetitive Loss (SRL) grant program.   
+- **Hazard Mitigation Assistance Projects Version 3 - This updated version removed two data fields, renamed "grantee" to "recipient", "subgrantee" to "subrecipient", and added four data fields to enhance the dataset. **  
 
 
 Hazard Mitigation Assistance Mitigated Properties file    
 
-- This dataset contains the **properties that were mitigated by projects ** funded under the Hazard Mitigation Assistance (HMA) grant programs. FEMA administers three programs that provide funding for eligible mitigation planning and projects to reduce disaster losses and protect life and property from future disaster damages. The three programs are the Hazard Mitigation Grant Program (HMGP), Flood Mitigation Assistance (FMA) grant program, and Pre-Disaster Mitigation (PDM) grant program. This dataset also contains data from the HMA grant programs that were eliminated by the Biggert Water Flood Insurance Reform Act of 2012 (BW-12): Repetitive Flood Claims (RFC) grant program and Severe Repetitive Loss (SRL) grant program   
+- This dataset contains the **properties that were mitigated within projects** funded under the Hazard Mitigation Assistance (HMA) grant programs. FEMA administers three programs that provide funding for eligible mitigation planning and projects to reduce disaster losses and protect life and property from future disaster damages. The three programs are the Hazard Mitigation Grant Program (HMGP), Flood Mitigation Assistance (FMA) grant program, and Pre-Disaster Mitigation (PDM) grant program. This dataset also contains data from the HMA grant programs that were eliminated by the Biggert Water Flood Insurance Reform Act of 2012 (BW-12): Repetitive Flood Claims (RFC) grant program and Severe Repetitive Loss (SRL) grant program   
 - If these are collapsed by Project, they should have the values should be equal for amount spent?  
-- The dataset contains properties by project identifier, city, zip code, state and region and does not contain any Personally Identifiable Information (PII). The mitigated property dataset can be joined to the OpenFEMA Hazard Mitigation Assistance Funded Project dataset by the Project Identifier field. Note, not all projects in the Hazard Mitigation Assistance Funded Project dataset will have mitigated properties (e.g., Planning and Management Cost projects). In some cases data was not provided by the subgrantee (sub-recipient), grantee (recipient) and/or entered into the FEMA mitigation grant systems. The information is likely available as part of the paper file which is considered the file of record.
+- The dataset contains properties by project identifier, city, zip code, state and region and does not contain any Personally Identifiable Information (PII). The mitigated property dataset can be joined to the OpenFEMA Hazard Mitigation Assistance Funded Project dataset by the Project Identifier field. Note, not all projects in the Hazard Mitigation Assistance Funded Project dataset will have mitigated properties (e.g., Planning and Management Cost projects). In some cases data was not provided by the subgrantee (sub-recipient), grantee (recipient) and/or entered into the FEMA mitigation grant systems. The information is likely available as part of the paper file which is considered the file of record.   
+- **New version (v3) released Oct 2022 that adds a variable to be joined with other hazard mitigation datasets. Also removed 11 of the empty/useless variables from v2.**  
+  - Saved in Box folder as excel and Sample Files folder as csv
 
 
+HMGP Disaster Summaries V2 - 22 new data fields with financial info reported. Saved in Box folder.
 
 ```{r Projects}
 # original FEMA file name was 
-# HazardMitigationAssistanceProjects.csv
+# HazardMitigationAssistanceProjects.csv. Version 3 released Oct 2022.
 
-projectsmit <- read_csv("HazardMitigationAssistanceProjects.csv", 
+projectsmit <- read_csv("HazardMitigationAssistanceProjects_v3.csv", 
                         col_types = cols(dateApproved = col_datetime(""), 
                                          dateClosed = col_datetime(format = ""), 
                                          dateInitiallyApproved = col_datetime(format = "") 
                         ))  %>% 
   filter(stateNumberCode %in% c(1, 12, 22, 28, 48),
-         # 7,563 observations when including only the 5 states
+         # 7,969 observations when including only the 5 states
          county != "Statewide"
-         # 6,757 when "Statewide" projects are removed. 
+         # 7,105 when "Statewide" projects are removed. 
 
          )
 #Each projectIdentifier is unique in this document.
@@ -129,7 +143,7 @@ Writing a CSV file will drop zero placeholders in the beginning of numbers unles
 
 Once state and county have 0 placeholders, then combine columns to make the 5 digit FIP code that exists in other FEMA documents.
 
-```{r project-padding}
+```{r project-padding-zeros}
 projectsmit <- projectsmit %>%
   mutate(stateNumberCode = str_pad(as.character(stateNumberCode), # StateNumberCode has to have 2 digits and adds a 0 placeholder if it doesn't
           width = 2, side = "left",  pad = "0"),
@@ -153,12 +167,12 @@ projectssummary <- projectsmit %>%
             fedmoney = sum(federalShareObligated))
 
 projectssummary
-# 2,005 observations: projects and properties for each county during each year
+# 2,116 observations: projects and properties for each county during each year
 # variables are state, county, programFy, countyFIP, projects and properties
 
-projectssummary2 <- left_join(usacounties2, projectssummary, by = c("fips" = "countyFIP")) # 2111 obs.
+projectssummary2 <- left_join(usacounties2, projectssummary, by = c("fips" = "countyFIP")) # 2116 obs.
 
-##**Projects per state**  
+## Projects per state  
 
 #This shows the number of projects that occurred within each state:
 
@@ -167,12 +181,13 @@ projectsstate <- projectsmit %>%
   group_by(state) %>%
   summarize(projects= n(),
             properties = sum(numberOfFinalProperties))
+ projectsstate
  
-fedmoney_counties <- projectsmit %>% 
+fedmoney_counties <- projectsmit %>% #projects includes all money spent on properties AND everything else
   filter(programFy > 1989) %>%
   mutate(state = tolower(state),
          county = tolower(county)) %>%
-  group_by(state, county,countyFIP) %>%
+  group_by(state, county, countyFIP) %>%
   summarize(projects = n(),
             properties = sum(numberOfFinalProperties),
             fedmoney = sum(federalShareObligated))
@@ -184,15 +199,23 @@ This shows the number of projects and properties (some projects contain multiple
 
 ```{r properties-in-projects}
 properties_per_project_state <- projectsmit %>% 
-  mutate(state=tolower(state)) %>%
   group_by(state) %>%
   summarize(projects= n(),
-            properties = sum(numberOfFinalProperties ))
+            properties = sum(numberOfFinalProperties, na.rm = TRUE))
 
 rownames(properties_per_project_state) <- c("AL", "FL", "LA"," MS", "TX")
-properties_per_project_state  %>% kbl(caption = "Total Mitigated Projects and Properties in Each State, 2000-2019", 
+properties_per_project_state  %>% 
+  kbl(caption = "Total Mitigated Projects and Properties in Each State, 2000-2022"
                      ) %>%
   kable_classic(full_width = F, position = "left", html_font = "Cambria") 
+
+projects_with_properties <- projectsmit %>%   
+  filter(numberOfFinalProperties>0) %>% 
+ # group_by(projectIdentifier, countyFIP, programArea,programFy) %>% 
+  #summarize(numberOfFinalProperties = sum(numberOfFinalProperties)) %>%
+  #ungroup() %>% 
+  arrange(-numberOfFinalProperties)
+# 3872  project-county-year groups have mitigated properties
 ```
 
 
@@ -202,7 +225,7 @@ structural vs nonstructural
 
 - Nonstructural measures include zoning ordinances, land use planning, smallscale storm water management systems, maintenance of green space, building codes,flood warning systems, and disaster preparation plans. 
 
-- Mitigated properties data contains acquisition cost, date, eligible grant type in county, city, and property level.  There are 32,932 observations.
+- Mitigated properties data contains acquisition cost, date, eligible grant type in county, city, and property level.  There are over 36,000 observations.
 
 Hazard Mitigation Assistance (HMA) is for actions taken to reduce or eliminate long term risk to people and property from natural disasters. HMA includes the following programs: Hazard Mitigation Grants Program (HMGP), Flood Mitigation Assistance (FMA), and Building Resilient Infrastructure and Communities (BRIC). Please note that the Biggert Waters Flood Instance Reform Act of 2012 folded the Repetitive Flood Claims (RFC) and Severe Repetitive Loss (SRL) into the FMA program, while the Disaster Recovery Reform Act of 2018 transformed the Pre-Disaster Mitigation (PDM) program into the BRIC program.
 
@@ -211,34 +234,23 @@ Hazard Mitigation Assistance (HMA) is for actions taken to reduce or eliminate l
 ```{r properties}
 #When data is redownloaded, original file called   HazardMitigationAssistanceMitigatedProperties.csv  
 
-#MitigatedProperties.csv was already filtered to the 5 states in the sample frame. Add a filter() command and select for states 
-
-propertymit <- read_csv("MitigatedProperties.csv") %>%
-  arrange(projectIdentifier) %>% 
+propertymit <- read_csv("HazardMitigationAssistanceMitigatedProperties_v3.csv") %>%
+  filter(state %in% c("Texas", "Florida", "Mississippi", "Louisiana", "Alabama")) %>%
+ # arrange(projectIdentifier) %>% 
   filter(programFy > 1989) %>%  # has two logicals, get rid of them
-  mutate(title = as.character(title), # no data in column
-         numberOfRecords = as.numeric(numberOfRecords), #column doesn't have anything anyways
+  mutate(
          actualAmountPaid = replace_na(actualAmountPaid, 0),
-         stateNumberCode = str_pad(as.character(stateNumberCode), 
-          width = 2, side = "left", pad = "0"),
-         countyCode =  str_pad(as.character(countyCode), 
-          width = 3, side = "left",  pad = "0"), 
-         countyFIP = paste(stateNumberCode, countyCode, sep = ''))
-propertymit # 32,932 observations
+        stateNumberCode = str_pad(as.character(stateNumberCode), 
+         width = 2, side = "left", pad = "0")
+         )
+propertymit 
+#32,932 observations in v2 of data in past
+#36,812 obs as of Nov 1 2022.
 
 table(propertymit$programArea)
-
+table(projects_with_properties$programArea)
 ### recode programs!!
 
-
-
-predisaster <- propertymit %>% 
-  #filter(programArea == "FMA" | programArea == "PDM") %>%
-  select(-c(numberOfRecords,id, title, granteeTribalIndicator, subgranteeTribalIndicator))%>%
-  tolower(county) 
-  
-  
-predisaster
 ```
 
 #### Buyouts
@@ -251,91 +263,118 @@ predisaster
 Other code examples -  github by [Kate Nelson](https://github.com/katesnelson/FEMA_buyouts)
 
 ```{r Mean and Median Properties per Project}
-buyoutsperproject <- propertymit %>%
-  #tolower() %>%
-    filter(
-      propertyAction == "Acquisition/Demolition", ## filtering to floodplain buyouts
-      str_detect(type, "200.1|200.2|200.3|200.4")
-    ) %>%
-    group_by(projectIdentifier) %>%
-    summarise(n_properties = sum(numberOfProperties, na.rm = T))
+## joining project data to property data
+# I think this is what I want.
+joined <- propertymit %>% mutate(stateNumberCode = as.character(stateNumberCode)
+                           ) %>% 
+  left_join(projects_with_properties, by = c("projectIdentifier", "state", "stateNumberCode","region", "county", "programFy", "disasterNumber", "programArea")) %>%
+  select(-c(id.x, id.y)) %>%
+  mutate(countyCode =  str_pad(as.character(countyCode), width = 3, side = "left",  pad = "0"), 
+        countyFIP = paste(stateNumberCode, countyCode, sep = ''))
 
-buyoutspercounty <- propertymit %>%
-  #tolower() %>%
-    filter(
-      propertyAction == "Acquisition/Demolition", ## filtering to floodplain buyouts
-      str_detect(type, "200.1|200.2|200.3|200.4")
-    ) %>%
-    group_by(countyFIP) %>%
-    summarise(n_properties = sum(numberOfProperties, na.rm = T))
+## joining property data to project data
+#joined2 <- left_join(projectsmit, propertymit, by = c("projectIdentifier", "state", "stateNumberCode","region", "county", "programFy", "disasterNumber", "programArea")) %>% select(-c(id.x, id.y))
+
+buyouts <- joined %>%
+    filter(propertyAction == "Acquisition/Demolition",
+      str_detect(projectType, "200.1|200.2|200.3|200.4") )
+
+sum(buyouts$numberOfProperties.x)
+
+buyouts %>%
+    group_by(projectIdentifier) %>%
+    summarise(n_properties_inproject = sum(numberOfProperties.x, na.rm = T))
+
+buyouts %>%
+    group_by(state, programFy ) %>%
+    summarise(n_properties = sum(numberOfProperties.x, na.rm = T))
+
+
+buyouts %>%
+    group_by(state, county, programFy ) %>%
+    summarise(n_properties = sum(numberOfProperties.x, na.rm = T))
+
 ```
 
+We have properties and project data which complement each other. 
 
+Not all projects involve mitigated properties. 
 ```{r Joined Properties-Projects Dataset, include=FALSE}
-project_ids_with_non_acquisitions <- propertymit %>% ##projects where there are mixed property_action values among different observations in the properties dataset
-  filter(propertyAction != "Acquisition/Demolition") %>%
-  distinct(projectIdentifier) %>%
-  pull
 
-project_missing_amounts_paid <- ##projects where there are missing actual_amount_paid values in the properties dataset
-  propertymit %>%
-  filter(is.na(actualAmountPaid)) %>% 
-  distinct(projectIdentifier) %>%
-  pull()
+project_ids_with_non_acquisitions <- joined %>% ##projects where there are mixed property_action values among different observations in the properties dataset
+  filter(propertyAction != "Acquisition/Demolition" | propertyAction != "Acquisition of Vacant Land" | propertyAction != "Acquisition/Relocation") %>%
+  distinct(projectIdentifier)
 
-exclude_ids <- c(project_ids_with_non_acquisitions, project_missing_amounts_paid)
 
-joint <- propertymit %>%
-  left_join(
-    projectsmit %>% #joining project-level data back to individual properties
-      select(
-        project_number_of_properties = numberOfFinalProperties,
-        projectIdentifier, 
-        projectAmount,
-        projectType,
-        projectTitle, 
-        projectStatus = status,
-        project_cost_share_percentage = costSharePercentage,
-        projectAmount, 
-        project_federal_share_obligated = federalShareObligated
-      ),
-    by = "projectIdentifier"
-  )  %>% 
-  select(-c(
-    region, stateNumberCode, countyCode, disasterNumber, programFy, dateInitiallyApproved, dateApproved, dateClosed, title, numberOfRecords, granteeTribalIndicator, subgranteeTribalIndicator, id, projectType
-  )) %>% 
-  filter(
-    propertyAction == "Acquisition/Demolition", ## filtering to floodplain buyouts
-    type == "200.1: Acquisition of Private Real Property (Structures and Land) - Riverine" |
-    type == "200.2: Acquisition of Private Real Property (Structures and Land) - Coastal" |
-    type == "200.3: Acquisition of Public Real Property (Structures and Land) - Riverine" |
-    type == "200.4: Acquisition of Public Real Property (Structures and Land) - Coastal",
-    !(projectIdentifier %in% exclude_ids) #eliminating projects that contain a mix of property_action values or where there are missing actual_amount_paid values
-  ) 
-##nrow : 2675
 
-grouped <- joint %>%
-  group_by(projectIdentifier) %>% ## aggregating from property to project level 
+exclude_ids <- c(project_ids_with_non_acquisitions)
+
+# joint <- propertymit %>%
+#       select(
+#         project_number_of_properties = numberOfFinalProperties,
+#         projectIdentifier, 
+#         projectAmount,
+#         projectType,
+#         projectTitle, 
+#         projectStatus = status,
+#         project_cost_share_percentage = costSharePercentage,
+#         projectAmount, 
+#         project_federal_share_obligated = federalShareObligated
+#       ) %>%
+#   left_join(projectsmit, #joining project-level data back to individual properties
+# 
+#     by = "projectIdentifier"
+#   )  %>% 
+#   select(-c(
+#     region, stateNumberCode, countyCode, disasterNumber, programFy, dateInitiallyApproved, dateApproved, dateClosed, title, numberOfRecords, granteeTribalIndicator, subgranteeTribalIndicator, id, projectType
+#   )) %>% 
+#   filter(
+#     propertyAction == "Acquisition/Demolition", ## filtering to floodplain buyouts
+#     type == "200.1: Acquisition of Private Real Property (Structures and Land) - Riverine" |
+#     type == "200.2: Acquisition of Private Real Property (Structures and Land) - Coastal" |
+#     type == "200.3: Acquisition of Public Real Property (Structures and Land) - Riverine" |
+#     type == "200.4: Acquisition of Public Real Property (Structures and Land) - Coastal",
+#     !(projectIdentifier %in% exclude_ids) #eliminating projects that contain a mix of property_action values or where there are missing actual_amount_paid values
+#   ) 
+# ##nrow : 2675
+# 
+grouped <- joined %>%
+  filter(status == "Closed") %>% ## only closed projects, so all costs should be reported
+  filter(!(projectIdentifier %in% exclude_ids) ) %>% #eliminating projects that contain a mix of property_action values or where there are missing actual_amount_paid values
+  group_by(projectIdentifier, numberOfFinalProperties) %>% 
   summarise(
-    n_project_final_properties = first(project_number_of_properties),
-    n_properties_summed = sum(numberOfProperties, na.rm = T),
-    project_amount = first(projectAmount),
-    acquisition_cost = sum(actualAmountPaid),
-    transaction_cost = projectAmount - acquisition_cost,
-    perc_acquisition_cost = acquisition_cost / projectAmount,
-    perc_transaction_cost = transaction_cost / projectAmount,
-    project_status = first(projectStatus),
-    project_federal_share_obligated = first(project_federal_share_obligated),
-    project_cost_share_percentage = first(project_cost_share_percentage),
-    state = first(state),
-    county = first(county),
-    city = first(city),
-    zip = first(zip)
-  ) %>% 
-  filter( project_status == "Closed", ## only closed projects, so all costs should be reported
-    n_project_final_properties == n_properties_summed ## only projects where the reported number of properties is the same as the number of properties derived from the property-level dataset
-  ) 
-# 1479 
+  #  n_project_final_properties = first(numberOfFinalProperties),
+   # n_properties_summed = sum(numberOfProperties.x, na.rm = T),
+    #project_amount = first(projectAmount),
+  #  acquisition_cost = sum(actualAmountPaid),
+ #   transaction_cost = projectAmount - acquisition_cost,
+  #  perc_acquisition_cost = acquisition_cost / projectAmount,
+  #  perc_transaction_cost = transaction_cost / projectAmount,
+  #  project_status = first(status),
+  #  project_federal_share_obligated = first(federalShareObligated),
+  #  project_cost_share_percentage = first(costSharePercentage)
+  )  ## only projects where the reported number of properties is the same as the number of properties derived from the property-level dataset
+
+
+  
+# # 1479 
+
+joined %>% 
+  filter(!(projectIdentifier %in% exclude_ids),
+         status == "Closed"#, ## only closed projects, so all costs should be reported
+   # n_project_final_properties == n_properties_summed ## only projects where the reported number of properties is the same as the number of properties derived from the property-level dataset
+  )  %>% 
+  group_by(projectIdentifier) %>% 
+  summarise(#properties_summed_fromprojects = sum(numberOfFinalProperties, na.rm = T),
+             acquisition_cost = sum(actualAmountPaid, na.rm = TRUE),
+   # transaction_cost = projectAmount - acquisition_cost,
+   # perc_acquisition_cost = acquisition_cost / projectAmount,
+   #  perc_transaction_cost = transaction_cost / projectAmount,
+  #  project_status = first(status)
+  ) %>%
+  filter(acquisition_cost>0)
+# 2934 projects
+# 1545 projects with cost > 0
 ```
 
 
@@ -388,12 +427,11 @@ This summarizes the number of properties mitigated within each county per year. 
 
 
 ```{r}
-propertysummary <- propertymit %>%
+propertysummary <- joined %>%
+  filter(!is.na(countyCode)) %>%
   group_by(state, county, countyFIP) %>%
-  mutate(state = tolower(state),
-         county = tolower(county)) %>%
   summarize(projects = n(),
-            sumproperties = sum(numberOfProperties))
+            sumproperties = sum(numberOfProperties.x))
 propertysummary # 382 rows. Total properties mitigated in each county ever
 
 propertymitjoin <- full_join(propertysummary, usacounties2, by = c("countyFIP" = "fips"))
@@ -408,7 +446,7 @@ Filter for change in land use using the propertyAction variable. In the sample f
 
 propertymit %>% 
   filter(propertyAction %in% c("Acquisition/Demolition", "Acquisition/Relocation", "Acquisition of Vacant Land")) %>% 
-  group_by(county, countyFIP) %>% 
+  group_by(state,county) %>% 
   summarise(properties = sum(numberOfProperties))
 
 ```
@@ -426,7 +464,7 @@ First method involves combining data based on a geographic ientifier that is ava
 
 Reminder, ACS data is best for characteristics of the population and Census data is best for knowing the numbers of people in a geographic area. Compare 1-year estimates with 1-year estimates and 5-year averages with 5-year data. 
 
-- I need 5-year estimates since I'm intersted in places that have less than 20,000 people. Another option for presenting ACS data for less populated areas is to show single-year estimates for large counties in Texas and then combine the remaining counties into a state “residual” by subtracting the available single-year data from the state total. Could also use PUMAS since they meet 65,000 population threshold for single-year estimates are often used as a substitute for county-level data.  
+- I need 5-year estimates since I'm interested in places that have less than 20,000 people. Another option for presenting ACS data for less populated areas is to show single-year estimates for large counties in Texas and then combine the remaining counties into a state “residual” by subtracting the available single-year data from the state total. Could also use PUMAS since they meet 65,000 population threshold for single-year estimates are often used as a substitute for county-level data.  
 - When comparing 5-year estimates, compare ACS data over time based on nonoverlapping estimates. (2007-2011 compared to 2012-2016 estimates). 5-year estimates rely on pooled data   
 - Data users should also consider changes in geographic boundaries, population controls, and inflation when analyzing trends with ACS data   
  
@@ -1028,7 +1066,7 @@ crsparticipation <- crsparticipation %>%
 
 ### Policies
 
-_This is a massive massive file that I am still trying to filter data through an API to use.__ 
+__This is a massive massive file that I am still trying to filter data through an API to use.__ 
 
 Download [here](https://www.fema.gov/openfema-data-page/fima-nfip-redacted-policies-v1)
 
@@ -1079,6 +1117,86 @@ CRSsummary <- claims %>%
   summarize(amountPaid = sum(amountPaid),
             amountPaid = dollar(amountPaid))
 CRSsummary
+```
+
+code source: https://github.com/Data-Science-Link/A_Flood_of_FEMA_FACTS/blob/master/Raw_Data_Processing.R 
+
+```{r eval =FALSE}
+# Creating annual version of raw.df with most important cost columns
+filter.raw.df = 
+  raw.df %>% 
+  mutate(., amountpaidonbuildingclaim = ifelse(is.na(amountpaidonbuildingclaim), 0, amountpaidonbuildingclaim)) %>%
+  mutate(., amountpaidoncontentsclaim = ifelse(is.na(amountpaidoncontentsclaim), 0, amountpaidoncontentsclaim)) %>% 
+  mutate(., amountpaidonincreasedcostofcomplianceclaim = ifelse(is.na(amountpaidonincreasedcostofcomplianceclaim), 0, amountpaidonincreasedcostofcomplianceclaim)) %>% 
+  mutate(., amountpaidtotal = 
+           amountpaidonbuildingclaim +
+           amountpaidoncontentsclaim +
+           amountpaidonincreasedcostofcomplianceclaim) %>% 
+  mutate(., floodzone = gsub('[[:digit:]]+', '', floodzone)) %>% 
+  mutate(., floodzone = ifelse(str_detect(floodzone, "A") | str_detect(floodzone, "V"), '<100_yr', floodzone)) %>% 
+  mutate(., floodzone = ifelse(str_detect(floodzone, "B"), '<500_yr', floodzone)) %>%
+  mutate(., floodzone = ifelse(str_detect(floodzone, "X"), '~500_yr', floodzone)) %>%
+  mutate(., floodzone = ifelse(str_detect(floodzone, "C"), '>500_yr', floodzone)) %>%
+  mutate(., floodzone = ifelse(str_detect(floodzone, "D"), '~100_yr', floodzone)) %>%
+  mutate(., floodzone = ifelse(floodzone == "", "Not Listed",floodzone)) %>% 
+  mutate(., floodzone = as.factor(floodzone)) %>% 
+  mutate(., state = as.factor(state)) %>% 
+  left_join(., Regions, by = 'state') %>% 
+  filter(., floodzone != "OOO") %>% 
+  filter(., !is.na(state_name), state_name != "", !is.na(yearofloss), !is.na(amountpaidtotal)) %>% 
+  group_by(., state_name, yearofloss, floodzone, region_name, division_name) %>% 
+  summarise(., amountpaidtotal = sum(amountpaidtotal)) %>% 
+  rename(., state = state_name)
+
+
+
+FIPS_County_Codes = 
+  read.csv('./data/FIPS_County_Codes.csv') %>% 
+  select(., countycode = FIPS, county_name = Name)
+
+raw.df %>% 
+  count()
+  filter(., is.na(countycode)) %>% 
+  count(.,)
+
+
+filter.raw.df.counties = 
+  raw.df %>% 
+  filter(., !is.na(countycode), countycode != '') %>% 
+  left_join(., FIPS_County_Codes, by = 'countycode') %>% 
+  filter(., !is.na(county_name), county_name != '') %>% 
+  mutate(., UID = paste(county_name, countycode, sep = '_')) %>% 
+  mutate(., amountpaidonbuildingclaim = ifelse(is.na(amountpaidonbuildingclaim), 0, amountpaidonbuildingclaim)) %>%
+  mutate(., amountpaidoncontentsclaim = ifelse(is.na(amountpaidoncontentsclaim), 0, amountpaidoncontentsclaim)) %>% 
+  mutate(., amountpaidonincreasedcostofcomplianceclaim = ifelse(is.na(amountpaidonincreasedcostofcomplianceclaim), 0, amountpaidonincreasedcostofcomplianceclaim)) %>% 
+  mutate(., amountpaidtotal = 
+           amountpaidonbuildingclaim +
+           amountpaidoncontentsclaim +
+           amountpaidonincreasedcostofcomplianceclaim) %>% 
+  mutate(., floodzone = gsub('[[:digit:]]+', '', floodzone)) %>% 
+  mutate(., floodzone = ifelse(str_detect(floodzone, "A") | str_detect(floodzone, "V"), '<100_yr', floodzone)) %>% 
+  mutate(., floodzone = ifelse(str_detect(floodzone, "B"), '<500_yr', floodzone)) %>%
+  mutate(., floodzone = ifelse(str_detect(floodzone, "X"), '~500_yr', floodzone)) %>%
+  mutate(., floodzone = ifelse(str_detect(floodzone, "C"), '>500_yr', floodzone)) %>%
+  mutate(., floodzone = ifelse(str_detect(floodzone, "D"), '~100_yr', floodzone)) %>%
+  mutate(., floodzone = ifelse(floodzone == "", "Not Listed",floodzone)) %>% 
+  mutate(., floodzone = as.factor(floodzone)) %>% 
+  mutate(., state = as.factor(state)) %>% 
+  left_join(., Regions, by = 'state') %>% 
+  filter(., floodzone != "OOO") %>% 
+  filter(., !is.na(state_name), state_name != "", !is.na(yearofloss), !is.na(amountpaidtotal)) %>% 
+  group_by(., state_name, yearofloss, floodzone, region_name, division_name, countycode, county_name, UID) %>% 
+  summarise(., amountpaidtotal = sum(amountpaidtotal)) %>% 
+  rename(., state = state_name)
+
+Accumulate_DF_Counties = 
+  filter.raw.df.counties %>% 
+  ungroup() %>% 
+  select(., UID, yearofloss, amountpaidtotal) %>% 
+  group_by(., UID) %>% 
+  mutate(., accumulated_loss = cumsum(amountpaidtotal)) %>% 
+  arrange(., UID)
+
 ```
 
 
@@ -1561,7 +1679,7 @@ summary(lm)
 
 If we add dummy variables for different years, that is one way to control for events that happened in different years. Here, 2005 is statistically significant, probably because of the large number of insurance claims that occurred from Hurricane Katrina.
 
-I also did this for recent disaster decarations due to the availability heuristic where people are more concerned about a threat that they remember more easily. 
+I also did this for recent disaster declarations due to the availability heuristic where people are more concerned about a threat that they remember more easily. 
 ```{r}
 balanced <- balanced %>%
   mutate(d2001 = ifelse(programFy == 2001, 1, 0),
