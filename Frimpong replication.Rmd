@@ -11,7 +11,7 @@ output:
 
 2020 paper on insurance claims and CRS participation
 
-2021 paper on Hazard Mitigation Activities (Federally funded mitgation projects) and CRS participation.
+2021 paper on Hazard Mitigation Activities (Federally funded mitigation projects) and CRS participation.
 
 # Data Wrangling
 
@@ -126,7 +126,7 @@ data
 > NOTE: variable names for `fimanfipclaims` and `FimaNfipPolicies` are DIFFERENT!\
 > state is propertyState depending on dataset.
 
-```{r eval=FALSe}
+```{r eval=FALSE}
 library(rfema)
 
 param <- valid_parameters(data_set = "fimanfipclaims")
@@ -1284,11 +1284,11 @@ Download [here](https://www.fema.gov/openfema-data-page/fima-nfip-redacted-polic
 
 FEMA's NFIP insurance damage claims dataset. All insurance claims, property type, location, CRS level, and history of repetitive losses is included in this dataset.
 
-```{r}
-claims <- read_xlsx("C://Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Project Data/FimaNfipClaims.xlsx") %>% filter(state %in% c("AL", "MS"))
+```{r eval=FALSE}
+#claims <- read_xlsx("C://Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Project Data/FimaNfipClaims.xlsx") %>% filter(state %in% c("AL", "MS"))
 #54,655 claims for MS and AL
 
-write_csv(claims, "NFIPclaims_MSandAL.csv")
+#write_csv(claims, "NFIPclaims_MSandAL.csv")
 
 claims <- read_csv("NFIPclaims_MSandAL.csv")
 
@@ -1454,7 +1454,7 @@ ggplot(aes(x = yearOfLoss, y = DollarsPaid)) +
 
 Assistance_PrimeAwardSummaries_2021-04-27_H02M35S54_1
 
--   downloaded last year on April 27 2021\
+-   downloaded on April 27 2021\
 -   AwardSummaries.csv was prefiltered to the 5 sample states\
 
 ```{r eval=FALSE}
@@ -1719,243 +1719,4 @@ right_join(us_counties, projects_counties, by = c("region" = "state", "subregion
   coord_map(projection = "albers", lat0 = 39, lat1 = 45) +
   scale_fill_continuous(low = "light blue", high = "dark blue")+
     theme_void()
-```
-
-# Analysis specifications
-
-## Dependent Variable
-
-## Property Damage
-
-Total property damage from floods, hurricanes, and severe thunderstorms as defined by SHELDUS. A county that experiences both floods and servere storms might result in multiple SHELDUS records and to address this, the study defines counties that had experienced property losses owing to two or three natural hazards in the same year and removed all property damage duplicates. The DV is also transformed to a logorithmic due to the heavily skewed data to the right of zero. Finally, HMGP-funded projects will not have an effect the same year they are approved so leading DVs are used to deal with the 18-24 month delay between funding and completion. - ideas from Ji & Lee's 2019 article
-
--   Rationale for using county as level of analysis: counties have authority over local disaster management in the US, counties have dedicated budgets and staff for local disaster management tasks which might not be the case for municipal governments, unincorporated areas are done through the county (Ji & Lee 2019; Kapucu and Hu, 2016). Counties are often listed as major sub-grantees that receive grants from the state and then reallocate them to local agencies and private entities for actual implementation. PLUS info for total property damage (Ji and Lee's main DV) is available at the county level. Authors also use a time lag between impact of receipts for HMGP on a reduction in property damage due to a natural hazard
-
-## Independent Variables
-
-The main independent variable is the interaction between two binary variables: First, did a county receive a hazard mitigation grant as a sub-grantee (`HMGP` = 1 if yes), and second, did a county declare a presidential disaster declaration at the time of the grant awarded (`Declaration` = 1 if yes). The interaction term estimates the HMGP impact by centering on county governments that experienced severe damage due to a natural hazard and received money to carry out mitigation projects in the area. Negative coefficient implies the county was awarded HMGP funding after a severe disaster and experienced less property damage from future natural hazards compared to other counties.
-
-Coverage (\$mil): Total amount of insurance coverage purchased from Policy data
-
-## Control Variables
-
-HMGP funding per capita () Socioeconomic (related to potential loss or harm related to disasters).
-
-**Socioeconomic variables**
-
--   Income: Median household income for a community (ACS)
-
-    -   Higher levels of poverty and racial marginalization lack financial and technical resources for pre-disaster preparedness and tend to be more vulnerable. Also may lack transportation for evacuating (Godschalk et al., 1999)\
-
--   Race: Percent of population that is non-white, below the povery line, or in the median income bracket.
-
--   Home Value: median home value for community (or county if needed), housing units at county level. *This is directly related to the amount of property damage that can occur.*
-
--   Housing units: Total number of housing units in a community (ACS)
-
--   Education: Percent college educated in a community (ACS)
-
--   Age: Median age for Census Year (2010 until 2020 comes out)
-
--   Business characteristics: Ji and Lee (2019) controlled for business characteristics, such as industry type, that impact speed of recovery. Capital intensive industries such as manufacturing can experience greater losses and be slower to resume normal functioning then labor-intensive industries. Labor intensive industries are also more likely to implement pre-disaster prepardness (van der Vegt et al., 2015).
-
-> Make a table of Descriptive Statistics for the DV, IV and Control variables (with mean, std, min, max, etc.)
-
-## Model
-
--   Fixed Effects: Ji and Lee (2019) used pooled OLS with State and Year fixed effects. State fixed effects are used because states review HMGP grant applications and distrubt migitation grants (GAO 2015). Differences in state capacity could contribute to variance in community resiliency at the county or lower level. Also controls for differences in property damage across counties within a state over time by controlling for state-level, time invariant characteristics and net of time trends for the DV. The county-level control variables are for time-varying characteristics at the county level (Ji & Lee 2019.
-
-The state fixed effects models enabled a comparison of counties within the same state, while holding state-specific factors (that is: state governments' capacities to manage and administer the HMGP process; economic, political, and institutional factors; and the influence of the latter on local disaster management) constant.
-
--   Time lag: A two year lead is applied to the DV in the main model so the number of years included in the analysis is X -2 years. If a county was adversely affected by a major disaster triggered by a natural hazard at time *t* and the mitigation project plan has been approved, it may receive the hazard mitigation grant from FEMA a year after the disaster, denoted as *t+1*. HMGP\$/capita is also at *t+1* to match time point of grant receipt. Completion of hazard mitigation projects need to occur within two years of receiving funds and is expressed as *t+3*. Property damage that occured 1 year after the grant was received is at *t+2*. Control variables are measured at same time as DV to control for their impacts on property owing to the natural hazards.
-
--   Model for Ji and Lee: Damage = Intercept + HMGP(1) + Declaration(1) + HMGPXDeclaration
-
-    -   State and year dummy variables were included for state and year controls.
-
-Robustness checks:
-
--   3 year leading variable for damage
--   county fixed effects models to check for observed and unobserved county-level characteristics
-
-Before this step, ideally the ACS data on population, education, and other demographics variables for the regression would also be merged together. The panel data set should contain information on CRS status, NFIP claims, total mitigation spending per unit of observation,and number of properties mitigated.
-
-Ideally, the type of mitigation project would also be used for long term vs short term projects (like acquistion projects vs reinforced or raised buildings).
-
-## Balancing an unbalanced panel
-
-[Good penel data resource](https://rpubs.com/phle/r_tutorial_panel_data_analysis)
-
-```{r echo=TRUE, results='hold'}
-
-panelcountyIDs <- df %>% ungroup() %>% select(state,county,countyFIP) %>% group_by(state,county,countyFIP) %>% summarise()
-
-dfungrouped <- df %>%  ungroup()  %>% select(countyFIP, programFy, projects, properties, amountPaid)
-
-dfungrouped
-
-dfungrouped %>% is.pbalanced() # Nope, not balanced
-
-# this works
-#balanced2000 <- make.pbalanced(dfungrouped,  balance.type = "fill")  %>%  filter(programFy > 2000)
-
-balanced2000 <- make.pconsecutive(dfungrouped,  balanced = TRUE) %>% 
-  filter(programFy > 2000) %>% 
-  mutate(projects = replace_na(projects, 0),
-         properties = replace_na(properties, 0),
-         amountPaid = replace_na(amountPaid, 0))  # 10,380 observations
-         
-balanced2000 %>% is.pbalanced() # TRUE, it is balanced now
-
-
-# join state and county names back
-balanced <- full_join(balanced2000, usacounties2, by = c("countyFIP" = "fips")) %>% drop_na()
-balanced
-```
-
--   Balancing adds rows for counties that did not have any claims data during a year. Now years for all counties go from 2001 to 2019 and panel is balanced (same number of observations for each county)
-
-```{r}
-ggplot(data = balanced, aes(x = programFy, y = properties)) +
- geom_col() + 
- facet_wrap(~(state))+
- # geom_smooth(method = "lm", se = F, lty = "dashed") +
-  labs(x = "Year",  y = "Number of Properties Mitigated") +
-  theme(legend.position = "bottom")
-```
-
-Based on how I have the data currently set up, it appears as if the state does not have a large effect on the amount of insurance claims.
-
-> Need to adjust claims for population size or number of policies
-
-```{r}
-statelmnaive <- lm(amountPaid ~  state, data  = balanced)
-summary(statelmnaive) # Not great. r-squared = 0.0006
-```
-
-If we pretend that the number of properties mitigated is the only variable that predicts the amount that is paid in insurance claims, then we would use the model below. The number of properties is statistically significant, but it looks like each additional mitigated property increases the insurance claims by \~\_\_\_\_\_. This is unlikely the true relationship because both variables are influenced by external factors. For example, areas that flood frequently have large amounts of insurance claims and also are attempting to mitigate more properties, both of which are influenced by the events that occur.
-
-```{r}
-naivelm2 <- lm(amountPaid ~ properties, data = df)
-summary(naivelm2)
-
-naivelm2 <- lm(amountPaid ~ properties, data = balanced)
-summary(naivelm2)
-```
-
-The amount of national flood insurance program claims appears to increase with the number of mitigated properties but one does not cause the other. This is mostly just for practice visualizing variables.
-
-```{r}
-ggplot(balanced, aes(x = properties, y = amountPaid/1000000) ) + 
-  geom_point() + 
-  geom_smooth(method = "lm", se = F) + 
-  labs(title = "Mitigated Properties and Amount Paid in NFIP Claims",
-       subtitle = "PRACTICE GRAPH CODE, 2000 - 2019",
-       x = "Number of Mitigated Properties",
-       y = "Insurance Claims (Millions of $)", 
-       caption = "FEMA open datasets")
-```
-
-If we have the number of properties mitigated within each state as independent variables, the R-squared increases but is still very low. This model does not account for projects and damage that occured over time.
-
-```{r}
-lm <- lm(amountPaid ~ properties + state, data = df)
-summary(lm) 
-lm <- lm(amountPaid ~ properties + state, data = balanced)
-summary(lm)
-```
-
-### Adding Dummies
-
-If we add dummy variables for different years, that is one way to control for events that happened in different years. Here, 2005 is statistically significant, probably because of the large number of insurance claims that occurred from Hurricane Katrina.
-
-I also did this for recent disaster declarations due to the availability heuristic where people are more concerned about a threat that they remember more easily.
-
-```{r}
-balanced <- balanced %>%
-  mutate(d2001 = ifelse(programFy == 2001, 1, 0),
-         d2005 = ifelse(programFy == 2005, 1, 0),
-         d2006 = ifelse(programFy ==2006, 1, 0),
-         d2010 = ifelse(programFy==2010, 1, 0),
-         d2016 = ifelse(programFy==2016, 1, 0),
-         d2018 = ifelse(programFy == 2018, 1, 0))
-
-#Let's now simply pool the data together and use standard OLS
-lm <- lm(amountPaid ~ properties + state +  d2001 + d2005 + d2006 + d2010 + d2016 + d2018, data = balanced)
-summary(lm)
-
-```
-
-## Panel Data Methods
-
--   `pdata.frame()` comes from `plm()` package
-
-### Fixed Effects
-
-Example on FEMA buyouts [github code](https://github.com/katesnelson/FEMA_buyouts/blob/main/FEMA%20models.R)
-
-```{r }
-# set your unit and and time variables when working with panel data  a
-plm.countyyear = pdata.frame(balanced, index = c("countyFIP", "programFy"))
-
-plm.stateyear = pdata.frame(balanced, index = c("state", "programFy"))
-
-#fixed effects with year dummies
-#fem1b <- plm(amountPaid ~ properties + projects + d2001 + d2005 + d2006 + d2010 + d2016 + d2018, data = plm.stateyear,  model = "within")
-# could treat fyDeclared as a factor too. 
-
-#summary(fem1b)
-```
-
-```{r}
-#First we will calculate the properties mitigated for each state (could do county too)
-balanced <- balanced %>%
-  group_by(state) %>%
-  mutate(averageProperties = mean(properties)) %>%
-  ungroup()
-```
-
-This accounts for the time variable already and compares counties against themselves over time. Downside is you cannot see coefficients.
-
-```{r}
-#twoways approach; no year dummies ( accounts for them already)
-fem1 <- plm(amountPaid ~ properties , data=plm.countyyear, model = "within", effect = "twoways")
-summary(fem1)
-
-```
-
-```{r eval=FALSE}
-### LSDV approach
-
-fem1b3=lm(amountPaid ~  factor(state) + as.factor(programFy) + properties + projects,
-             data = balanced2000)
-summary(fem1b3)
-```
-
-```{r eval=FALSE}
-### Between Estimate
-
-model1 <- plm(amountPaid ~ properties+ projects, data = plm.countyyear, model = "between")
-summary(model1)
-```
-
-```{r eval=FALSE}
-### First Difference
-
-mod4 = plm(amountPaid ~ properties, data=plm.countyyear, model="fd")
-summary(mod4)
-
-#now if we want cluster-robust standard errors in PLM we  can use their following
-coeftest(mod4,vcov=vcovHC(mod4,cluster="group"))
-```
-
-### H2
-
-```{r}
-CRSsummary%>% group_by(countyCode) %>%
-  summarize(amountPaid = sum(as.numeric(amountPaid)) )
-
-data <- full_join(CRSsummary, disasters_sum, by = c("countyCode" = "countyFIP")) 
-
-lm(data$`Current Class` ~ Declarations, data=data) %>% summary()
 ```
