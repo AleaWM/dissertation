@@ -7,7 +7,7 @@ output: html_document
 
 <!---Figure out Township v City / Chicago township codes. Chicago Townships are 70-77 but pins don't start with a number above 33. --->
 
-```{r setup, message = FALSE}
+```{r setup, message = FALSE, warning=FALSE}
 knitr::opts_chunk$set(error = TRUE, echo = TRUE, warning = FALSE, message = FALSE)
 
 
@@ -32,7 +32,7 @@ library(glue)
 
 
 # Create the DB connection with the default name expected by PTAXSIM functions
-ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2021.0.4.db")
+ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2022.0.0.db")
 
 # has all potential property classes for pins
 # downloaded from CCAO gitlab website
@@ -60,9 +60,9 @@ muni_shp <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/poli
 SFHA is the land area covered by the floodwaters of the “base flood” on flood insurance rate maps (FIRMs). The “base flood” is the flood having a 1% chance of being equaled or exceeded in any given year. This is the regulatory standard, also referred to as the “100-year flood”, and the SFHA is thus also referred to as the “100-year flood zone”. The base flood is the national standard used by the NFIP and all federal agencies for the purposes of requiring the purchase of flood insurance and regulating new development. Base Flood Elevation (BFE), which is the computed elevation to which floodwater is anticipated to rise during the base flood, is typically shown on FIRMs.
 
 
+> FEMA FIRMs only include coastal and riverine flooding. They do NOT include Urban Flooding. Urban flooding is probably the one I am most interested in. 
 
-
-```{r pull-nbh-data}
+```{r pull-nbh-data, eval=FALSE}
 base_url <- "https://datacatalog.cookcountyil.gov/resource/tx2p-k2g9.json"
 
 nbh_pins <- GET(
@@ -84,9 +84,29 @@ nbh_pins <- GET(
 
 nbh_pins <- fromJSON(rawToChar(nbh_pins$content))
 
+
+nbh_pins_2022 <- GET(
+  base_url,
+  query = list(
+    year = 2022,
+   #  env_flood_fema_sfha = TRUE,
+    `$select` = paste0(c("pin", "pin10", 
+                         "class", "year",
+                         "township_code", "township_name",
+                         "nbhd_code", "census_puma_geoid",                                             "env_flood_fema_sfha","env_flood_fema_data_year",
+                         "env_flood_fs_risk_direction", "env_flood_fs_factor",
+                         "lat", "lon", 
+                         "triad_name" ),
+   collapse = ","),
+   `$limit` = 500000000L
+  )
+)
+
+nbh_pins_2022 <- fromJSON(rawToChar(nbh_pins_2022$content))
 ```
 
-Cook county assessor's office added FEMA floodplain data to its assesment models in 2019 [link)](https://www.cookcountyassessor.com/news/floodplain-status-now-included-cook-county-property-assessments)
+Cook county assessor's office added FEMA floodplain data to its assessment models in 2019 [link](https://www.cookcountyassessor.com/news/floodplain-status-now-included-cook-county-property-assessments)
+
 
 
 
@@ -96,9 +116,9 @@ flood_pins <- GET(
   base_url,
   query = list(
      env_flood_fema_sfha = TRUE,
-    `$select` = paste0(c("pin", "pin10", 
-                         "class", "year",
-                       #  "township_code", "township_name",
+    `$select` = paste0(c("year", "pin", "pin10", 
+                         "class", 
+                        "township_code", "township_name",
                          "nbhd_code", "census_puma_geoid",
                          "lat", "lon", 
                          #"triad_name" ,
@@ -114,19 +134,17 @@ flood_pins <- GET(
 flood_pins2 <- fromJSON(rawToChar(flood_pins$content))$pin
 #flood_pins2 %>% unique() # 29,000 + unique pins?
 
-# not the variable name
-#fema_year <- fromJSON(rawToChar(flood_pins$content))$flood_fema_data_year
-
-# fema_year <- fromJSON(rawToChar(flood_pins$content))$env_flood_fema_data_year
+fema_year <- fromJSON(rawToChar(flood_pins$content))$env_flood_fema_data_year
 # only has 2021 as a year
+table(fema_year)
 
-# tax_year <- fromJSON(rawToChar(parcel_universe$content))$year
-# table(tax_year) # only has 2021 and 2022
+tax_year <-fromJSON(rawToChar(flood_pins$content))$year
 
-#riskdirection <- fromJSON(rawToChar(flood_pins$content))$env_flood_fs_risk_direction
+table(tax_year) # only has 2021 and 2022
 
-# flood_pins2 <- cbind(flood_pins2, fema_year) %>% as_tibble()
-#area_taxcodes <- fromJSON(rawToChar(flood_pins$content))$township_code
+riskdirection <- fromJSON(rawToChar(flood_pins$content))$env_flood_fs_risk_direction
+
+table(riskdirection)
 
 # pin data for all years if in SFHA
 flood_pins_ptax <- DBI::dbGetQuery(
@@ -143,7 +161,11 @@ write_csv(flood_pins_ptax, "flood_pins_ptax.csv")
 ```
 
 
-```{r}
+> Start with PINs in SFHAs that have existed for all years in PTAXSIM. Then examine the creation of new PINs over time. 
+
+Get all PINs in Cook County from tax year 2021 (dataframe named `pins_2021` and uses PTAXSIM `PIN` table in database): 
+
+```{r eval=FALSE}
 pins_2021 <- DBI::dbGetQuery(
   ptaxsim_db_conn,
   glue_sql(
@@ -207,6 +229,8 @@ cpi <- DBI::dbGetQuery(
 #write_csv(cpi, "cpi.csv")
 ```
 
+# PINs and Parcels in Flood Plains (Based on PINs that existed in 2021)
+
 - 29,545 unique pins at some point in time  
 
 - 23,262 unique parcels in cook county at some point in time   
@@ -214,8 +238,23 @@ cpi <- DBI::dbGetQuery(
 ```{r}
 flood_pins_ptax <- read_csv("flood_pins_ptax.csv")
 
-flood_pins_ptax %>%  group_by(year) %>% summarize(count = n()) %>% arrange(count)
+flood_pins_ptax %>%  group_by(year) %>% summarize(count = n()) %>% arrange(year) %>%  ggplot()  + geom_line(aes(x=year, y = count)) +
+  scale_y_continuous(limits = c(20000,30000), name = "PIN Count in SFHA") + theme_classic()
+```
 
+Examine PINs that existed every year:
+
+```{r}
+flood_pins_panel <- flood_pins_ptax %>% 
+  group_by(pin) %>% 
+  mutate(count = n()) %>% 
+  filter(count > 15)
+
+flood_pins_panel %>% group_by(year) %>% summarize(count = n()) %>% arrange(year)
+```
+
+
+```{r eval=FALSE}
 unique_pins_in_fz <- flood_pins_ptax %>%  group_by(pin) %>% distinct(pin)
 
 
@@ -227,16 +266,75 @@ unique_parcels_in_fz <- flood_pins_ptax %>%
 ## 23,262 unique parcels in cook county at some point in time
 
 table(unique_parcels_in_fz$year)
+```
 
-# flood_pins_ptax %>% arrange(pin) %>% group_by(tax_code_num) %>% summarize(count = n()) %>% arrange(count)
 
 
+## Unique Blocks in Flood Zones
+
+Since PINs can be divided over time, tracking a PIN's value over time is difficult. 
+One attempt at dealing with this problem is to use the first 7 digits of the PIN to identify the block that the PIN is located in. Blocks (and the amount of land within the block) shouldn't change over time, and all PINs within that block begin with the same digits.
+
+```{r summedValueInBlocks, eval=FALSE}
+
+# summed values for 2021 only:
+# mostly done to get unique blocks as a vector to go into the tax_bill() command in next chunk
+blocks <- flood_pins_ptax %>% 
+  filter(year == 2021) %>%
+  mutate(major_class = str_sub(pin, 1,2),
+    block_num = str_sub(pin, 1,7)) %>%
+  group_by(block_num) %>%
+  summarize(
+    pincount = n(),
+    av_mailed = sum(av_mailed),
+    av_certified = sum(av_certified),
+    av_board = sum(av_board),
+    av_clerk = sum(av_clerk),
+    class = first(class),
+    major_class = first(major_class)
+  )
+blocks_strings <- blocks$block_num
+
+blocks
 
 ```
 
-    
+> 3,460 Unique land Blocks have at least 1 PIN in the SFHA.(based on 2021 PINs with SFHA == 1)
 
-## Map of PIN Count per neighborhood
+
+### Pull bills for all pins within Blocks
+
+Can pull taxbill data for all PINs that begin with those 7 digits to measure changes at the Block level over time:
+
+```{r billsforblockPINs, eval=FALSE}
+
+# pin data for all years if in SFHA
+flood_pins_ptax <- DBI::dbGetQuery(
+  ptaxsim_db_conn,
+  glue_sql(
+  "SELECT*
+  FROM pin
+  WHERE substr(pin,1,7) IN ({blocks_strings*})
+  ",
+  .con = ptaxsim_db_conn
+))
+
+write_csv(flood_pins_ptax, "pins_in_Blocks_2006-2022.csv")
+```
+
+```{r}
+flood_pins_ptax <- read_csv("pins_in_Blocks_2006-2022.csv")
+
+
+flood_pins_ptax %>%  
+  group_by(year) %>% 
+  summarize(count = n())
+
+```
+
+
+
+## Per Neighborhood
 
 ```{r}
 NBHs <- read_sf("https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.geojson")
@@ -271,48 +369,39 @@ flood_pins_ptax %>%
 ## Per Township 
 
 ```{r}
-township_shp <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/politicalBoundary/MapServer/3/query?outFields=*&where=1%3D1&f=geojson") %>%
-  mutate(name = str_to_title(NAME))
+township_shp <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/politicalBoundary/MapServer/3/query?outFields=*&where=1%3D1&f=geojson")
 
-table(township_shp$name)
-table(nbh_pins$township_name)
-
-township_shp <- township_shp %>% 
-  mutate(name = case_when(
+township_shp <-  township_shp  %>%
+  mutate(name = str_to_title(NAME)) %>%
+  mutate(name = case_when( 
     name == "North" ~ "North Chicago",
     name == "South" ~ "South Chicago",
     name == "West" ~ "West Chicago",
-    name == "Cicero" ~ "Cicero",
-    name == "Oak Park" ~ "Oak Park",
-    name == "Berwyn" ~ "Berwyn",
-    .default = as.character(name)
-  ))
+    .default = as.character(name)) 
+  )
 
-flood_pins_ptax %>% 
-  filter(year == 2021) %>%
+  
+```
+
+
+```{r}
+#table(township_shp$name)
+#table(nbh_pins$township_name)
+
+
+pins_2021 %>% 
+  filter(SHFA == TRUE & year == 2021) %>%
   left_join(nbh_pins, by = "pin") %>%
    group_by(township_name) %>% 
     summarize(count = n())
 
 flood_pins_ptax %>% 
-  filter(year == 2021) %>%
-  #   mutate(township_name = case_when(
-  #   township_name == "North" ~ "North Chicago",
-  #   township_name == "South" ~ "South Chicago",
-  #   township_name == "West" ~ "West Chicago",
-  #   township_name == "Cicero" ~ "Cicero",
-  #   township_name == "Oak Park" ~ "Oak Park",
-  #   township_name == "Berwyn" ~ "Berwyn",
-  #   .default = as.character(township_name)
-  # )) %>%
+  filter(year == 2020) %>%
   left_join(nbh_pins, by = "pin") %>%
    group_by(township_name) %>% 
     summarize(count = n()) %>% 
-  full_join(township_shp, b = c( "township_name" = "name") ) %>%
- # full_join(township_shp, by = c("nbhd_code" = "town_nbhd")) %>% 
+  full_join(township_shp, by = c( "township_name" = "name") ) %>%
   arrange(-count) %>%
-  
- # full_join(nbh_shp, by = c("agency_name" = "AGENCY_DESC")) %>%
   ggplot(aes(fill = count)) + 
   geom_sf(aes(geometry = geometry), color = "black") + 
   labs(title = "Count of PINs per township in SFHA", 
@@ -391,7 +480,7 @@ flood_pins_ptax %>%
 
 class_change <- flood_pins_ptax %>% 
   pivot_wider(id_cols = c(pin), names_from = "year", values_from =  "class") %>%
-  mutate(change = as.numeric(`2021`)-as.numeric(`2006`)) %>% 
+  mutate(change = as.numeric(`2021`)-as.numeric( `2006`)) %>% 
   filter(change == 1) %>%
   select(pin)
 
@@ -416,11 +505,46 @@ major_class_change <- flood_pins_ptax %>%
 ```
 
 
-```{r}
-years = NULL
-years$year = 2008:2021
+```{r eval=FALSE}
+flood_taxbills <- tax_bill(2008:2022, unique_pins_in_fz$pin, simplify = FALSE)
 
-flood_taxbills <- tax_bill(2008:2021, unique_pins_in_fz$pin, simplify = FALSE)
+grouped_bills_pins <- flood_taxbills %>% #left_join(class_dict, by = c("class" = "class_code")) %>% # add major property types to pin data
+  mutate(block_num = str_sub(pin, 1,7)) %>%
+  group_by(block_num, pin, year) %>%
+  summarize(taxing_agencies = n(),
+            av = first(av),
+            eav=first(eav),
+            class = first(class),
+            final_tax_to_dist = sum(final_tax_to_dist),
+            final_tax_to_tif = sum(final_tax_to_tif),
+            tax_amt_exe = sum(tax_amt_exe), # revenue lost due to exemptions
+            tax_amt_pre_exe = sum(tax_amt_pre_exe), # total rev before all exemptions
+            tax_amt_post_exe = sum(tax_amt_post_exe), # total rev after all exemptions
+        rpm_tif_to_cps = sum(rpm_tif_to_cps), # not used
+        rpm_tif_to_rpm = sum(rpm_tif_to_rpm), # not used
+        rpm_tif_to_dist = sum(rpm_tif_to_dist), # not used
+        tif_share = mean(tif_share), # not used
+  ) %>%
+  mutate(major_class = str_sub(class, 1,1),
+         major_class_fct = case_when(
+           major_class == '0' ~ "0 & 1 - Vacant and Exempt",
+           major_class == '1' ~ "0 & 1 - Vacant and Exempt",
+           major_class == '2' ~ "2 - Residential",
+           major_class == '3' ~ "3 & 5 - Commercial",
+           major_class == '5' ~ "3 & 5 - Commercial",
+           major_class == '6' ~ "6, 7, 8 - Incentive",
+           major_class == '7' ~ "6, 7, 8 - Incentive",
+           major_class == '8' ~ "6, 7, 8 - Incentive",
+           TRUE ~ "Other"
+         ))
+
+
+write_csv(grouped_bills_pins, "flood_taxbills_pins_in_blocks.csv")
+```
+
+
+```{r}
+flood_taxbills <- read_csv("flood_taxbills_pins_in_blocks.csv")
 
 grouped_bills <- flood_taxbills %>% #left_join(class_dict, by = c("class" = "class_code")) %>% # add major property types to pin data
   group_by(pin, year) %>%
@@ -452,18 +576,22 @@ grouped_bills <- flood_taxbills %>% #left_join(class_dict, by = c("class" = "cla
          ))
 
 grouped_bills <- grouped_bills %>% 
-  mutate(township = str_sub(pin, 1, 2)) %>%
-  filter(major_class %in% c(0, 1, 2, 3, 4, 5, 9) & major_class_fct != "Other")
+  mutate(township = str_sub(pin, 1, 2)) # %>%
+ # filter(major_class %in% c(0, 1, 2, 3, 4, 5, 9) & major_class_fct != "Other")
 
 table(grouped_bills$township)
+## Chicago Townships are not in the 70's like the 
 
-twnshp_codes<-read_csv("township_codes.csv")
-
-grouped_bills <- grouped_bills %>% mutate(township = as.numeric(str_sub(pin,1, 2)))
-
+twnshp_codes<-read_csv("township_codes.csv") %>% mutate(township_code = as.character(township_code))
 
 
-grouped_bills <- grouped_bills %>% left_join(twnshp_codes, by = c("township" = "township_code"))
+grouped_bills <- grouped_bills %>% 
+  left_join(twnshp_codes, by = c("township" = "township_code"))
+
+table(grouped_bills$township)
+table(grouped_bills$township_name)
+
+
 
 ```
 
@@ -502,6 +630,7 @@ indexed_munis %>%
 ### Assessed Value over Time
 
 ```{r av-graphs}
+grouped_bills grouped_bills_pins
 
 grouped_bills %>% 
   group_by(year) %>%
