@@ -341,7 +341,7 @@ block_sums <-  flood_pins_ptax %>%
 
 ## Per Neighborhood
 
-```{r eval = FALSE}
+```{r eval = FALSE, code.fold=TRUE}
 NBHs <- read_sf("https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.geojson")
 
 flood_pins_ptax %>% 
@@ -395,13 +395,13 @@ township_shp <-  township_shp  %>%
 #table(nbh_pins$township_name)
 
 flood_pins_ptax %>%
-  filter(year == 2021 & SFHA = TRUE) %>%
+  filter(year == 2021 & SFHA == 1) %>%
   left_join(nbh_pins, by = "pin") %>%
    group_by(township_name) %>% 
     summarize(count = n())
 
 flood_pins_ptax %>% 
-  filter(year == 2020 & SFHA ==1) %>%
+  filter(year == 2020 & SFHA == 1) %>%
   left_join(nbh_pins, by = "pin") %>%
    group_by(township_name) %>% 
     summarize(count = n()) %>% 
@@ -459,9 +459,7 @@ ggplot(aes(fill = count)) +
   theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
   scale_fill_steps2(
     high = "darkblue", low = "black",
-  #  breaks = breaks_sd,  # tried to do breaks based on standard deviation but map does that in an easier way by setting the midpoint.
   na.value = "white",
-  #  nice.breaks = FALSE,
     show.limits=TRUE,
     name = "Count",
   )
@@ -543,54 +541,8 @@ write_csv(grouped_bills_pins, "flood_taxbills_pins_in_blocks.csv")
 ```
 
 ```{r}
-flood_taxbills <- read_csv("flood_taxbills_pins_in_blocks.csv")
-
-grouped_bills <- flood_taxbills %>% #left_join(class_dict, by = c("class" = "class_code")) %>% # add major property types to pin data
-  group_by(pin, year) %>%
-  summarize(taxing_agencies = n(),
-            av = first(av),
-            eav=first(eav),
-            class = first(class),
-            final_tax_to_dist = sum(final_tax_to_dist),
-            final_tax_to_tif = sum(final_tax_to_tif),
-            tax_amt_exe = sum(tax_amt_exe), # revenue lost due to exemptions
-            tax_amt_pre_exe = sum(tax_amt_pre_exe), # total rev before all exemptions
-            tax_amt_post_exe = sum(tax_amt_post_exe), # total rev after all exemptions
-        rpm_tif_to_cps = sum(rpm_tif_to_cps), # not used
-        rpm_tif_to_rpm = sum(rpm_tif_to_rpm), # not used
-        rpm_tif_to_dist = sum(rpm_tif_to_dist), # not used
-        tif_share = mean(tif_share), # not used
-  ) %>%
-  mutate(major_class = str_sub(class, 1,1),
-         major_class_fct = case_when(
-           major_class == '0' ~ "0 & 1 - Vacant and Exempt",
-           major_class == '1' ~ "0 & 1 - Vacant and Exempt",
-           major_class == '2' ~ "2 - Residential",
-           major_class == '3' ~ "3 & 5 - Commercial",
-           major_class == '5' ~ "3 & 5 - Commercial",
-           major_class == '6' ~ "6, 7, 8 - Incentive",
-           major_class == '7' ~ "6, 7, 8 - Incentive",
-           major_class == '8' ~ "6, 7, 8 - Incentive",
-           TRUE ~ "Other"
-         ))
-
-grouped_bills <- grouped_bills %>% 
-  mutate(township = str_sub(pin, 1, 2)) # %>%
- # filter(major_class %in% c(0, 1, 2, 3, 4, 5, 9) & major_class_fct != "Other")
-
-table(grouped_bills$township)
-## Chicago Townships are not in the 70's like the 
-
-twnshp_codes<-read_csv("township_codes.csv") %>% mutate(township_code = as.character(township_code))
-
-
-grouped_bills <- grouped_bills %>% 
-  left_join(twnshp_codes, by = c("township" = "township_code"))
-
-table(grouped_bills$township)
-table(grouped_bills$township_name)
-
-
+twnshp_codes <- read_csv("township_codes.csv") %>% 
+  mutate(township_code = as.character(township_code))
 
 ```
 
@@ -619,8 +571,7 @@ indexed_munis %>%
   ggplot(aes(x=year, y = levy_idx, group = agency_name, label = agency_name, color = as.factor(home_rule_ind))) + 
     geom_line(alpha=.5, linetype = "dashed") +
     geom_text(data = endpoints, aes(x = year, y = levy_idx, label = agency_name), size = 2, vjust=-1.5, check_overlap = TRUE)+
-
-  geom_point() + 
+  #geom_point() + 
   theme_classic()+
   labs(title = "For comparison: Municipalities' Total Final Levy Indexed to 2006")
 ```
@@ -628,84 +579,34 @@ indexed_munis %>%
 ### Assessed Value over Time
 
 ```{r av-graphs}
-grouped_bills grouped_bills_pins
-
-grouped_bills %>% 
+#grouped_bills %>% 
+block_sums %>%
   group_by(year) %>%
   summarize(pins_per_year = n(),
-            av = sum(av),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year,
+            av = sum(av_clerk),
+           # eav = sum(eav),
+           # eav_per_pin = eav/pins_per_year,
             av_per_pin = av/pins_per_year) %>%
   ggplot() + 
-  geom_line(aes(x = year, y = eav_per_pin)) +
   geom_line(aes(x = year, y = av_per_pin
                ), color = "blue")+
-  labs(title = "EAV and AV per PIN")
+  labs(title = "AV per PIN")
 
-
-grouped_bills %>% 
-  group_by(year, major_class_fct) %>%
+block_sums %>%
+  group_by(year) %>%
   summarize(pins_per_year = n(),
-            av = sum(av),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year,
-            av_per_pin = av/pins_per_year) %>%
+            av = sum(av_clerk)) %>%
   ggplot() + 
- # geom_line(aes(x = year, y = eav_per_pin, group = major_class_fct, color = major_class_fct) )+
-  geom_line(aes(x = year, y = av_per_pin, group = major_class_fct, color = major_class_fct) )
+  geom_line(aes(x = year, y = av
+               ), color = "blue")+
+  labs(title = "Total AV in Block (all PINs with shared 7-digits)")
 
 
-grouped_bills %>% 
-  group_by(year, major_class_fct) %>%
-  summarize(pins_per_year = n(),
-            av = sum(av),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year,
-            av_per_pin = av/pins_per_year) %>%
-  ggplot() + 
-  geom_line(aes(x = year, y = av, group = major_class_fct, color = major_class_fct) )
- # geom_line(aes(x = year, y = eav, group = major_class_fct, color = major_class_fct) )
-
-
-grouped_bills %>% 
-  filter(year %in% c(2016, 2017, 2018, 2019, 2020, 2021)) %>%
-  group_by(year, major_class_fct) %>%
-  summarize(pins_per_year = n(),
-            av = sum(av),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year,
-            av_per_pin = av/pins_per_year) %>%
-  ggplot() + 
-  geom_line(aes(x = year, y = av, group = major_class_fct, color = major_class_fct) ) + 
-  labs(title = "Potential Policy Change in 2018?", subtitle="Assessor Office began using flood risk in assessments?" )
-
-
-grouped_bills %>% 
-  filter(year %in% c(2016, 2017, 2018, 2019, 2020, 2021)) %>%
-  group_by(year, major_class_fct) %>%
-  summarize(pins_per_year = n(),
-            av = sum(av),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year,
-            av_per_pin = av/pins_per_year) %>%
-  ggplot() + 
-  geom_line(aes(x = year, y = av_per_pin, group = major_class_fct, color = major_class_fct) ) + 
-  labs(title = "Potential Policy Change in 2018?", subtitle="Assessor Office began using flood risk in assessments?" )
-
-
-grouped_bills %>% 
-  group_by(year, major_class_fct) %>%
-  summarize(pins_per_year = n(),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year) %>%
-  ggplot() + geom_line(aes(x = year, y = pins_per_year, group = major_class_fct, color = major_class_fct) )
 
 ```
 
-```{r floodpin-graphs-av}
-
-flood_pins_ptax<-flood_pins_ptax %>% 
+```{r}
+flood_pins_ptax <- flood_pins_ptax %>% 
     mutate(major_class = str_sub(class, 1,1),
          major_class_fct = case_when(
            major_class == '0' ~ "0 & 1 - Vacant and Exempt",
@@ -718,17 +619,138 @@ flood_pins_ptax<-flood_pins_ptax %>%
            major_class == '8' ~ "6, 7, 8 - Incentive",
            TRUE ~ "Other"
          ))
-  
 
-flood_pins_ptax %>%  group_by(year) %>%
+
+flood_pins_ptax %>% 
+  group_by(year) %>%
+  summarize(pins_per_year = n(),
+            av = sum(av_clerk)) %>%
+  mutate( av_per_pin = av/pins_per_year) %>%
+  ggplot() + 
+  geom_line(aes(x = year, y = av_per_pin )) + 
+  labs(title = "AV per PIN", subtitle = "All PINs within Blocks that had SFHA PIN")
+
+flood_pins_ptax %>% 
+ filter(SFHA == 1) %>%
+  group_by(year) %>%
+  summarize(pins_per_year = n(),
+            av = sum(av_clerk)) %>%
+  mutate( av_per_pin = av/pins_per_year) %>%
+  ggplot() + 
+  geom_line(aes(x = year, y = av_per_pin ) ) +  
+  labs(title = "SFHA PINs only (based on 2021 PIN existance)")
+
+
+flood_pins_ptax %>% 
+  filter(SFHA == 1) %>%
+  group_by(year) %>%
+  summarize(pins_per_year = n(),
+            av = sum(av_clerk)) %>%
+  ggplot() + 
+  geom_line(aes(x = year, y = av) ) + 
+  labs(title = "Summed AV for SFHA PINs")
+
+
+```
+
+```{r}
+flood_pins_ptax %>% 
+
+  filter(SFHA == 1)%>%
+
+  group_by(year, major_class_fct) %>%
+
+  summarize(pins_per_year = n(),
+
+            av_mailed = sum(av_mailed),
+
+            av_clerk = sum(av_clerk)) %>%
+
+  mutate(mailed_per_pin = av_mailed/pins_per_year,
+
+            clerk_per_pin = av_clerk / pins_per_year) %>%
+
+  ggplot() + 
+
+ geom_line(aes(x = year, y = mailed_per_pin, group = major_class_fct, color = major_class_fct) )
+
+
+
+flood_pins_ptax %>% 
+
+  filter(SFHA == 1)%>%
+
+  group_by(year, major_class_fct) %>%
+
+  summarize(pins_per_year = n(),
+
+            av_mailed = sum(av_mailed),
+
+            av_clerk = sum(av_clerk)) %>%
+
+  mutate(mailed_per_pin = av_mailed/pins_per_year,
+
+            clerk_per_pin = av_clerk / pins_per_year) %>%
+
+  ggplot() + 
+
+ geom_line(aes(x = year, y = clerk_per_pin, group = major_class_fct, color = major_class_fct) )
+```
+
+```{r }
+flood_pins_ptax %>% 
+  filter(SFHA==1) %>%
+  group_by(year, major_class_fct) %>%
+  summarize(pins_per_year = n(),
+            av = sum(av_mailed)) %>% mutate(
+            av_per_pin = av/pins_per_year) %>%
+  ggplot() + 
+  geom_line(aes(x = year, y = av, group = major_class_fct, color = major_class_fct) )
+
+
+flood_pins_ptax %>% 
+  filter(SFHA==1) %>%
+  filter(year %in% c(2016, 2017, 2018, 2019, 2020, 2021)) %>%
+  group_by(year, major_class_fct) %>%
+  summarize(pins_per_year = n(),
+            av = sum(av_clerk)) %>% 
+  mutate(av_per_pin = av/pins_per_year) %>%
+  ggplot() + 
+  geom_line(aes(x = year, y = av, group = major_class_fct, color = major_class_fct) ) + 
+  labs(title = "Potential Policy Change in 2018?", subtitle="Assessor Office began using flood risk in assessments?" )
+
+
+flood_pins_ptax %>% 
+  filter(SFHA==1 & major_class == 2) %>%
+  filter(year %in% c(2016, 2017, 2018, 2019, 2020, 2021)) %>%
+  group_by(year, major_class_fct) %>%
+  summarize(pins_per_year = n(),
+            av = sum(av_clerk)) %>% 
+  mutate(av_per_pin = av/pins_per_year) %>%
+  ggplot() + 
+  geom_line(aes(x = year, y = av_per_pin, group = major_class_fct, color = major_class_fct) ) + 
+  labs(title = "Potential Policy Change in 2018?", subtitle="Assessor Office began using flood risk in assessments?" )
+
+
+flood_pins_ptax %>% 
+  filter(SFHA==1) %>%
+  group_by(year, major_class_fct) %>%
+  summarize(pins_per_year = n()) %>%
+  ggplot() + geom_line(aes(x = year, y = pins_per_year, group = major_class_fct, color = major_class_fct) )
+
+```
+
+```{r floodpin-graphs-av}
+
+
+flood_pins_ptax %>%
+  filter(SFHA == 1)%>%
+  group_by(year) %>%
   summarize(pins_per_year = n(),
             av_mailed = sum(av_mailed),
             av_certified = sum(av_certified),
             av_board = sum(av_board),
-            av_clerk = sum(av_clerk),
-          #  eav = sum(eav),
-           # eav_per_pin = eav/pins_per_year,
-            #av_per_pin = av/pins_per_year
+            av_clerk = sum(av_clerk)
           ) %>%
   ggplot() + 
   geom_line(aes(x = year, y = av_mailed)) +
@@ -742,81 +764,87 @@ flood_pins_ptax %>%  group_by(year) %>%
 
 
 flood_pins_ptax %>% 
-  filter(major_class == 2) %>%
-  group_by(year, major_class_fct) %>%
+    filter(SFHA == 1)%>%
+
+ # filter(major_class == 2) %>%
+  group_by(year, major_class) %>%
   summarize(pins_per_year = n(),
             av_mailed = sum(av_mailed),
-            av_clerk = sum(av_clerk),
+            av_clerk = sum(av_clerk)) %>% 
+  mutate(
             mailed_per_pin = av_mailed/pins_per_year,
             clerk_per_pin = av_clerk / pins_per_year) %>%
+    filter(clerk_per_pin < 200000) %>%
+
   ggplot() + 
- geom_line(aes(x = year, y = mailed_per_pin, group = major_class_fct, color = major_class_fct) )+
-   geom_line(aes(x = year, y = clerk_per_pin), color = "blue")
- # geom_line(aes(x = year, y = av_per_pin) )
+ geom_line(aes(x = year, y = clerk_per_pin, group = major_class, color = major_class) )
+
+
+
+flood_pins_ptax %>% 
+  filter(SFHA == 1)%>%
+  group_by(year, major_class) %>%
+  summarize(pins_per_year = n(),
+            av_mailed = sum(av_mailed),
+            av_clerk = sum(av_clerk)) %>%
+  mutate(mailed_per_pin = av_mailed/pins_per_year,
+            clerk_per_pin = av_clerk / pins_per_year) %>%
+  filter(mailed_per_pin < 200000) %>%
+  ggplot() + 
+ geom_line(aes(x = year, y = mailed_per_pin, group = major_class, color = major_class) )
+
 
 
 ```
 
 ```{r eav-graphs, eval=FALSE, include = FALSE}
 
-grouped_bills %>% 
-  group_by(year) %>%
+flood_pins_ptax %>% 
+  filter(major_class %in% c(1,2)) %>%
+  group_by(year, major_class) %>%
   summarize(pins_per_year = n(),
-            av = sum(av),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year,
-            av_per_pin = av/pins_per_year) %>%
+            av = sum(av_clerk)) %>%
+  mutate(av_per_pin = av/pins_per_year) %>%
   ggplot() + 
-  geom_line(aes(x = year, y = eav_per_pin)) +
-  geom_line(aes(x = year, y = av_per_pin
-               ))
+  geom_line(aes(x = year, y = av_per_pin,
+               color = major_class))
 
 
-grouped_bills %>% 
-  group_by(year, major_class_fct) %>%
+block_sums %>% 
+  group_by(year, major_class) %>%
   summarize(pins_per_year = n(),
-            av = sum(av),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year,
-            av_per_pin = av/pins_per_year) %>%
-  ggplot() + geom_line(aes(x = year, y = eav_per_pin, group = major_class_fct, color = major_class_fct) )
+            av = sum(av_clerk)) %>%
+  mutate(av_per_pin = av/pins_per_year) %>%
+  ggplot() + 
+  geom_line(aes(x = year, y = av_per_pin, group = major_class, color = major_class) )
 
 
-grouped_bills %>% 
-  group_by(year, major_class_fct) %>%
-  summarize(pins_per_year = n(),
-            av = sum(av),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year,
-            av_per_pin = av/pins_per_year) %>%
-  ggplot() + geom_line(aes(x = year, y = eav, group = major_class_fct, color = major_class_fct) )
 
-
-grouped_bills %>% 
+block_sums %>% 
   filter(year %in% c(2016, 2017, 2018, 2019, 2020)) %>%
-  group_by(year, major_class_fct) %>%
+  group_by(year, major_class) %>%
   summarize(pins_per_year = n(),
-            av = sum(av),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year,
-            av_per_pin = av/pins_per_year) %>%
-  ggplot() + geom_line(aes(x = year, y = eav, group = major_class_fct, color = major_class_fct) ) + labs(title = "Potential Policy Change in 2018?", subtitle="Assessor Office began using floor risk in assessments" )
+            av = sum(av_clerk)) %>%
+  mutate(av_per_pin = av/pins_per_year) %>%
+  ggplot() + geom_line(aes(x = year, y = av, group = major_class, color = major_class) ) + 
+  labs(title = "Potential Policy Change in 2018?", subtitle="Assessor Office began using floor risk in assessments" )
 
 
-
-grouped_bills %>% 
-  group_by(year, major_class_fct) %>%
-  summarize(pins_per_year = n(),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year) %>%
-  ggplot() + geom_line(aes(x = year, y = pins_per_year, group = major_class_fct, color = major_class_fct) )
-
-
-
-grouped_bills  %>% group_by(year) %>% summarize(count = n()) %>% 
-  arrange(count) %>% ggplot()+ geom_line(aes(x=year, y=count)) + 
+flood_pins_ptax %>% filter(SFHA == 1) %>% 
+  group_by(year) %>% summarize(count = n()) %>% 
+  arrange(count) %>% ggplot() + 
+  geom_line(aes(x=year, y=count)) + 
   labs(title = "Cook County Pins in Flood Plains", 
        caption = "Data from Cook County Data Portal")
+
+
+flood_pins_ptax %>%  
+  group_by(year, SFHA) %>% 
+  summarize(count = n()) %>% 
+  arrange(count) %>% ggplot() + 
+  geom_line(aes(x=year, y=count, color = factor(SFHA)) ) + 
+  labs(title = "Cook County Pins in Flood Plains", 
+       caption = "Data from Cook County Data Portal") 
 ```
 
 ## Mapping Parcels
@@ -835,23 +863,23 @@ Pin geometries for pins with flood zone SFHA status.
 #install.packages("prettymapr")
 library(prettymapr)
 
+flood_pin10s <- flood_pins_ptax %>% 
+  mutate(pin10 = str_sub(pin, 1, 10)) %>%
+  select(pin10) %>% distinct(pin10)
 
-flood_pin10s <- unique(substr(flood_pins2, 1, 10))
+flood_pin10s <- as.character(flood_pin10s$pin10)
 
-flood_pins_geo <- lookup_pin10_geometry(year = 2021, pin10 = flood_pin10s) %>%
+flood_pins_geo <- lookup_pin10_geometry(year = 2021, 
+                                        pin10 = flood_pin10s) %>%
   st_as_sf(wkt = "geometry", crs = 4326)
 
-flood_pins_geo <- flood_pins_geo %>%
-  left_join(
-    flood_pins_ptax %>%
-      mutate(pin10 = substr(pin, 1, 10)) %>%
-      group_by(pin10) %>%
-      summarize(class = first(class)),
-    by = "pin10"
-  ) %>%
+flood_pins_geo <- flood_pins_ptax %>% 
+  filter(year == 2021) %>%
+  right_join(flood_pins_geo, by = c("parcel_num" = "pin10")) %>%
   mutate(
-    major_class = substr(class, 1, 1),
-    township = str_sub(as.character(pin10), 1, 2),
+    major_class = str_sub(class, 1, 1),
+    township = str_sub(as.character(parcel_num), 1, 2)) %>% 
+  mutate(
     major_class_fct = recode_factor(
       major_class,
       "0" = "0 & 1 - Vacant and Exempt",
@@ -861,14 +889,17 @@ flood_pins_geo <- flood_pins_geo %>%
       "5" = "3 & 5 - Commercial",
       "6" = "6, 7, 8 - Incentive",
       "7" = "6, 7, 8 - Incentive",
-      "8" = "6, 7, 8 - Incentive"
+      "8" = "6, 7, 8 - Incentive",
+      TRUE ~ "Other"
     )
   )
+
 table(flood_pins_geo$major_class)
 
 twnshp_codes$township_code <- as.character(twnshp_codes$township_code)
+
 flood_pins_geo <- flood_pins_geo %>% 
-  left_join(twnshp_codes, by =c("township" = "township_code"))
+  left_join(twnshp_codes, by =c("township_name" = "township_name"))
 
 table(flood_pins_geo$township_name)
 table(flood_pins_geo$triad_code)
@@ -881,7 +912,7 @@ table(flood_pins_geo$township)
 cook_border <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/plss/MapServer/1/query?outFields=*&where=1%3D1&f=geojson")
 ```
 
-```{r eval = FALSE}
+```{r eval = FALSE, include = FALSE}
 flood_pins_map_all <- ggplot() +
   annotation_map_tile(type = "cartolight", zoomin = -1) +
   geom_sf(
@@ -913,7 +944,7 @@ flood_pins_map_all <- ggplot() +
 flood_pins_map_all
 ```
 
-```{r eval=FALSE}
+```{r eval=FALSE, code.fold=TRUE}
 top5 <- c("05")
 flood_pins_map_north <- ggplot() +
   annotation_map_tile(type = "cartolight", zoomin = -1) +
@@ -950,24 +981,15 @@ flood_pins_map_north
 
 #### New Trier
 
-```{r eval=FALSE}
-grouped_bills %>% filter(township == 05) %>% 
-  group_by(year, major_class_fct) %>%
-  summarize(pins_per_year = n(),
-            av = sum(av),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year,
-            av_per_pin = av/pins_per_year) %>%  ggplot() +
-  geom_line(aes(x=year, y=av_per_pin, color = major_class_fct))
+```{r eval=FALSE, code.fold = TRUE}
 
 
-grouped_bills %>% filter(township == 08) %>% 
-  group_by(year, major_class_fct) %>%
+flood_pins_geo %>% # filter(year == 2021) %>%
+  filter(township == 23) %>% 
+  group_by(major_class_fct) %>%
   summarize(pins_per_year = n(),
-            av = sum(av),
-            eav = sum(eav),
-            eav_per_pin = eav/pins_per_year,
-            av_per_pin = av/pins_per_year) %>%  ggplot() +
+            av = sum(av_mailed)) %>%
+  mutate(av_per_pin = av/pins_per_year) %>%  ggplot() +
   geom_line(aes(x=year, y=av_per_pin, color = major_class_fct))
 
 
@@ -991,7 +1013,7 @@ New Trier had corrected bills mailed out in 2019 when the assessor began using f
 
 > Pull first round assessments and then corrected assessments!
 
-```{r NewTrier}
+```{r NewTrier, eval=FALSE}
 townships <- c("08")
 
 grouped_bills %>% 
@@ -1085,9 +1107,10 @@ grouped_bills %>% filter(township %in% c("28", "29")) %>%
   geom_vline(aes(xintercept= (2013))) +
   geom_vline(aes(xintercept= (2016))) +
     geom_vline(aes(xintercept= (2019)))
+
 ```
 
-```{r Cicero}
+```{r Cicero, eval=FALSE}
 townships <- c("15")
 
 
@@ -1165,8 +1188,4 @@ flood_pins_map_chi <- ggplot() +
     legend.position = "bottom"
   )
 
-```
-
-```{r}
-#save.image("flood_pins_map.pdf")
 ```
