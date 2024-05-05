@@ -1,0 +1,331 @@
+---
+title: "Cook County - Parcel Mapping"
+format: html
+---
+
+## Mapping Parcels
+
+Example Link: [<https://ccao-data.github.io/ptaxsim/articles/mapping.html>]
+
+At the 10 digit pin number, there are 23,332 pins.
+
+-   Last 4 digits of the 14 digit pin are for indicating the unit number within a building. Single family homes with only one tax payer end with 0000; condos with more than one unit end with additional identifiers. The 10-digit pin corresponds to a geographic location of the building.
+
+Pin geometries for pins with flood zone SFHA status.
+
+> make smaller maps. Either by Triad or township or something else smaller than Cook County.
+
+```{r}
+#install.packages("prettymapr")
+library(prettymapr)
+
+flood_pin10s <- flood_pins_ptax %>% 
+  mutate(pin10 = str_sub(pin, 1, 10)) %>%
+  select(pin10) %>% distinct(pin10)
+
+flood_pin10s <- as.character(flood_pin10s$pin10)
+
+flood_pins_geo <- lookup_pin10_geometry(year = 2021, 
+                                        pin10 = flood_pin10s) %>%
+  st_as_sf(wkt = "geometry", crs = 4326)
+
+flood_pins_geo <- flood_pins_ptax %>% 
+  filter(year == 2021) %>%
+  right_join(flood_pins_geo, by = c("parcel_num" = "pin10"))
+
+table(flood_pins_geo$major_class)
+
+twnshp_codes$township_code <- as.character(twnshp_codes$township_code)
+
+flood_pins_geo <- flood_pins_geo %>% 
+  left_join(twnshp_codes, by =c("township_name" = "township_name"))
+
+table(flood_pins_geo$township_name)
+table(flood_pins_geo$triad_code)
+
+table(flood_pins_geo$township)
+
+
+
+# add border for cook County
+cook_border <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/plss/MapServer/1/query?outFields=*&where=1%3D1&f=geojson")
+```
+
+```{r eval = FALSE, include = FALSE}
+flood_pins_map_all <- ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = -1) +
+  geom_sf(
+    data = flood_pins_geo,
+    aes(fill = major_class_fct),
+    alpha = 0.5,
+    linewidth = 0.1
+  ) +
+ geom_sf(data = cook_border, fill = "transparent", linewidth = 1) +
+  annotation_scale(location = "br") +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "0 & 1 - Vacant and Exempt" = "#984ea3",
+      "2 - Residential" = "#e41a1c",
+      "3 & 5 - Commercial" = "#377eb8",
+      "6, 7, 8 - Incentive" = "#4daf4a"
+    )
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme_void() +
+  theme(
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(18, "points"),
+    legend.position = "bottom"
+  )
+
+flood_pins_map_all
+```
+
+```{r eval=FALSE, code.fold=TRUE}
+top5 <- c("05")
+flood_pins_map_north <- ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = -1) +
+  geom_sf(
+    data = flood_pins_geo %>% filter(township %in% top5),
+    aes(fill = major_class_fct),
+    alpha = 0.5,
+    linewidth = 0.1
+  ) +
+#  geom_sf(data = cook_border, fill = "transparent", linewidth = 1) +
+  annotation_scale(location = "br") +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "0 & 1 - Vacant and Exempt" = "#984ea3",
+      "2 - Residential" = "#e41a1c",
+      "3 & 5 - Commercial" = "#377eb8",
+      "6, 7, 8 - Incentive" = "#4daf4a"
+    )
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme_void() +
+  theme(
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(18, "points"),
+    legend.position = "bottom"
+  ) + facet_wrap(~township, # scales = "free",
+                # nrow = 5,
+                 shrink = FALSE)
+
+flood_pins_map_north
+```
+
+#### New Trier
+
+```{r eval=FALSE, code.fold = TRUE}
+
+
+flood_pins_geo %>% # filter(year == 2021) %>%
+  filter(township == 23) %>% 
+  group_by(major_class_fct) %>%
+  summarize(pins_per_year = n(),
+            av = sum(av_mailed)) %>%
+  mutate(av_per_pin = av/pins_per_year) %>%  ggplot() +
+  geom_line(aes(x=year, y=av_per_pin, color = major_class_fct))
+
+
+grouped_bills %>% filter(township == 10) %>% 
+  group_by(year, major_class_fct) %>%
+  summarize(pins_per_year = n(),
+            av = sum(av),
+            eav = sum(eav),
+            eav_per_pin = eav/pins_per_year,
+            av_per_pin = av/pins_per_year) %>%  ggplot() +
+  geom_line(aes(x=year, y=av_per_pin, color = major_class_fct)) +
+  geom_vline(aes(xintercept= (2009))) +
+  geom_vline(aes(xintercept= (2012))) +
+  geom_vline(aes(xintercept= (2015))) +
+    geom_vline(aes(xintercept= (2018)))
+
+  
+```
+
+New Trier had corrected bills mailed out in 2019 when the assessor began using floodplain data. New Trier is township #23 in Cook County township codes. New Trier is in the North Triad, up by Glencoe.
+
+> Pull first round assessments and then corrected assessments!
+
+```{r NewTrier, eval=FALSE}
+townships <- c("08")
+
+grouped_bills %>% 
+  filter(township %in% c("23")) %>% 
+  group_by(year, major_class_fct) %>%
+  summarize(pins_per_year = n(),
+            av = sum(av),
+            eav = sum(eav),
+            eav_per_pin = eav/pins_per_year,
+            av_per_pin = av/pins_per_year) %>%  ggplot() +
+  geom_line(aes(x=year, y=av_per_pin, color = major_class_fct)) +
+  geom_vline(aes(xintercept= (2019))) +
+  labs(title = "New Trier assessments",
+       subtitle = "New information in 2019")
+
+flood_pins_map_north <- ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = -1) +
+  geom_sf(
+    data = flood_pins_geo %>% filter(township %in% townships),
+    aes(fill = major_class_fct),
+    alpha = 0.5,
+    linewidth = 0.1
+  ) +
+ # geom_sf(data = cook_border, fill = "transparent", linewidth = 1) +
+  annotation_scale(location = "br") +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "0 & 1 - Vacant and Exempt" = "#984ea3",
+      "2 - Residential" = "#e41a1c",
+      "3 & 5 - Commercial" = "#377eb8",
+      "6, 7, 8 - Incentive" = "#4daf4a"
+    )
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme_void() +
+  theme(
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(18, "points"),
+    legend.position = "bottom" 
+  ) + labs(title = "New Trier Parcels in SFHA")
+
+flood_pins_map_north
+```
+
+```{r eval=FALSE}
+townships <- c("28", "29")
+
+
+flood_pins_map_south <- ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = -1) +
+  geom_sf(
+    data = flood_pins_geo %>% filter(township %in% townships),
+    aes(fill = major_class_fct),
+    alpha = 0.5,
+    linewidth = 0.1
+  ) +
+ # geom_sf(data = cook_border, fill = "transparent", linewidth = 1) +
+  annotation_scale(location = "br") +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "0 & 1 - Vacant and Exempt" = "#984ea3",
+      "2 - Residential" = "#e41a1c",
+      "3 & 5 - Commercial" = "#377eb8",
+      "6, 7, 8 - Incentive" = "#4daf4a"
+    )
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme_void() +
+  theme(
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(18, "points"),
+    legend.position = "bottom"
+  )
+  
+
+flood_pins_map_south
+
+grouped_bills %>% filter(township %in% c("28", "29")) %>% 
+  group_by(year, major_class_fct) %>%
+  summarize(pins_per_year = n(),
+            av = sum(av),
+            eav = sum(eav),
+            eav_per_pin = eav/pins_per_year,
+            av_per_pin = av/pins_per_year) %>%  ggplot() +
+  geom_line(aes(x=year, y=av_per_pin, color = major_class_fct)) +
+  geom_vline(aes(xintercept= (2010))) +
+  geom_vline(aes(xintercept= (2013))) +
+  geom_vline(aes(xintercept= (2016))) +
+    geom_vline(aes(xintercept= (2019)))
+
+```
+
+```{r Cicero, eval=FALSE}
+townships <- c("15")
+
+
+flood_pins_map_south <- ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = -1) +
+  geom_sf(
+    data = flood_pins_geo %>% filter(township %in% townships),
+    aes(fill = major_class_fct),
+    alpha = 0.5,
+    linewidth = 0.1
+  ) +
+ # geom_sf(data = cook_border, fill = "transparent", linewidth = 1) +
+  annotation_scale(location = "br") +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "0 & 1 - Vacant and Exempt" = "#984ea3",
+      "2 - Residential" = "#e41a1c",
+      "3 & 5 - Commercial" = "#377eb8",
+      "6, 7, 8 - Incentive" = "#4daf4a"
+    )
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme_void() +
+  theme(
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(18, "points"),
+    legend.position = "bottom"
+  )
+  
+
+flood_pins_map_south
+
+grouped_bills %>% filter(township %in% c("15")) %>% 
+  group_by(year, major_class_fct) %>%
+  summarize(pins_per_year = n(),
+            av = sum(av),
+            eav = sum(eav),
+            eav_per_pin = eav/pins_per_year,
+            av_per_pin = av/pins_per_year) %>%  ggplot() +
+  geom_line(aes(x=year, y=av_per_pin, color = major_class_fct)) +
+  geom_vline(aes(xintercept= (2010))) +
+  geom_vline(aes(xintercept= (2013))) +
+  geom_vline(aes(xintercept= (2016))) +
+    geom_vline(aes(xintercept= (2019)))
+```
+
+```{r eval=FALSE}
+flood_pins_map_chi <- ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = -1) +
+  geom_sf(
+    data = flood_pins_geo,
+    aes(fill = major_class_fct),
+    alpha = 0.5,
+    linewidth = 0.1
+  ) +
+  geom_sf(data = cook_border, fill = "transparent", linewidth = 1) +
+  annotation_scale(location = "br") +
+  scale_fill_manual(
+    name = "",
+    values = c(
+      "0 & 1 - Vacant and Exempt" = "#984ea3",
+      "2 - Residential" = "#e41a1c",
+      "3 & 5 - Commercial" = "#377eb8",
+      "6, 7, 8 - Incentive" = "#4daf4a"
+    )
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme_void() +
+  theme(
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(18, "points"),
+    legend.position = "bottom"
+  )
+
+```
+
