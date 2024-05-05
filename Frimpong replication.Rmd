@@ -17,7 +17,7 @@ output:
 
 ```{r setup, warning=FALSE, message=FALSE}
 
-knitr::opts_chunk$set(message=FALSE, warning = FALSE, error = TRUE, tigris_use_cache = TRUE)
+knitr::opts_chunk$set(message=FALSE, warning = FALSE, error = TRUE)
 
 suppressMessages({
 library(tidyverse)
@@ -226,7 +226,7 @@ usacounties2 <-  usacounties  %>%
 states <- c("Mississippi","Alabama")
 
 rm(us_states)
-rm(us_counties)
+#rm(us_counties)
 
 
 ```
