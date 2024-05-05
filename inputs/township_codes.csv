@@ -1,0 +1,40 @@
+township_pin_count,township_code,township_name,triad_name,triad_code
+187685,10,Barrington,North,2
+388387,11,Berwyn,South,3
+1019331,12,Bloom,South,3
+1311364,13,Bremen,South,3
+180299,14,Calumet,South,3
+432600,15,Cicero,South,3
+810124,16,Elk Grove,North,2
+601785,17,Evanston,North,2
+822751,18,Hanover,North,2
+228748,19,Lemont,South,3
+844055,20,Leyden,North,2
+1094176,21,Lyons,South,3
+1304352,22,Maine,North,2
+577079,23,New Trier,North,2
+1141402,24,Niles,North,2
+875533,25,Northfield,North,2
+244304,26,Norwood Park,North,2
+460449,27,Oak Park,South,3
+991729,28,Orland,South,3
+1050511,29,Palatine,North,2
+563375,30,Palos,South,3
+1410154,31,Proviso,South,3
+723763,32,Rich,South,3
+112812,33,River Forest,South,3
+160410,34,Riverside,South,3
+1166510,35,Schaumburg,North,2
+378826,36,Stickney,South,3
+1974315,37,Thornton,South,3
+1483599,38,Wheeling,North,2
+1606451,39,Worth,South,3
+2674592,70,Hyde Park,City,1
+3793721,71,Jefferson,City,1
+4794458,72,Lake,City,1
+2345872,73,Lake View,City,1
+1750862,74,North Chicago,City,1
+548285,75,Rogers Park,City,1
+1505159,76,South Chicago,City,1
+3519748,77,West Chicago,City,1
+361,,,,
