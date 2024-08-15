@@ -1,0 +1,58 @@
+---
+title: "Cook County Flood Damage"
+format: html
+editor: visual
+---
+
+## Illinois Flood Insurance Claims
+
+```{r warning=FALSE, message=FALSE}
+library(tidyverse)
+
+
+ilclaims <- read_csv("inputs/data/nfipclaims_CookCounty2.csv") %>%   
+  mutate(amountPaidOnBuildingClaim = as.numeric(amountPaidOnBuildingClaim),
+        amountPaidOnContentsClaim = as.numeric(amountPaidOnContentsClaim),
+       amountPaidOnIncreasedCostOfComplianceClaim = as.numeric(amountPaidOnIncreasedCostOfComplianceClaim),
+       totalclaims = amountPaidOnBuildingClaim + amountPaidOnContentsClaim + amountPaidOnIncreasedCostOfComplianceClaim)
+
+table(ilclaims$yearOfLoss)
+```
+
+```{r}
+ilclaims %>%  
+  group_by(yearOfLoss) %>% 
+  summarize(claims = n()) %>%
+  ggplot() + 
+  geom_line(aes(x=yearOfLoss, y = claims))+
+  labs(y = "Number of Claims")
+
+
+ilclaims %>% 
+  group_by(yearOfLoss) %>% 
+  summarize(claims = sum(amountPaidOnBuildingClaim + amountPaidOnContentsClaim + amountPaidOnIncreasedCostOfComplianceClaim, na.rm=TRUE)) %>%
+  ggplot() + 
+  geom_line(aes(x=yearOfLoss, y = claims)) +
+  labs(y = "Claims Paid ($)")
+
+```
+
+```{r}
+table(ilclaims$ratedFloodZone)
+table(ilclaims$crsClassificationCode)
+
+# table(ilclaims$nfipCommunityName)  # dont trust! use manually cleaned excel file for names!!
+
+table(ilclaims$floodZoneCurrent)
+
+
+table(ilclaims$disasterAssistanceCoverageRequired)
+
+table(ilclaims$stateOwnedIndicator)
+
+
+```
+
+## Sources
+
+National Weather Service Chicago, IL, 2023. "The July 2 and September 17, 2023, Flash Flood Events in the Chicago Metro Area." [Website](https://www.weather.gov/media/lot/events/2023/07_02/2023_07_02_and_2023_09_17_Chicago_FlashFloods.pdf)
