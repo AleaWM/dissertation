@@ -1,0 +1,405 @@
+---
+title: "PINs with High Flood Risk Factors"
+author: "Alea Wilbur"
+published: "August 14, 2024"
+modified: "`r Sys.Date()`"
+format:
+  html:
+    code-fold: true
+    toc: true
+    toc-location: left
+    toc-float: true
+    df-print: paged
+    fig-cap-location: margin
+    tbl-cap-location: margin
+---
+
+```{r setup, message = FALSE, warning=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+
+
+library(tidyverse)
+library(data.table)
+library(gstat)
+library(here)
+library(httr)
+library(jsonlite)
+library(ptaxsim)
+library(stars)
+library(glue)
+library(ggspatial)
+library(sf)
+
+
+
+ptax245 <- readxl::read_excel("inputs/PTAX-245_Data.xlsx")
+
+# Create the DB connection with the default name expected by PTAXSIM functions
+ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2022.0.0.db")
+
+# has all potential property classes for pins
+# downloaded from CCAO gitlab website
+## I used this to merge additional information to the pins and class data later on.
+class_dict <- read_csv("C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/Necessary_Files/class_dict_expanded.csv")
+
+
+
+# 
+# # muni_shp <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/politicalBoundary/MapServer/2/query?outFields=*&where=1%3D1&f=geojson")
+
+
+
+```
+
+```{r}
+setwd('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax')
+
+
+source('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/scripts/helper_tc_muninames_2022.R')
+```
+
+```{r}
+#| label: tbl-ptax245datapreview
+#| tbl-cap: "Data downloaded from CCAO parcel universe. Uses Flood Risk Factor from First Street."
+
+nbh_pins <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
+
+
+flood_pins <- nbh_pins %>% 
+  filter(env_flood_fs_factor > 5)
+  
+block_strings <- flood_pins %>% 
+  mutate(block_num = str_sub(pin, 1, 7)) %>% 
+  select(block_num) %>%
+  distinct(block_num) %>% pull()
+
+```
+
+# Flood Factor Score
+
+## Pull PIN data for all pins within Blocks that had Appeals
+
+Can pull assessed value for all PINs that begin with those 7 digits to measure changes at the Block level over time:
+
+```{r AVforblockPINs}
+# pin data for all years if a land block that had a PIN that appealed their Assessed value
+# Mostly pulls properties from Cicero and Berwyn to compare later
+
+flood_pins_ptax <- DBI::dbGetQuery(
+  ptaxsim_db_conn,
+  glue_sql(
+  "SELECT*
+  FROM pin
+  WHERE substr(pin,1,7) IN ({block_strings*})
+  ",
+  .con = ptaxsim_db_conn
+))
+
+
+flood_pins_ptax <- flood_pins_ptax %>% 
+  mutate(block_num = str_sub(pin, 1, 7),
+         parcel_num = str_sub(pin, 1, 10),
+         major_class = str_sub(class, 1, 1)) %>%
+  left_join(flood_pins, by = c("pin", "year")) 
+  
+```
+
+```{r}
+#| tbl-cap: "Number of PINs in land blocks that had flooded properties in 2023"
+#| label: tbl-pincount
+
+
+flood_pins_ptax %>% 
+  filter(year == 2021
+       #  & major_class != 0
+         ) %>%
+  mutate(av_dif = av_mailed-av_board) %>%
+  group_by(year, major_class) %>%
+  summarize(av_mailed = mean(av_mailed),
+            av_board = mean(av_board),
+            av_dif = mean(av_dif, na.rm = TRUE),
+            pin_count = n(),
+            parcels = n_distinct(parcel_num)
+
+            ) 
+
+flood_pins_ptax %>% 
+  filter(year == 2022
+         ) %>%
+  mutate(env_flood_fs_factor = ifelse(is.na(env_flood_fs_factor), "Below 6", env_flood_fs_factor)) %>%
+  arrange(desc(env_flood_fs_factor)) %>%
+  group_by(env_flood_fs_factor , major_class) %>%
+  summarize(
+            pin_count = n(),
+            parcels = n_distinct(parcel_num)
+            ) |>
+  pivot_wider(id_cols = major_class, names_from =env_flood_fs_factor , values_from = parcels)
+
+flood_pins_ptax %>% 
+  filter(year == 2022 
+         #& major_class != 0
+         ) %>%
+  mutate(av_dif = av_mailed-av_board) %>%
+  group_by(year, major_class) %>%
+  summarize(av_mailed = mean(av_mailed),
+            av_board = mean(av_board),
+            av_dif = mean(av_dif, na.rm = TRUE),
+            pin_count = n(),
+            parcels = n_distinct(parcel_num),
+            pins_at_risk = sum(ifelse(is.na(env_flood_fema_sfha), 0, 1)            ) )
+
+```
+
+```{r}
+#| label: fig-floodappealed-proptypes2
+#| fig-cap: "Average mailed and appealed assessed value for properties that appealed their Assessed Value and were located in land blocks that had PINs with a First Street Risk Factor above 5."
+
+flood_pins_ptax %>% 
+  filter(major_class %in% c("2", "5") ) %>%
+  mutate(av_dif = av_mailed-av_board) %>%
+  group_by(year, major_class) %>%
+  summarize(av_mailed = mean(av_mailed),
+            av_board = mean(av_board),
+            av_dif = mean(av_dif, na.rm = TRUE)) %>%
+    filter(av_dif > 1) %>%
+
+  ggplot() +
+  geom_line(aes(x=year, y = av_mailed#, color = major_class
+                ), linetype = 2 ) + 
+    geom_line(aes(x=year, y = av_dif),  color = "red"
+                   ) + 
+  geom_point(aes(x=year, y = av_dif),  color = "red"
+                   ) + 
+    geom_line(aes(x=year, y = av_board#, color = major_class
+                  ) ) + 
+    geom_point(aes(x=year, y = av_board#, color = major_class
+                   )) + 
+    geom_line(aes(x=year, y = av_mailed#, color = major_class
+                ), linetype = 2 ) + 
+  theme_classic() + 
+  
+  scale_y_continuous(name = "Avg Assessed Value for Major Class", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006, 2010, 2015, 2020, 2023), name = ""  ) + 
+  facet_wrap(~major_class, scales = "free",
+             ncol = 1)
+```
+
+```{r}
+#| label: fig-compareprops
+#| fig-cap: ""
+
+
+flood_pins_ptax %>% 
+  filter(major_class == 2) %>%
+  mutate(av_dif = av_mailed-av_board,
+         appealed = ifelse(av_dif > 0, 1, 0)) %>%
+  group_by(year, major_class, appealed) %>%
+  summarize(av_mailed = mean(av_mailed),
+            av_board = mean(av_board),
+            av_dif = mean(av_dif, na.rm = TRUE)
+            ) %>%
+  ggplot() +
+  geom_line(aes(x=year, y = av_mailed, group = factor(appealed)), 
+            linetype = 2 ) + 
+  # dashed line for mailed AV amounts
+  
+    geom_line(aes(x=year, y = av_board,group = factor(appealed),  
+                  ) ) + 
+   # geom_line(aes(x=year, y = av_dif, color = factor(appealed)) ) + 
+   # geom_point(aes(x=year, y = av_dif,  group = appealed)#,  color = "red" ) + 
+
+   # geom_point(aes(x=year, y = av_board,  group = appealed, fill = factor(appealed) )) + 
+    # geom_line(aes(x=year, y = av_mailed, group = appealed, 
+    #               #color = factor(appealed)
+    #             ), linetype = 2 ) + 
+  scale_y_continuous(name = "Avg Assessed Value for Class 2", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006, 2010, 2015, 2020, 2022)  ) +
+   theme_classic()+
+  facet_wrap(~appealed)
+```
+
+```{r}
+#| label: fig-appealdif
+#| fig-cap: "Avg Difference in AV from Appealing for Residential Properties"
+
+flood_pins_ptax %>% 
+  filter(major_class == 2) %>%
+  mutate(av_dif = av_mailed-av_board,
+         appealed = ifelse(av_dif>0, 1, 0)) %>%
+  group_by(year, major_class, appealed) %>%
+  summarize(av_mailed = mean(av_mailed),
+            av_board = mean(av_board),
+            av_dif = mean(av_dif, na.rm = TRUE)
+  ) %>%
+  ggplot() +
+  
+  geom_line(aes(x=year, y = av_dif, linetype = factor(appealed), 
+                #color = factor(appealed)
+                )
+            ) +
+  scale_y_continuous(name = "Average Difference in Assessed Value" , labels = scales::dollar ) +
+  scale_x_continuous(name = "", breaks = c(2006, 2010, 2015, 2020, 2022)  ) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  scale_color_discrete(element_blank())+
+  scale_linetype_discrete(name = "Appealed AV after 2023 Flood Damage", labels = c("Did not submit form", "Submitted PTAX245 form"))+
+theme(legend.position = "bottom",
+      )
+```
+
+```{r}
+#| label: fig-summmed-av-bor
+#| fig-cap: "Total Assessed Value after 3rd pass. All properties in land blocks that had at least 1 property that submitted a ptax245 form."
+
+flood_pins_ptax %>% 
+  group_by(year, major_class) %>%
+  summarize(av_board = sum(av_board),
+            av_mailed = sum(av_mailed)) %>%
+  filter(year < 2023) %>%
+  ggplot() +
+  theme_classic() + 
+  
+  geom_line(aes(x=year, y = av_board, color = major_class) ) + 
+  geom_line(aes(x=year, y = av_mailed, color = major_class), linetype = 2)  + 
+  
+  scale_x_continuous(breaks = c(2006, 2010, 2015, 2020, 2022), name = ""  ) + 
+  scale_y_continuous(labels = scales::dollar, name = "Total Assessed Value")
+```
+
+> \~147,000 PIN-year combos
+
+## Get taxcodes for the PINs
+
+```{r}
+flood_pins_ptax <- flood_pins_ptax %>% 
+  left_join(tc_muninames, by = "tax_code_num")
+```
+
+# Mapping Parcels
+
+```{r echo=FALSE}
+# create vector of parcel numbers for the ptaxsim function that pulls the parcel shapes. 
+flood_pin10s <- flood_pins_ptax %>% 
+  filter(env_flood_fs_factor > 5) %>% 
+  select(parcel_num) %>% 
+  distinct(parcel_num)
+
+flood_pin10s <- as.character(flood_pin10s$parcel_num)
+
+# Eventually map by property clasS?
+# 314 obs for pins that existed in 2006
+# flood_pins_geo_2006 <- lookup_pin10_geometry(year = 2006, 
+#                                              pin10 = flood_pin10s) %>%
+#   st_as_sf(wkt = "geometry", crs = 4326)
+# 
+
+# 313,517 parcel shapes for pins that existed in 2022
+flood_pins_geo <- lookup_pin10_geometry(year = 2022, 
+                                        pin10 = flood_pin10s) %>%
+  st_as_sf(wkt = "geometry", crs = 4326)
+
+
+flood_pins_merged <- flood_pins_geo %>% 
+  left_join(flood_pins_ptax, by = c("pin10" = "parcel_num")) %>% 
+  filter(year.x == 2022)
+            
+
+
+
+#table(flood_pins_merged$clean_name)
+# 261 in Berwyn, 1293 in Cicero
+
+```
+
+```{r eval=FALSE, include = FALSE}
+# add border for cook County
+#cook_border <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/plss/MapServer/1/query?outFields=*&where=1%3D1&f=geojson")
+bound_muni_cicero <- st_read(paste0(
+  "https://opendata.arcgis.com/api/v3/datasets/",
+  "534226c6b1034985aca1e14a2eb234af_2/downloads/",
+  "data?format=geojson&spatialRefId=4326&where=1%3D1"
+), quiet = TRUE) %>%
+  filter(MUNICIPALITY == "Cicero")
+
+
+cicero_appeals <- ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = -1) +
+  geom_sf(
+    data = flood_pins_merged %>% filter(clean_name %in% c("Cicero")),
+    aes(fill = major_class),
+    alpha = 0.5,
+    linewidth = 0.1
+  ) +
+ # guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme_void() +
+  theme(
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(18, "points"),
+    legend.position = "bottom"
+  )
+  
+
+
+# bound_muni_berwyn <- st_read(paste0(
+#   "https://opendata.arcgis.com/api/v3/datasets/",
+#   "534226c6b1034985aca1e14a2eb234af_2/downloads/",
+#   "data?format=geojson&spatialRefId=4326&where=1%3D1"
+# ), quiet = TRUE) %>%
+#   filter(MUNICIPALITY == "Berwyn")
+
+berwyn_appeals <- ggplot() +
+ annotation_map_tile(type = "cartolight", zoomin = -1) +
+  geom_sf(
+    data = flood_pins_merged  %>% filter(clean_name %in% c("Berwyn")) 
+      ,
+
+   aes(fill = major_class),
+    alpha = 0.5,
+    linewidth = 0.1
+  ) +
+# geom_sf(data = cook_border, fill = "transparent", linewidth = 1) +
+
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme_void() +
+  theme(
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(18, "points"),
+    legend.position = "bottom"
+  )
+  
+cicero_appeals
+
+berwyn_appeals
+```
+
+![Cicero parcels with a First Street Rating above 5.](Cicero_FS_6andup)
+
+![Berwyn parcels with a First Street Rating of 6 and higher.](Berwyn_FS_6andup){fig-alt="berwyn_highrisk_parcels"}
+
+# Tax code level Change
+
+> Tax code rate is ONLY the 2022 tax code rate. It currently does not have tax code rates for all years. Can be merged in from the `ptaxsim_summary_muni_taxcode_level_2006-2022.csv` file I made-has tax rates for all years.
+
+```{r }
+#| label: tbl-summedAV
+#| tbl-cap: "Summed Assessed Values (Mailed and BoR) in 2006 and 2022 for each Tax Code. Also includes number of PINs in each Tax Code. Data for PINs that in land blocks that contain parcels that have a flood factor rating of 6 and higher."
+#
+taxcode_summs <- flood_pins_ptax %>% 
+  filter(pin %in% flood_pins$pin) %>%
+  mutate(av_dif = av_mailed-av_board) %>% 
+  group_by(tax_code_num, year.x) %>% 
+  summarize(av_mailed = sum(av_mailed, na.rm=TRUE),
+          av_board = sum(av_board, na.rm = TRUE),
+          av_dif = sum(av_dif, na.rm=TRUE),
+          pincount = n(),
+          tax_code_rate = mean(tax_code_rate)) %>%
+  filter(year.x %in% c(2006, 2022)) %>% select(-c(tax_code_rate)) %>%
+  select(TaxYear=year.x, everything())
+
+# 2879 tax codes
+taxcode_summs
+
+```
