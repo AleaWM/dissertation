@@ -148,23 +148,42 @@ nbh_pins <- fromJSON(rawToChar(nbh_pins$content))
 write_csv(nbh_pins, "outputs/nbh_pins_parceluniversepull2023.csv")
 ```
 
-2021: 29545 in sfha, 1834323 = false
+> 29,545 PINs in a SFHA flood zone in 2021 but 331,569 PINs have a 4 or higher flood risk factor in 2021
 
-1.0 10.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 1408665 5870 19094 94086 92131 37062 161355 20110 3648 11393
+**2021 SFHA Indicator**  
+2021: FALSE    TRUE   
+      1834323  29545   
+      
+**Flood Risk Factor**        
+1.0      2.0     3.0     4.0     5.0     6.0     7.0     8.0    9.0    10.0  
+1408665  19094   94086   92131   37062   161355 20110  3648     11393  5870  
 
--1.0 0.0 1.0 9281 1562379 281754
 
-2022: FALSE TRUE 1835366 29477
+- 2 or higher indicates a 6% chance of flooding over 30 years
+- 4 or higher indicates a 26% chance of flooding over 30 years   
+- 5 or higher indicates 80% chance of flooding over 30 years   
+- 6 or higher indicates a 99% chance of flooding over 30 years   
 
-2021 1864843
 
-```         
-1.0    10.0     2.0     3.0     4.0     5.0     6.0     7.0     8.0     9.0 
-```
 
-1406348 5869 19086 93872 92040 37046 160712 19943 3637 11368
+**Flood Risk Direction**
+-1.0  0.0       1.0     
+9281  1562379   281754     
 
--1.0 0.0 1.0 9169 1559399 281353
+
+> There are 29,477 PINs in a SFHA flood zone but 330,615 PINs with a 4 or higher flood risk factor. 56,888 PINs have a 6 or higher flood risk score, which indicates that they are essentially guaranteed to flood in a 30 years time period. 
+
+**2022 SFHA Indicator**  
+2022: FALSE    TRUE   
+      1835366  29477  
+
+**2022 Flood Risk Factor**        
+1.0      2.0      3.0     4.0     5.0     6.0     7.0     8.0     9.0     10.0   
+1406348  19086    93872   92040   37046   160712  19943   3637    11368   5869  
+
+**2022 Flood Risk Direction**
+-1.0    0.0         1.0   
+9,169    1,559,399     281,353  
 
 > Start with PINs in SFHAs that have existed for all years in PTAXSIM. Then examine the creation of new PINs over time.
 
@@ -175,6 +194,8 @@ Get all PINs in Cook County from tax year 2021 (dataframe named `pins_2021` and 
 -   29,545 unique pins at some point in time
 
 -   23,262 unique parcels in cook county at some point in time
+
+
 
 ## Unique Blocks in Flood Zones
 
@@ -254,14 +275,98 @@ flood_pins_ptax <- flood_pins_ptax %>%
 
 ```{r}
 flood_pins_ptax <- read_csv("outputs/pins_in_Blocks_2006_2022_04May2024.csv")
+
 nbh_pins <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
 
-NBHs <- read_sf("https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.geojson")
+# has all potential property classes for pins
+# downloaded from CCAO gitlab website
+## I used this to merge additional information to the pins and class data later on.
+class_dict <- read_csv("C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/Necessary_Files/class_dict_expanded.csv")
 
-block_sums <-  flood_pins_ptax %>% 
+
+flood_pins_ptax <-  flood_pins_ptax |> left_join(class_dict, by = c("class" = "class_code"))
+
+flood_pins_ptax22 <- flood_pins_ptax |> filter(year == 2022)
+
+
+NBHs <- read_sf("https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.geojson")
+```
+
+similar to cook county 2019 hazard mitigation plan numbers
+
+
+# Assessed Value at Risk in 2022
+
+```{r counts-ofprop-classes}
+# 103 property classes were used in 2022.
+flood_pins_ptax22 %>% 
+  summarize(class_count = n(), .by = class) %>% 
+  arrange(desc(class))
+
+flood_pins_ptax22 %>% 
+  summarize(class_count = n(), .by = comparable_props) %>% 
+  arrange(desc(class_count))
+
+flood_pins_ptax22 %>% 
+  summarize(class_count = n(), .by = `building type`) %>% 
+  arrange((`building type`))
+```
+
+
+
+
+```{r}
+table(flood_pins_ptax22$Alea_cat, flood_pins_ptax22$SFHA)
+
+land <- c(100, 180, 190, 192, 193, 500, 550, 637, 650, 651, 700, 742, 800, 850, 900)
+
+building <- c(201: 221, 225:236, 278:299, 301:399,401, 417:499, 501:549, 551:599, 638, 654:693, 701:735, 743:799, 800:835, 851:899, 901:999)
+
+vacant = c(100:199)
+
+business_land = c(400, 500, 550, 637, 650, 651, 700, 742, 800, 850)
+
+
+
+
+flood_pins_ptax22 %>% 
+  filter(SFHA == 1) %>% 
+  mutate(building = ifelse(class %in% building, 1, 0)) %>%
+  group_by(building) %>%
+  summarize(pin_count = n(),
+            exempt_PC = sum(ifelse(av_clerk == 0, 1, 0)),
+            residential_PC = sum(ifelse(between(class, 200, 299), 1, 0)),
+            land_PC = sum(ifelse(between(class, 1, 199), 1, 0)),
+
+            parcel_count = n_distinct(parcel_num),
+    av = sum(av_clerk),
+            fmv = sum(av_clerk / loa_2022, na.rm=TRUE
+                      ))
+
+flood_pins_ptax22 %>% 
+  mutate(building = ifelse(class %in% building, 1, 0)) %>%
+  filter(SFHA == 1 & building == 1)
+
+flood_pins_ptax22 %>% 
+  filter(SFHA == 1) %>% 
+  summarize(pin_count = n(),
+            exempt_PC = sum(ifelse(av_clerk == 0, 1, 0)),
+            residential_PC = sum(ifelse(between(class, 200, 299), 1, 0)),
+            land_PC = sum(ifelse(between(class, 1, 199), 1, 0)),
+
+            parcel_count = n_distinct(parcel_num),
+    av = sum(av_clerk),
+            fmv = sum(av_clerk / loa_2022, na.rm=TRUE
+                      ))
+```
+
+
+```{r}
+block_sums <-  flood_pins_ptax %>%
   group_by(year, block_num) %>%
   summarize(
     pincount = n(),
+    parcels = n_distinct(parcel_num),
     av_mailed = sum(av_mailed),
     av_certified = sum(av_certified),
     av_board = sum(av_board),
@@ -389,6 +494,65 @@ flood_pins_ptax %>%
   )
 ```
 
+```{r parcels_in_nbhds_for2022, fig.ncol=2}
+#| layout-ncol: 2
+
+nbh_pins2022 <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
+
+flood_pins_ptax %>% 
+  filter(year == 2022 & SFHA == 1) %>%
+  left_join(nbh_pins2022, by = "pin") %>%
+  group_by(nbhd_code) %>% 
+    summarize(count = n_distinct(parcel_num)) %>% 
+  mutate(nbhd_code = as.character(nbhd_code)) %>%
+
+  full_join(NBHs, by = c("nbhd_code" = "town_nbhd")) %>% 
+  arrange(-count) %>%
+  ggplot(aes(fill = count)) + 
+  geom_sf(aes(geometry = geometry), color = "black") + 
+  labs(title = "Tax Year 2022: Count of Parcels per nbhd in SFHA",
+       subtitle = 
+         "All Property Types", 
+  caption = "") +
+  theme_void() + 
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+   nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  )
+
+flood_pins_ptax %>% 
+  filter(year == 2022 & SFHA == 1) %>%
+  filter(major_class == 2) %>%
+  left_join(nbh_pins2022, by = "pin") %>%
+    mutate(nbhd_code = as.character(nbhd_code)) %>%
+
+  group_by(nbhd_code) %>% 
+    summarize(count = n_distinct(parcel_num)) %>% 
+
+  full_join(NBHs, by = c("nbhd_code" = "town_nbhd")) %>% 
+  arrange(-count) %>%
+  
+ # full_join(nbh_shp, by = c("agency_name" = "AGENCY_DESC")) %>%
+  ggplot(aes(fill = count)) + 
+  geom_sf(aes(geometry = geometry), color = "black") + 
+  labs(title = "Tax Year 2022: Count of Residential Parcels per nbhd in SFHA", 
+  caption = "") +
+  theme_void() + 
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkgreen", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  )
+```
+
+
 ```{r nbhds_for2023, eval = FALSE, include = FALSE}
 #| layout-ncol: 2
 
@@ -479,7 +643,8 @@ flood_pins_ptax %>%
   filter(year == 2021 & SFHA == 1) %>%
   left_join(nbh_pins, by = "pin") %>%
    group_by(township_name) %>% 
-    summarize(count = n())
+    summarize(pins = n(),
+              parcels = n_distinct(parcel_num))
 # 
 # flood_pins_ptax %>% 
 #   filter(year == 2020 & SFHA == 1) %>%
@@ -546,11 +711,56 @@ flood_pins_ptax %>%
   )
 ```
 
+```{r parcels-per-township, fig.ncol=2}
+flood_pins_ptax %>%
+  filter(year == 2021 & SFHA == 1) %>%
+  left_join(nbh_pins, by = "pin") %>%
+   group_by(township_name) %>%
+    summarize(count = n_distinct(parcel_num)) %>%
+  full_join(township_shp, by = c( "township_name" = "name") ) %>%
+  arrange(-count) %>%
+  ggplot(aes(fill = count)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "TY2021: Parcels per township in SFHA",
+  caption = "") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  )
+
+flood_pins_ptax %>% 
+  filter(year == 2022 & SFHA == 1) %>%
+  left_join(nbh_pins2022, by = "pin") %>%
+   group_by(township_name) %>% 
+    summarize(count = n_distinct(parcel_num)) %>% 
+  full_join(township_shp, by = c( "township_name" = "name") ) %>%
+  arrange(-count) %>%
+  ggplot(aes(fill = count)) + 
+  geom_sf(aes(geometry = geometry), color = "black") + 
+  labs(title = "TY2022: Count of Parcels per township in SFHA", 
+       caption = "") +
+  theme_void() + 
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+    na.value = "gray",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  )
+```
+
+
 > Note that Cicero has zero properties that are technically in a SFHA but is known for flooding (but it's URBAN flooding instead of riverine flooding. )
 
 ## Per Muni
 
-> Note: 2021 and 2022 maps look identical.\
+> Note: 2021 and 2022 maps look identical.
 
 ```{r muni-pincount}
 
@@ -589,7 +799,27 @@ ggplot(aes(fill = count)) +
     name = "Count",
   )
 
-
+flood_pins_ptax %>%
+  filter(year == 2022 & SFHA == 1) %>%
+  mutate(tax_code_num = as.character(tax_code_num)) %>%
+  left_join(tc_muninames, by = "tax_code_num") %>%
+  filter(!is.na(clean_name )) %>%
+   group_by(shpfile_name) %>% 
+    summarize(count = n_distinct(parcel_num)) %>% 
+  full_join(muni_shp, b = c( "shpfile_name" = "MUNICIPALITY") ) %>%
+arrange(-count) %>%
+ggplot(aes(fill = count)) + 
+  geom_sf(aes(geometry = geometry), color = "black") + 
+  labs(title = "TY2022: Parcels in SFHA, by Municipality", 
+  caption = "") +
+  theme_void() + 
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    show.limits=TRUE,
+    name = "Count",
+  )
 ```
 
 ```{r muni_sfhas_2022, eval=FALSE, include=FALSE}
@@ -619,6 +849,8 @@ ggplot(aes(fill = count)) +
 > Chunk below accidentally identified properties that change property class over time
 
 *Note: These are for all PINs within a land block that had at least one PIN designated as SFHA.*
+
+> Class 241 is vacant residential land. It becoming class 100 does not mean that a building was removed.
 
 ```{r}
 
@@ -936,7 +1168,7 @@ block_sums %>%
 
 flood_pins_ptax %>% filter(SFHA == 1) %>% 
   group_by(year) %>% summarize(count = n()) %>% 
-  arrange(count) %>% ggplot() + 
+  arrange(count) %>% ggplot() +
   geom_line(aes(x=year, y=count)) + 
   labs(title = "Cook County Pins in Flood Plains", 
        caption = "Data from Cook County Data Portal")
@@ -951,19 +1183,7 @@ flood_pins_ptax %>%
        caption = "Data from Cook County Data Portal") 
 ```
 
-# Illinois Flood Insurance Claims
 
-```{r eval = FALSE}
-ilclaims <- read_csv("nfipclaims_IL.csv")
-table(ilclaims$yearOfLoss
-      )
-
-```
-
-
-# Sources
-
-National Weather Service Chicago, IL, 2023. "The July 2 and September 17, 2023, Flash Flood Events in the Chicago Metro Area." [Website](https://www.weather.gov/media/lot/events/2023/07_02/2023_07_02_and_2023_09_17_Chicago_FlashFloods.pdf) 
 
 
 
