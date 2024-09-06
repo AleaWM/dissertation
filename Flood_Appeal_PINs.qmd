@@ -1,7 +1,8 @@
 ---
 title: "PINs that Appealed their AV from the 2023 Disaster Declarations"
 author: "Alea Wilbur"
-date: "`r Sys.Date()`"
+published: March 28, 2024
+modified: "`r Sys.Date()`"
 format:
   html:
     code-fold: true
@@ -53,7 +54,7 @@ class_dict <- read_csv("C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring
 setwd('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax')
 
 
-source('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/helper_tc_muninames_2022.R')
+source('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/scripts/helper_tc_muninames_2022.R')
 
 # muni_shp <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/politicalBoundary/MapServer/2/query?outFields=*&where=1%3D1&f=geojson")
 
@@ -366,7 +367,7 @@ flood_pins_ptax <- flood_pins_ptax %>%
 
 # Mapping Parcels
 
-```{r echo=FALSE}
+```{r}
 # create vector of parcel numbers for the ptaxsim function that pulls the parcel shapes. 
 flood_pin10s <- flood_pins %>% #mutate(parcel = as.character(parcel)) %>%
   select(parcel) %>% 
@@ -403,6 +404,8 @@ flood_pins_geo <- flood_pins_geo %>%
 # table(flood_pins_geo$clean_name)
 # 45 in Berwyn, 268 in Cicero
 
+
+# saveRDS(flood_pins_geo, "./inputs/appeal_pins_geography.rds")
 ```
 
 ::: {#fig-CiceroBerwynMaps layout-ncol=2}
