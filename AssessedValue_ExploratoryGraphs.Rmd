@@ -331,15 +331,17 @@ business_land = c(400, 500, 550, 637, 650, 651, 700, 742, 800, 850)
 
 flood_pins_ptax22 %>% 
   filter(SFHA == 1) %>% 
-  mutate(building = ifelse(class %in% building, 1, 0)) %>%
+  mutate(building = ifelse(class %in% building, 1, 0),
+         residential = ifelse(between(class, 200, 299), 1, 0),
+         residential_parcels = ifelse(residential == 1, parcel_num, NA)) %>%
   group_by(building) %>%
   summarize(pin_count = n(),
             exempt_PC = sum(ifelse(av_clerk == 0, 1, 0)),
-            residential_PC = sum(ifelse(between(class, 200, 299), 1, 0)),
+            residential_PC = sum(residential == 1),
             land_PC = sum(ifelse(between(class, 1, 199), 1, 0)),
-
             parcel_count = n_distinct(parcel_num),
-    av = sum(av_clerk),
+            res_parcel_count = n_distinct(residential_parcels),
+            av = sum(av_clerk),
             fmv = sum(av_clerk / loa_2022, na.rm=TRUE
                       ))
 
@@ -363,10 +365,27 @@ flood_pins_ptax22 %>%
 
 ```{r}
 block_sums <-  flood_pins_ptax %>%
+    mutate(fmv_mailed = case_when(
+    class_1dig == 2 & year >= 2009 ~ av_mailed/0.1,
+    class_1dig == 2 & year <  2009 ~ av_mailed/0.16,
+    class_1dig == 5 & year >= 2009 ~ av_mailed/0.25,
+    class_1dig == 5 & year < 2009 ~ av_mailed/0.36,
+    TRUE~ av_mailed /0.1
+  ),
+  fmv_clerk = case_when(
+    class_1dig == 2 & year >= 2009 ~ av_clerk/0.1,
+    class_1dig == 2 & year <  2009 ~ av_clerk/0.16,
+    class_1dig == 5 & year >= 2009 ~ av_clerk/0.25,
+    class_1dig == 5 & year < 2009 ~ av_clerk/0.36,
+    TRUE~av_clerk/0.1
+  )
+         ) %>%
   group_by(year, block_num) %>%
   summarize(
     pincount = n(),
     parcels = n_distinct(parcel_num),
+    fmv_mailed = sum(fmv_mailed, na.rm=TRUE),
+    fmv_clerk = sum(fmv_clerk, na.rm=TRUE),
     av_mailed = sum(av_mailed),
     av_certified = sum(av_certified),
     av_board = sum(av_board),
@@ -377,6 +396,13 @@ block_sums <-  flood_pins_ptax %>%
     major_class = first(major_class)
   )
   
+
+block_sums %>% group_by(year) %>% summarize(fmv_mailed = sum(fmv_mailed)/1000000000,
+                                            fmv_clerk= sum(fmv_clerk)/1000000000) %>%
+  ggplot() + geom_line(aes(x=year, y = fmv_mailed),color = "black") +
+  geom_line(aes(x=year, y = fmv_clerk), color = "blue") + 
+  labs(x = "Year", y = "FMV ($ Billions)", title = "Mailed and Final FMV", caption= "Black line is Mailed FMV, blue line is final FMV amounts. \n Assessment Ratios changed in 2009 and there was the housing bubble.")
+
 ```
 
 ## Per Neighborhood
