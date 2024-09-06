@@ -67,7 +67,7 @@ nbh_pins <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
 
 
 flood_pins <- nbh_pins %>% 
-  filter(env_flood_fs_factor > 5)
+  filter(env_flood_fs_factor >= 5)
   
 block_strings <- flood_pins %>% 
   mutate(block_num = str_sub(pin, 1, 7)) %>% 
@@ -106,7 +106,7 @@ flood_pins_ptax <- flood_pins_ptax %>%
 ```
 
 ```{r}
-#| tbl-cap: "Number of PINs in land blocks that had flooded properties in 2023"
+#| tbl-cap: "Number of PINs in with flood factor >= 5. A Risk Rating of 5 indicates that a property has an 80% chance of flooding over a 30-year timeframe. A 6 and above essentially guarantee that the property will flood at least once within a 30-year timeframe."
 #| label: tbl-pincount
 
 
@@ -127,7 +127,7 @@ flood_pins_ptax %>%
 flood_pins_ptax %>% 
   filter(year == 2022
          ) %>%
-  mutate(env_flood_fs_factor = ifelse(is.na(env_flood_fs_factor), "Below 6", env_flood_fs_factor)) %>%
+  mutate(env_flood_fs_factor = ifelse(is.na(env_flood_fs_factor), "Below 5", env_flood_fs_factor)) %>%
   arrange(desc(env_flood_fs_factor)) %>%
   group_by(env_flood_fs_factor , major_class) %>%
   summarize(
@@ -149,6 +149,19 @@ flood_pins_ptax %>%
             parcels = n_distinct(parcel_num),
             pins_at_risk = sum(ifelse(is.na(env_flood_fema_sfha), 0, 1)            ) )
 
+```
+
+```{r}
+
+class_dict$class_code <- as.character(class_dict$class_code)
+flood_pins_ptax %>% 
+  filter( year == 2022) %>% 
+  left_join(class_dict, by = c("class.x" = "class_code")) %>%
+  filter(!is.na(env_flood_fs_factor)) %>%
+# group_by(env_flood_fs_factor) %>%
+  summarize(n = n(),
+            av = sum(av_clerk),
+            fmv = sum(av_clerk / loa_2022, na.rm=TRUE))
 ```
 
 ```{r}
@@ -181,8 +194,7 @@ flood_pins_ptax %>%
   
   scale_y_continuous(name = "Avg Assessed Value for Major Class", labels = scales::dollar ) +
   scale_x_continuous(breaks = c(2006, 2010, 2015, 2020, 2023), name = ""  ) + 
-  facet_wrap(~major_class, scales = "free",
-             ncol = 1)
+  facet_wrap(~major_class, scales = "free", ncol = 1)
 ```
 
 ```{r}
@@ -244,8 +256,7 @@ flood_pins_ptax %>%
   theme(legend.position = "none") +
   scale_color_discrete(element_blank())+
   scale_linetype_discrete(name = "Appealed AV after 2023 Flood Damage", labels = c("Did not submit form", "Submitted PTAX245 form"))+
-theme(legend.position = "bottom",
-      )
+theme(legend.position = "bottom" )
 ```
 
 ```{r}
@@ -267,8 +278,6 @@ flood_pins_ptax %>%
   scale_y_continuous(labels = scales::dollar, name = "Total Assessed Value")
 ```
 
-> \~147,000 PIN-year combos
-
 ## Get taxcodes for the PINs
 
 ```{r}
@@ -281,7 +290,7 @@ flood_pins_ptax <- flood_pins_ptax %>%
 ```{r echo=FALSE}
 # create vector of parcel numbers for the ptaxsim function that pulls the parcel shapes. 
 flood_pin10s <- flood_pins_ptax %>% 
-  filter(env_flood_fs_factor > 5) %>% 
+  filter(env_flood_fs_factor >= 5) %>% 
   select(parcel_num) %>% 
   distinct(parcel_num)
 
@@ -294,7 +303,9 @@ flood_pin10s <- as.character(flood_pin10s$parcel_num)
 #   st_as_sf(wkt = "geometry", crs = 4326)
 # 
 
-# 313,517 parcel shapes for pins that existed in 2022
+
+# 128,770 with 6 and higher rating
+# 154,393 with 5 and higher rating
 flood_pins_geo <- lookup_pin10_geometry(year = 2022, 
                                         pin10 = flood_pin10s) %>%
   st_as_sf(wkt = "geometry", crs = 4326)
@@ -312,9 +323,11 @@ flood_pins_merged <- flood_pins_geo %>%
 
 ```
 
-```{r eval=FALSE, include = FALSE}
-# add border for cook County
-#cook_border <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/plss/MapServer/1/query?outFields=*&where=1%3D1&f=geojson")
+```{r pins-in-FSfactor-mapped, eval = FALSE, include = FALSE}
+
+## THERE ARE ZERO PINS in FEMA FLOOD ZONES
+## IN BERWYEN OR CICERO so there is no point in mapping the SFHA == TRUE maps
+
 bound_muni_cicero <- st_read(paste0(
   "https://opendata.arcgis.com/api/v3/datasets/",
   "534226c6b1034985aca1e14a2eb234af_2/downloads/",
@@ -326,7 +339,7 @@ bound_muni_cicero <- st_read(paste0(
 cicero_appeals <- ggplot() +
   annotation_map_tile(type = "cartolight", zoomin = -1) +
   geom_sf(
-    data = flood_pins_merged %>% filter(clean_name %in% c("Cicero")),
+    data = flood_pins_merged %>% filter(clean_name %in% c("Cicero") & env_flood_fs_factor==TRUE),
     aes(fill = major_class),
     alpha = 0.5,
     linewidth = 0.1
@@ -342,25 +355,21 @@ cicero_appeals <- ggplot() +
   
 
 
-# bound_muni_berwyn <- st_read(paste0(
-#   "https://opendata.arcgis.com/api/v3/datasets/",
-#   "534226c6b1034985aca1e14a2eb234af_2/downloads/",
-#   "data?format=geojson&spatialRefId=4326&where=1%3D1"
-# ), quiet = TRUE) %>%
-#   filter(MUNICIPALITY == "Berwyn")
+bound_muni_berwyn <- st_read(paste0(
+  "https://opendata.arcgis.com/api/v3/datasets/",
+  "534226c6b1034985aca1e14a2eb234af_2/downloads/",
+  "data?format=geojson&spatialRefId=4326&where=1%3D1"
+), quiet = TRUE) %>%
+  filter(MUNICIPALITY == "Berwyn")
 
 berwyn_appeals <- ggplot() +
  annotation_map_tile(type = "cartolight", zoomin = -1) +
   geom_sf(
-    data = flood_pins_merged  %>% filter(clean_name %in% c("Berwyn")) 
-      ,
-
+    data = flood_pins_merged  %>% filter(clean_name %in% c("Berwyn")  & env_flood_fs_factor==TRUE),
    aes(fill = major_class),
     alpha = 0.5,
     linewidth = 0.1
   ) +
-# geom_sf(data = cook_border, fill = "transparent", linewidth = 1) +
-
   guides(color = guide_legend(override.aes = list(size = 5))) +
   theme_void() +
   theme(
@@ -375,9 +384,49 @@ cicero_appeals
 berwyn_appeals
 ```
 
-![Cicero parcels with a First Street Rating above 5.](Cicero_FS_6andup)
+```{r eval=FALSE}
 
-![Berwyn parcels with a First Street Rating of 6 and higher.](Berwyn_FS_6andup){fig-alt="berwyn_highrisk_parcels"}
+
+#appeal_pins_geo <- readRDS(file = "./inputs/appeal_pins_geography.rds") 
+
+#both_joined <- full_join(appeal_pins_geo, flood_pins_merged, by = c("year" = "year.x",))
+
+# add border for cook County
+#cook_border <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/plss/MapServer/1/query?outFields=*&where=1%3D1&f=geojson")
+# bound_muni_cicero <- st_read(paste0(
+#   "https://opendata.arcgis.com/api/v3/datasets/",
+#   "534226c6b1034985aca1e14a2eb234af_2/downloads/",
+#   "data?format=geojson&spatialRefId=4326&where=1%3D1"
+# ), quiet = TRUE) %>%
+#   filter(MUNICIPALITY == "Cicero")
+# 
+
+riskypins <- ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = -1) +
+  geom_sf(
+    data = flood_pins_merged %>% filter(clean_name %in% c("Cicero", "Berwyn")),
+    aes(fill = factor(env_flood_fs_factor)),
+    alpha = 0.5,
+    linewidth = 0.1
+  ) +
+ # guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme_void() +
+  theme(
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(18, "points"),
+    legend.position = "bottom"
+  )
+  
+riskypins
+
+```
+
+![Cicero parcels with a First Street Rating above 5. There are a mix of property classes, but many of them are Class 2- Residential.](Cicero_FS_6andup.png){fig-alt="Cicero high risk parcels"}
+
+![Berwyn parcels with a First Street Rating of 6 and higher. Most properties are Class 2 - Residential. ](Berwyn_FS_6andup.png){fig-alt="berwyn_highrisk_parcels"}
+
+![Berwyn and Cicero area parcels with a First Street Rating of 5 and higher.](riskypins.png)
 
 # Tax code level Change
 
