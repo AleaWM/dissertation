@@ -1,0 +1,449 @@
+---
+title: "Cook County Parcel Sales"
+format: 
+  html:
+    code-fold: true
+    code-tools: true
+    df-print: paged
+---
+
+## Data Prep
+
+Code from [CCAO](https://ccao-data.github.io/assessr/articles/example-ratio-study.html).
+
+Description of functions and [measurements](https://ccao-data.github.io/assessr/reference/index.html).
+
+```{r setup, warning=FALSE, message=FALSE}
+library(sf)
+library(tidyverse)
+```
+
+```{r eval=FALSE}
+
+# Load 100k rows of 2020 sales data
+sales <- read_json(
+  paste0(
+    "https://datacatalog.cookcountyil.gov/resource/wvhk-k5uv.json?",
+    "$where=year>2010&$limit=1000000&$sale_filter_less_than_10K=FALSE"
+  ),
+  simplifyVector = TRUE
+) %>%
+  # read_json removes leading zeroes, add them back
+  mutate(pin = str_pad(pin, 14, "left", "0"))
+
+
+
+#base_url <- "https://datacatalog.cookcountyil.gov/resource/tx2p-k2g9.json"
+
+
+# link to the API output as a JSON file
+#nh_shp <- read_sf("https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.json")
+
+
+```
+
+```{r, warning=FALSE, message=FALSE}
+#sales <- read_csv("./inputs/Assessor_Parcel_Sales_20240911.csv")
+sales <- read_csv("./inputs/Assessor_Parcel_Sales_20241126.csv") %>% filter(year > 2005)
+
+
+ccao_loa <- read_csv("./inputs/ccao_loa.csv") %>%
+  mutate(loa = ifelse(loa == 0, NA, loa))
+ # mutate(class_code = as.character(class_code))
+
+
+# All PINs that are located in land blocks that have at least 1 SFHA pin
+landblock_pins <- read_csv("outputs/pins_in_Blocks_2006_2023_20241126.csv") |> 
+  # landblock_pins <- read_csv("./inputs/flood_pins_ptax.csv") %>%
+
+  left_join(ccao_loa, by = c("year","class" = "class_code")) %>%
+  mutate(class = as.character(class),
+         class_1dig = str_sub(class, 1, 1)) %>%
+   mutate(fmv_mailed = av_mailed/loa,
+          fmv_board = av_board/loa,
+          fmv_clerk = av_clerk/loa
+         ) 
+
+
+nbh_pins <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
+
+
+sfha_pins <- nbh_pins %>% 
+  filter(env_flood_fema_sfha == TRUE) %>%
+  select(-c(year, env_flood_fema_sfha, class))
+
+flood_pins <- nbh_pins %>% 
+  filter(env_flood_fs_factor >= 5) %>%
+  select(-c(year, class))
+```
+
+**Note that `sfha_pins` are PINs that have the SFHA indicator == 1 and `flood_pins` are PINs that have a flood factor rating of 5 or higher**  
+
+
+```{r, warning=FALSE, message=FALSE, include=FALSE, eval=FALSE}
+#| label: tbl-commercindust-properties
+#| tbl-cap: "Commercial and Industrial Sales. **NOTE - This is probably the best Project to PIN crosswalk to exist! Group by document number! This document number is the same document number that can be searched in the Clerk's Recordings online. That is how we were checking projects and the PINs within before the BOR appeal dataset and during manual project keypin creation.**"
+# sales %>% 
+#   filter(mydec_deed_type == "Quit Claim Deed") %>% 
+#   arrange(desc(as.numeric(num_parcels_sale)))
+
+## Commercial and Industrial Sales. 4701 observations
+sales %>% group_by(sale_document_num) %>% 
+  filter(class > 499 & class < 900) %>%
+  arrange( desc(as.numeric(num_parcels_sale)), sale_buyer_name, pin) %>% 
+  select(pin, class, sale_buyer_name, num_parcels_sale, everything())
+```
+
+Above, we pulled sales data from Cook County's Open Data Portal.
+
+```{r}
+#| label: tbl-SFHAparcels
+#| tbl-cap-location: margin
+#| tbl-cap: "Parcels in SFHAs that have been sold."
+
+sfhasales <-  sales %>%
+  filter(pin %in% sfha_pins$pin) %>%
+  left_join(landblock_pins, by = c("year", "pin", "class")) %>%
+  mutate(parcel = str_sub(pin, 1, 10),
+         major_class = str_sub(class, 1, 1))
+
+sfhasales %>% group_by(parcel, year, sale_document_num) %>%
+  summarize(pincount = n(),
+            sale_price = first(sale_price)) %>% 
+  arrange(desc(pincount))
+```
+
+
+```{r}
+#| label: tbl-SFHAparcels-soldtimes
+#| tbl-cap-location: margin
+#| tbl-cap: "SFHA PIN Sales: Number of times sold and count of years properties were sold in"
+
+sfhasales %>% group_by(pin) %>% 
+  summarize(timessold=n(),
+            distinct_years = n_distinct(year),
+            max_price= max(sale_price),
+            min_price = min(sale_price),
+            class = max(class_1dig)) %>% 
+  filter(timessold>1) %>% 
+  arrange(desc(timessold))
+```
+
+
+```{r}
+#| label: tbl-salesover5K
+#| tbl-cap-location: margin
+#| tbl-cap: "Sales of SFHA PINs over $5000 for properties in SFHA FEMA Zones. N = 18,157"
+
+sfhasales %>% 
+  filter(!is.na(sale_price) & sale_price > 5000) %>% 
+  arrange(desc(num_parcels_sale), sale_document_num, pin )
+```
+
+```{r}
+#| label: fig-pinsales-andAV
+#| fig-cap: "PIN Sale Price and Assessed Values over time."
+#| layout-ncol: 3
+
+
+sfhasales %>% 
+  filter(pin == "09163040191019") %>% 
+  ggplot() +
+  geom_line(aes(x=year, y = sale_price), lty = 1)+
+  geom_point(aes(x=year, y = sale_price)) +
+  geom_line(aes(x=year, y = av_clerk), lty = 3)+
+  geom_line(aes(x=year, y = fmv_clerk), lty=2)
+
+
+
+sfhasales %>% 
+  filter(pin == "05201210150000") %>% 
+  ggplot() +
+  geom_line(aes(x=year, y = sale_price), lty = 1)+
+  geom_point(aes(x=year, y = sale_price)) +
+  geom_line(aes(x=year, y = av_clerk), lty = 3)+
+  geom_line(aes(x=year, y = fmv_clerk), lty=2)
+
+
+
+sfhasales %>% 
+  filter(pin == "09281140060000") %>% 
+  ggplot() +
+  geom_line(aes(x=year, y = sale_price), lty = 1)+
+  geom_point(aes(x=year, y = sale_price)) +
+  geom_line(aes(x=year, y = av_clerk), lty = 3)+
+  geom_line(aes(x=year, y = fmv_clerk), lty=2)
+
+
+```
+
+```{r}
+#| label: tbl-floodfactor-parcels
+#| tbl-cap-location: margin
+#| tbl-cap: "Parcels with Flood Factor Risk Rating >= 5  that have been sold. 206,304 PINs have sales prices above $5K and flood factor ratings."
+
+floodsales <- sales %>% 
+  filter(pin %in% flood_pins$pin) %>%
+  left_join(landblock_pins, by = c("year", "pin", "class"))
+
+
+
+#floodsales %>% filter(!is.na(sale_price))
+floodsales %>% filter(#!is.na(sale_price) & 
+                        sale_price > 5000)
+# 206,304 sales for pins in flood factor high risk areas of 5 or higher
+```
+
+
+
+### SFHA PINs
+
+```{r}
+#| label: fig-saleprices-bymajorclass
+#| fig-cap-location: margin
+#| fig-cap: "**Average Sale Prices per year by Major Property Class.** Some years have very few sales and can be skewed by whatever property happens to be sold that year."
+#| warning: false
+#| message: false
+
+sfhasales %>% 
+  group_by(year, major_class) %>%
+  summarize(sale_price = mean(sale_price, na.rm=TRUE)) %>%
+  ggplot() +
+  geom_line(aes(x=year, y = sale_price)) + 
+  theme_classic() + 
+  scale_y_continuous(name = "Avg Sale Price for Major Class", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006, 2015, 2023), name = ""  ) + 
+  facet_wrap(~major_class, scales = "free"             )
+```
+
+
+```{r}
+#| label: tbl-SFHAsales-byclass
+#| tbl-cap: "Number of SFHA sales per year by major class."
+
+sfhasales %>% 
+  group_by(year, major_class) %>%
+  summarize(NumberSold=n()) %>%
+  pivot_wider(names_from = major_class, values_from = NumberSold)
+```
+
+```{r}
+#| label: fig-AV-bymajorclass-SOLD
+#| fig-cap-location: margin
+#| fig-cap: "**Average Assessed Value per year by Major Property Class for properties within FEMA SFHAs THAT WERE SOLD!** Some major classes have very few properties located in SFHAs so sudden changes in AV for one or two properties can skew the graphs very easily."
+#| warning: false
+#| message: false
+
+sfhasales %>% 
+  filter(!major_class %in% c("EX", "E", "R", "RR", "4"))%>%
+  group_by(year, major_class) %>%
+  summarize(av_mailed = mean(av_mailed, na.rm=TRUE),
+            av_board = mean(av_board, na.rm=TRUE),
+            av_clerk = mean(av_clerk, na.rm=TRUE)) %>%
+  ggplot() +
+      geom_line(aes(x=year, y = av_clerk)) + 
+    geom_point(aes(x=year, y = av_clerk)) + 
+# 
+#   geom_line(aes(x=year, y = av_mailed
+#                 ), linetype = 2 ) + 
+#     geom_line(aes(x=year, y = av_board
+#                   ) ) + 
+#     geom_point(aes(x=year, y = av_board
+#                    )) + 
+#     geom_line(aes(x=year, y = av_mailed
+#                 ), linetype = 2 ) + 
+  theme_classic() + 
+  
+  scale_y_continuous(name = "Avg Assessed Value for Major Class", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006, 2015, 2023), name = ""  ) + 
+  facet_wrap(~major_class, scales = "free"
+             )
+```
+
+```{r}
+#| label: fig-FMV-bymajorclass
+#| fig-cap-location: margin
+#| fig-cap: "**Average  FMV per year by Major Property Class for properties within FEMA SFHAs.** Some major classes have very few properties located in SFHAs so sudden changes in AV for one or two properties can skew the graphs very easily. Roughly accounts for change in assessment ratio that occured during 2010ish. Only did rough estimate for classes 2 & 5."
+#| warning: false
+#| message: false
+#| 
+landblock_pins %>% 
+  filter(pin %in% sfha_pins$pin & class_1dig %in% c(2, 5)) %>%
+  mutate(major_class = str_sub(class, 1,1)) %>%
+  group_by(year, major_class) %>%
+  summarize(fmv_mailed = mean(fmv_mailed, na.rm=TRUE),
+            fmv_board = mean(fmv_board, na.rm=TRUE),
+            fmv_clerk = mean(fmv_clerk, na.rm=TRUE)) %>%
+  ggplot() +
+      geom_line(aes(x=year, y = fmv_clerk)) + 
+    geom_point(aes(x=year, y = fmv_clerk)) + 
+
+  # geom_line(aes(x=year, y = fmv_mailed), linetype = 2 ) + 
+  #   geom_line(aes(x=year, y = fmv_board) ) + 
+  #   geom_point(aes(x=year, y = fmv_board)) + 
+  #   geom_line(aes(x=year, y = fmv_mailed), linetype = 2 ) + 
+  theme_classic() + 
+  scale_y_continuous(name = "Avg FMV by Major Class", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006, 2015, 2023), name = ""  ) + 
+  facet_wrap(~major_class, scales = "free" )
+```
+
+```{r}
+landblock_pins %>% 
+  mutate(sfha_flag = as.factor(ifelse(pin %in% sfha_pins$pin, 1, 0))) %>%
+  mutate(major_class = str_sub(class, 1,1)) %>%
+  group_by(year, major_class, sfha_flag) %>%
+  summarize( pincount = n()) %>% 
+  pivot_wider(values_from = pincount, names_from = c("major_class", "sfha_flag"))
+```
+
+```{r}
+#| label: fig-FMV-bymajorclass-comparison
+#| fig-cap-location: margin
+#| fig-cap: "**Average  FMV per year by Major Property Class for properties:  FEMA SFHA Properties vs non-SFHA Properties.** Compares all PINs located within a block of land (first 7 digits of PIN). Includes land blocks that have at least one PIN in an SFHA. Assumption is that PINs in close proximity are aware of nearby properties flooding."
+#| warning: false
+#| message: false
+#| 
+landblock_pins %>% 
+  mutate(sfha_flag = as.factor(ifelse(pin %in% sfha_pins$pin, 1, 0))) %>%
+  mutate(major_class = str_sub(class, 1,1)) %>%
+  group_by(year, major_class, sfha_flag) %>%
+  summarize(fmv_mailed = mean(fmv_mailed, na.rm=TRUE),
+            fmv_board = mean(fmv_board, na.rm=TRUE),
+            fmv_clerk = mean(fmv_clerk, na.rm=TRUE),
+
+            pincount = n()) %>%
+  filter(major_class!= 0) %>%
+  ggplot() +
+    geom_line(aes(x=year, y = fmv_clerk, color = sfha_flag)) + 
+    geom_point(aes(x=year, y = fmv_clerk, color = sfha_flag)) + 
+
+ # geom_line(aes(x=year, y = fmv_mailed, color = sfha_flag)) + 
+  #  geom_line(aes(x=year, y = fmv_board, color = sfha_flag), linetype = 2 ) + 
+  #  geom_point(aes(x=year, y = fmv_board, color = sfha_flag)) + 
+   # geom_line(aes(x=year, y = fmv_mailed, color = sfha_flag), linetype = sfha_flag ) + 
+  theme_classic() + 
+  scale_y_continuous(name = "Avg FMV by Major Class", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006, 2015, 2023), name = ""  ) + 
+  facet_wrap(~major_class, scales = "free" )
+```
+
+
+### Flood Factor PINs and AV
+
+```{r}
+#| label: fig-FMV-bymajorclass-floodfactorcomparison
+#| fig-cap-location: margin
+#| fig-cap: "**Average  FMV by Major Property Class & Flood Factor Risk: For Properties with a rating of 5 or higher designating them as high risk** Roughly accounts for change in assessment ratio that occured during 2010ish. Only did rough estimate for classes 2 & 5."
+#| warning: false
+#| message: false
+
+landblock_pins %>% 
+  mutate(ff_flag = as.factor(ifelse(pin %in% flood_pins$pin, 1, 0))) %>%
+  mutate(major_class = str_sub(class, 1,1)) %>%
+  group_by(year, major_class, ff_flag) %>%
+  summarize(fmv_mailed = mean(fmv_mailed, na.rm=TRUE),
+            fmv_board = mean(fmv_board, na.rm=TRUE),
+            fmv_clerk = mean(fmv_clerk, na.rm=T),
+            pincount = n()) %>%
+  filter(#pincount > 60 & 
+           major_class != 0) %>%
+  ggplot() + 
+      geom_line(aes(x=year, y = fmv_clerk, color = ff_flag)) + 
+    geom_point(aes(x=year, y = fmv_clerk, color = ff_flag)) + 
+
+  # geom_line(aes(x=year, y = fmv_mailed, color = ff_flag)) + 
+  #   geom_line(aes(x=year, y = fmv_board, color = ff_flag), linetype = 2 ) + 
+  #   geom_point(aes(x=year, y = fmv_board, color = ff_flag)) + 
+  theme_classic() + 
+  scale_y_continuous(name = "Avg FMV by Major Class", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006, 2015, 2023), name = ""  ) + 
+  facet_wrap(~major_class, scales = "free" )
+```
+
+```{r}
+#| label: fig-AV-bymajorclass
+#| fig-cap-location: margin
+#| fig-cap: "**Average Assessed Value per year by Major Property Class for properties within FEMA SFHAs.** Some major classes have very few properties located in SFHAs so sudden changes in AV for one or two properties can skew the graphs very easily."
+#| warning: false
+#| message: false
+#| 
+landblock_pins %>% 
+  filter(pin %in% sfha_pins$pin) %>%
+  mutate(major_class = str_sub(class, 1,1)) %>%
+  group_by(year, major_class) %>%
+  summarize(av_mailed = mean(av_mailed, na.rm=TRUE),
+            av_board = mean(av_board, na.rm=TRUE)) %>%
+  ggplot() +
+  geom_line(aes(x=year, y = av_mailed), linetype = 2 ) + 
+    geom_line(aes(x=year, y = av_board) ) + 
+    geom_point(aes(x=year, y = av_board)) + 
+    geom_line(aes(x=year, y = av_mailed), linetype = 2 ) + 
+  theme_classic() + 
+  scale_y_continuous(name = "Avg Assessed Value for Major Class", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006,  2015,  2023), name = ""  ) + 
+  facet_wrap(~major_class, scales = "free" )
+```
+
+### FMV and Sales
+
+```{r}
+#| label: fig-FMV-andsales
+#| fig-cap-location: margin
+#| fig-cap: "**Fair Market Value and Sales Price"
+#| warning: false
+#| message: false
+
+landblock_pins %>% 
+  left_join(sales %>% filter(sale_price > 5000) %>% select(-class), by = c("year", "pin")) %>%
+  mutate(ff_flag = as.factor(ifelse(pin %in% flood_pins$pin, 1, 0))) %>%
+  mutate(major_class = str_sub(class, 1,1)) %>%
+  group_by(year, major_class) %>%
+  summarize(fmv_mailed = mean(fmv_mailed, na.rm=TRUE),
+            fmv_board = mean(fmv_board, na.rm=TRUE),
+            fmv_clerk = mean(fmv_clerk, na.rm=T),
+            sales = mean(sale_price, na.rm=T),
+            pincount = n()) %>%
+  filter(major_class != 0) %>%
+  ggplot() + 
+    geom_line(aes(x=year, y = fmv_clerk)) + 
+    geom_point(aes(x=year, y = fmv_clerk)) + 
+    geom_line(aes(x=year, y = sales, color="red")) + 
+    geom_point(aes(x=year, y = sales, color="red")) +
+  # geom_line(aes(x=year, y = fmv_mailed, color = ff_flag)) + 
+  #   geom_line(aes(x=year, y = fmv_board, color = ff_flag), linetype = 2 ) + 
+  #   geom_point(aes(x=year, y = fmv_board, color = ff_flag)) + 
+  theme_classic() + 
+  scale_y_continuous(name = "Avg FMV by Major Class", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006, 2015, 2023), name = ""  ) + 
+  facet_wrap(~major_class, scales = "free" )
+```
+
+
+
+## Commercial & Industrial Projects 
+
+Move to PTAX project. Use sales data to create Project identifiers.
+
+```{r}
+#| label: tbl-multisales
+#| tbl-cap-location: margin
+#| tbl-cap: "Projects identified by grouping PINs by the year, buyer name, and neighborhood code. PINs were associated with a project and documented with Clerk's document number"
+#| warning: false
+#| message: false
+#
+sales %>% 
+  filter(is_multisale == TRUE) %>%
+  mutate(class = ifelse(class == "EX" | class == "RR", 0, as.numeric(class))) %>%
+  group_by(year, sale_buyer_name, neighborhood_code, num_parcels_sale) %>%
+  summarize(amount = first(sale_price),
+            buyer = first(sale_buyer_name), 
+            seller= first(sale_seller_name),
+            pincount = n_distinct(pin),
+            obscount = n(),
+            class = mean(class)) %>% 
+  mutate(soldmulti_inyear = ifelse(obscount > num_parcels_sale, 1, 0)) %>%
+  arrange(desc(num_parcels_sale), year, buyer) %>% 
+  filter(class >=500) # %>% filter(amount > 200)
+
+```
