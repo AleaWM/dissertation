@@ -43,7 +43,7 @@ library(sf)
 ptax245 <- readxl::read_excel("inputs/PTAX-245_Data.xlsx")
 
 # Create the DB connection with the default name expected by PTAXSIM functions
-ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2022.0.0.db")
+ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2023.0.0.db")
 
 # has all potential property classes for pins
 # downloaded from CCAO gitlab website
@@ -53,8 +53,10 @@ class_dict <- read_csv("C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring
 
 setwd('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax')
 
+taxyear = 2023
+taxyear = as.data.frame(taxyear)
 
-source('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/scripts/helper_tc_muninames_2022.R')
+source('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/scripts/helper_tc_muninames.R')
 
 # muni_shp <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/politicalBoundary/MapServer/2/query?outFields=*&where=1%3D1&f=geojson")
 
@@ -65,6 +67,7 @@ source('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman R
 ```{r}
 #| label: tbl-ptax245datapreview
 #| tbl-cap: "Data received from the Board of Review. Contains PINs that submitted PTAX-245 forms after the 2023 flood event. Almost all PINs are located in Cicero and Berwyn."
+
 flood_pins <- ptax245 %>% 
   mutate(
     pin = str_remove_all(pin, "-"),
@@ -159,8 +162,8 @@ merge %>%
   filter(appealed == 1) %>%
   filter(major_class %in% c(2,5)) %>%
   group_by(year, major_class) %>%
-  summarize(av_mailed = sum(av_mailed),
-            av_board = sum(av_board)) %>%
+  summarize(av_mailed = sum(av_mailed, na.rm = TRUE),
+            av_board = sum(av_board, na.rm = TRUE)) %>%
   ggplot(labels=mc_labels,) +
   geom_line(aes(x=year, y = av_mailed#, color = major_class
                 ), linetype = 2 ) + 
@@ -172,7 +175,7 @@ merge %>%
                    )) + 
   theme_classic() +
   scale_y_continuous(name = "Summed Assessed Value for Major Class", labels = scales::dollar ) +
-  scale_x_continuous(breaks = c(2006, 2010, 2015, 2020, 2023)  ) + 
+  scale_x_continuous(breaks = c(2006, 2015, 2023)  ) + 
   facet_wrap(~ major_class, scales = "free", ncol = 1)
 ```
 
@@ -183,28 +186,23 @@ merge %>%
 
 
 merge %>% 
-  filter(year < 2023 & major_class != 0) %>%
+  filter(major_class != 0) %>%
   mutate(av_dif = av_mailed-av_board) %>%
   group_by(year, major_class) %>%
-  summarize(av_mailed = mean(av_mailed),
-            av_board = mean(av_board),
+  summarize(av_mailed = mean(av_mailed, na.rm = TRUE),
+            av_board = mean(av_board, na.rm = TRUE),
             av_dif = mean(av_dif, na.rm = TRUE)
             ) %>%
   ggplot() +
-  geom_line(aes(x=year, y = av_mailed#, color = major_class
-                ), linetype = 2 ) + 
-    geom_line(aes(x=year, y = av_dif),  color = "red"
-                   ) + 
-  geom_point(aes(x=year, y = av_dif),  color = "red"
-                   ) + 
-    geom_line(aes(x=year, y = av_board#, color = major_class
+  geom_line(aes(x=year, y = av_mailed), linetype = 2 ) + 
+    geom_line(aes(x=year, y = av_board
                   ) ) + 
-    geom_point(aes(x=year, y = av_board#, color = major_class
+    geom_point(aes(x=year, y = av_board
                    )) + 
-    geom_line(aes(x=year, y = av_mailed#, color = major_class
+    geom_line(aes(x=year, y = av_mailed
                 ), linetype = 2 ) + 
   scale_y_continuous(name = "Avg Assessed Value for Major Class", labels = scales::dollar ) +
-  scale_x_continuous(breaks = c(2006, 2010, 2015, 2020, 2023)  ) + 
+  scale_x_continuous(breaks = c(2006, 2015, 2023)  ) + 
   facet_wrap(~major_class, scales = "free")
 ```
 
@@ -218,8 +216,8 @@ merge %>%
   filter(year == 2023 & major_class != 0) %>%
   mutate(av_dif = av_mailed-av_board) %>%
   group_by(year, major_class) %>%
-  summarize(av_mailed = mean(av_mailed),
-            av_board = mean(av_board),
+  summarize(av_mailed = mean(av_mailed, na.rm = TRUE),
+            av_board = mean(av_board, na.rm = TRUE),
             av_dif = mean(av_dif, na.rm = TRUE),
             pin_count = n()
             ) 
@@ -235,8 +233,8 @@ merge %>%
   filter(major_class %in% c("2", "5") ) %>%
   mutate(av_dif = av_mailed-av_board) %>%
   group_by(year, major_class) %>%
-  summarize(av_mailed = mean(av_mailed),
-            av_board = mean(av_board),
+  summarize(av_mailed = mean(av_mailed, na.rm = TRUE),
+            av_board = mean(av_board, na.rm = TRUE),
             av_dif = mean(av_dif, na.rm = TRUE)
             ) %>%
   ggplot() +
@@ -255,7 +253,7 @@ merge %>%
   theme_classic() + 
   
   scale_y_continuous(name = "Avg Assessed Value for Major Class", labels = scales::dollar ) +
-  scale_x_continuous(breaks = c(2006, 2010, 2015, 2020, 2023), name = ""  ) + 
+  scale_x_continuous(breaks = c(2006, 2015, 2023), name = ""  ) + 
   facet_wrap(~major_class, #scales = "free",
              ncol = 1)
 ```
@@ -268,10 +266,11 @@ merge %>%
   filter(major_class == 2) %>%
   mutate(av_dif = av_mailed-av_board) %>%
   group_by(year, major_class, appealed) %>%
-  summarize(av_mailed = mean(av_mailed),
-            av_board = mean(av_board),
+  summarize(av_mailed = mean(av_mailed, na.rm=TRUE),
+            av_board = mean(av_board, na.rm=T),
             av_dif = mean(av_dif, na.rm = TRUE)
-            ) %>% pivot_wider(id_cols = appealed, names_from = "year", values_from = "av_dif")
+            ) %>% 
+  pivot_wider(id_cols = appealed, names_from = "year", values_from = "av_dif")
 ```
 
 ```{r}
@@ -302,7 +301,7 @@ merge %>%
     #               #color = factor(appealed)
     #             ), linetype = 2 ) + 
   scale_y_continuous(name = "Avg Assessed Value for Major Class", labels = scales::dollar ) +
-  scale_x_continuous(breaks = c(2006, 2010, 2015, 2020, 2023)  ) +
+  scale_x_continuous(breaks = c(2006, 2015, 2023)  ) +
    theme_classic()+
   facet_wrap(~appealed)
 ```
@@ -317,8 +316,8 @@ merge %>%
   mutate(av_dif = av_mailed-av_board,
          appealed = factor(appealed)) %>%
   group_by(year, major_class, appealed) %>%
-  summarize(av_mailed = mean(av_mailed),
-            av_board = mean(av_board),
+  summarize(av_mailed = mean(av_mailed, na.rm = TRUE),
+            av_board = mean(av_board, na.rm = TRUE),
             av_dif = mean(av_dif, na.rm = TRUE)
   ) %>%
   ggplot() +
@@ -328,7 +327,7 @@ merge %>%
                 )
             ) +
   scale_y_continuous(name = "Average Difference in Assessed Value" , labels = scales::dollar ) +
-  scale_x_continuous(name = "", breaks = c(2006, 2010, 2015, 2020, 2023)  ) +
+  scale_x_continuous(name = "", breaks = c(2006, 2015, 2023)  ) +
   theme_classic() +
   theme(legend.position = "none") +
   scale_color_discrete(element_blank())+
@@ -343,16 +342,15 @@ theme(legend.position = "bottom",
 
 merge %>% 
   group_by(year, major_class) %>%
-  summarize(av_board = sum(av_board),
-            av_mailed = sum(av_mailed)) %>%
-  filter(year < 2023) %>%
+  summarize(av_board = sum(av_board, na.rm = TRUE),
+            av_mailed = sum(av_mailed, na.rm = TRUE)) %>%
   ggplot() +
   theme_classic() + 
   
   geom_line(aes(x=year, y = av_board, color = major_class) ) + 
   geom_line(aes(x=year, y = av_mailed, color = major_class), linetype = 2)  + 
   
-  scale_x_continuous(breaks = c(2006, 2010, 2015, 2020, 2022), name = ""  ) + 
+  scale_x_continuous(breaks = c(2006, 2015, 2023), name = ""  ) + 
   scale_y_continuous(labels = scales::dollar, name = "Total Assessed Value")
 ```
 
@@ -368,6 +366,9 @@ flood_pins_ptax <- flood_pins_ptax %>%
 # Mapping Parcels
 
 ```{r}
+#| eval: false
+
+
 # create vector of parcel numbers for the ptaxsim function that pulls the parcel shapes. 
 flood_pin10s <- flood_pins %>% #mutate(parcel = as.character(parcel)) %>%
   select(parcel) %>% 
@@ -477,11 +478,9 @@ berwyn_appeals
 
 # Tax code level Change
 
-> Tax code rate is ONLY the 2022 tax code rate. It currently does not have tax code rates for all years. Can be merged in from the `ptaxsim_summary_muni_taxcode_level_2006-2022.csv` file I made-has tax rates for all years.
-
 ```{r }
 #| label: tbl-summedAV
-#| tbl-cap: "Summed Assessed Values (Mailed and BoR) in 2006 and 2022 for each Tax Code. Also includes number of PINs in each Tax Code. Data for PINs that submitted a PTAX-245 form are pulled for 2006 and 2022 to compare the AV in different years, and the amount of AV that changed from the Assessor's estimates to the Board of Review's estimates."
+#| tbl-cap: "Summed Assessed Values (Mailed and BoR) in 2006 and 2023 for each Tax Code. Also includes number of PINs in each Tax Code. Data for PINs that submitted a PTAX-245 form are pulled for 2006 and 2023 to compare the AV in different years, and the amount of AV that changed from the Assessor's estimates to the Board of Review's estimates."
 #
 taxcode_summs <- flood_pins_ptax %>% 
   filter(pin %in% flood_pins$pin) %>%
@@ -492,15 +491,10 @@ taxcode_summs <- flood_pins_ptax %>%
           av_dif = sum(av_dif, na.rm=TRUE),
           pincount = n(),
           tax_code_rate = mean(tax_code_rate)) %>%
-  filter(year.x %in% c(2006, 2022)) %>% select(-c(tax_code_rate)) %>%
+  filter(year.x %in% c(2006, 2015, 2023)) %>% select(-c(tax_code_rate)) %>%
   select(TaxYear=year.x, everything())
 taxcode_summs
 
 ```
 
-# Flood Insurance Claims
-
-```{r eval=FALSE, include = FALSE}
-claims <- read_csv("")
-```
 
