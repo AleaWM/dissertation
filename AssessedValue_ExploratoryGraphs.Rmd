@@ -17,8 +17,7 @@ knitr::opts_chunk$set(error = TRUE, echo = TRUE, warning = FALSE, message = FALS
 
 
 library(tidyverse)
-#install.packages("DBI")
-#library(DBI)
+library(DBI)
 library(data.table)
 library(ggspatial)
 library(gstat)
@@ -29,12 +28,6 @@ library(ptaxsim)
 library(sf)
 library(stars)
 library(glue)
-
-
-#remotes::install_gitlab("ccao-data-science---modeling/packages/ptaxsim")
-
-#renv::install("gitlab::ccao-data-science---modeling/packages/ptaxsim")
-
 
 # Create the DB connection with the default name expected by PTAXSIM functions
 ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2023.0.0.db")
@@ -92,7 +85,7 @@ table(nbh_pins$env_flood_fema_data_year)
 table(nbh_pins$env_flood_fs_factor)
 table(nbh_pins$env_flood_fs_risk_direction)
 
-write_csv(nbh_pins, "nbh_pins_parceluniversepull2021.csv")
+#write_csv(nbh_pins, "nbh_pins_parceluniversepull2021.csv")
 
 
 
@@ -127,7 +120,7 @@ table(nbh_pins$env_flood_fema_data_year)
 table(nbh_pins$env_flood_fs_factor)
 table(nbh_pins$env_flood_fs_risk_direction)
 
-write_csv(nbh_pins, "outputs/nbh_pins_parceluniversepull2022.csv")
+#write_csv(nbh_pins, "outputs/nbh_pins_parceluniversepull2022.csv")
 ```
 
 ```{r pull-nbh-data-taxyear2023, eval=FALSE, include = FALSE}
@@ -212,7 +205,7 @@ Since PINs can be divided over time, tracking a PIN's value over time is difficu
 
 ```{r summedValueInBlocks, eval=FALSE}
 
-# mostly done to get unique blocks as a vector to go into the tax_bill() command in next chunk
+# mostly done to get unique blocks as a vector to go into  command in next chunk
 
 # blocks with at least a PIN designated in an SFHA
 blocks <- nbh_pins %>%      # for tax year 2022
@@ -256,7 +249,6 @@ flood_pins_ptax <- DBI::dbGetQuery(
   ",
   .con = ptaxsim_db_conn
 ))
-
 dbDisconnect()
 
 flood_pins_ptax <- flood_pins_ptax %>% 
@@ -280,11 +272,12 @@ flood_pins_ptax <- flood_pins_ptax %>%
                   ))
                            
                            
-# write_csv(flood_pins_ptax, "ouptuts/pins_in_Blocks_2006_2022_04May2024.csv")
+#write_csv(flood_pins_ptax, "outputs/pins_in_Blocks_2006_2023_20241126.csv")
 ```
 
 ```{r}
-flood_pins_ptax <- read_csv("outputs/pins_in_Blocks_2006_2022_04May2024.csv")
+flood_pins_ptax <- read_csv("outputs/pins_in_Blocks_2006_2023_20241126.csv")
+# flood_pins_ptax <- read_csv("outputs/pins_in_Blocks_2006_2022_04May2024.csv")
 
 nbh_pins <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
 
@@ -307,6 +300,7 @@ landblock_pins <- flood_pins_ptax |>
           fmv_clerk = av_clerk/loa)
 
 flood_pins_ptax22 <- flood_pins_ptax |> filter(year == 2022)
+flood_pins_ptax23 <- flood_pins_ptax |> filter(year == 2023)
 
 
 ```
@@ -374,11 +368,11 @@ flood_pins_ptax22 %>%
             exempt_PC = sum(ifelse(av_clerk == 0, 1, 0)),
             residential_PC = sum(ifelse(between(class, 200, 299), 1, 0)),
             land_PC = sum(ifelse(between(class, 1, 199), 1, 0)),
-
+            
             parcel_count = n_distinct(parcel_num),
-    av = sum(av_clerk),
+            av = sum(av_clerk),
             fmv = sum(av_clerk / loa_2022, na.rm=TRUE
-                      ))
+            ))
 ```
 
 
