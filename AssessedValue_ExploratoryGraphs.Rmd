@@ -37,7 +37,7 @@ library(glue)
 
 
 # Create the DB connection with the default name expected by PTAXSIM functions
-ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2022.0.0.db")
+ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2023.0.0.db")
 
 # has all potential property classes for pins
 # downloaded from CCAO gitlab website
@@ -45,13 +45,18 @@ ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Do
 class_dict <- read_csv("C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/Necessary_Files/class_dict.csv")
 
 ## Yes setting the working directory is dumb, but it is only to connect to the r script that is located in another project without duplicating files 
-setwd('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax')
+#setwd('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax')
 
-source('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/scripts/helper_tc_muninames.R')
+# source('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/scripts/helper_tc_muninames.R')
+# 
+# source('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/scripts/helper_tc_muninames_2022.R')
+```
 
-source('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/scripts/helper_tc_muninames_2022.R')
 
+```{r getshapefiles, eval=FALSE}
 muni_shp <- read_sf("https://gis.cookcountyil.gov/traditional/rest/services/politicalBoundary/MapServer/2/query?outFields=*&where=1%3D1&f=geojson")
+
+NBHs <- read_sf("https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.geojson")
 
 ```
 
@@ -88,6 +93,10 @@ table(nbh_pins$env_flood_fs_factor)
 table(nbh_pins$env_flood_fs_risk_direction)
 
 write_csv(nbh_pins, "nbh_pins_parceluniversepull2021.csv")
+
+
+
+
 
 base_url <- "https://datacatalog.cookcountyil.gov/resource/tx2p-k2g9.json"
 
@@ -154,7 +163,7 @@ write_csv(nbh_pins, "outputs/nbh_pins_parceluniversepull2023.csv")
 2021: FALSE    TRUE   
       1834323  29545   
       
-**Flood Risk Factor**        
+**2021 Flood Risk Factor**        
 1.0      2.0     3.0     4.0     5.0     6.0     7.0     8.0    9.0    10.0  
 1408665  19094   94086   92131   37062   161355 20110  3648     11393  5870  
 
@@ -166,7 +175,7 @@ write_csv(nbh_pins, "outputs/nbh_pins_parceluniversepull2023.csv")
 
 
 
-**Flood Risk Direction**
+**2021 Flood Risk Direction**
 -1.0  0.0       1.0     
 9281  1562379   281754     
 
@@ -248,6 +257,7 @@ flood_pins_ptax <- DBI::dbGetQuery(
   .con = ptaxsim_db_conn
 ))
 
+dbDisconnect()
 
 flood_pins_ptax <- flood_pins_ptax %>% 
   mutate(block_num = str_sub(pin, 1, 7),
@@ -283,13 +293,22 @@ nbh_pins <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
 ## I used this to merge additional information to the pins and class data later on.
 class_dict <- read_csv("C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/Necessary_Files/class_dict_expanded.csv")
 
+ccao_loa <- read_csv("./inputs/ccao_loa.csv") %>%
+  mutate(loa = ifelse(loa == 0, NA, loa))
 
 flood_pins_ptax <-  flood_pins_ptax |> left_join(class_dict, by = c("class" = "class_code"))
+
+landblock_pins <- flood_pins_ptax |>
+  left_join(ccao_loa, by = c("year", "class" = "class_code")) %>%
+  mutate(class = as.character(class),
+         class_1dig = str_sub(class, 1, 1)) %>%
+   mutate(fmv_mailed = av_mailed/loa,
+          fmv_board = av_board/loa,
+          fmv_clerk = av_clerk/loa)
 
 flood_pins_ptax22 <- flood_pins_ptax |> filter(year == 2022)
 
 
-NBHs <- read_sf("https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.geojson")
 ```
 
 similar to cook county 2019 hazard mitigation plan numbers
@@ -397,12 +416,24 @@ block_sums <-  flood_pins_ptax %>%
   )
   
 
-block_sums %>% group_by(year) %>% summarize(fmv_mailed = sum(fmv_mailed)/1000000000,
+block_sums %>% group_by(year) %>% 
+  summarize(fmv_mailed = sum(fmv_mailed)/1000000000,
                                             fmv_clerk= sum(fmv_clerk)/1000000000) %>%
   ggplot() + geom_line(aes(x=year, y = fmv_mailed),color = "black") +
   geom_line(aes(x=year, y = fmv_clerk), color = "blue") + 
   labs(x = "Year", y = "FMV ($ Billions)", title = "Mailed and Final FMV", caption= "Black line is Mailed FMV, blue line is final FMV amounts. \n Assessment Ratios changed in 2009 and there was the housing bubble.")
 
+```
+
+
+```{r}
+block_sums %>% 
+  group_by(year, env_) %>% 
+  summarize(fmv_mailed = sum(fmv_mailed)/1000000000,
+                                            fmv_clerk= sum(fmv_clerk)/1000000000) %>%
+  ggplot() + geom_line(aes(x=year, y = fmv_mailed),color = "black") +
+  geom_line(aes(x=year, y = fmv_clerk), color = "blue") + 
+  labs(x = "Year", y = "FMV ($ Billions)", title = "Mailed and Final FMV", caption= "Black line is Mailed FMV, blue line is final FMV amounts. \n Assessment Ratios changed in 2009 and there was the housing bubble.")
 ```
 
 ## Per Neighborhood
