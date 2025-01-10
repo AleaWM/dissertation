@@ -2,13 +2,12 @@
 library(tidyverse)
 library(httr)         # wrapper for curl package - may require installation
 library("jsonlite") 
-#install.packages("rfema")
 
 
 
 datalist = list()
 
-# Code needed to obtain data on flood insurance claims in FL without the rfema package ------------------
+# Code needed to obtain data on flood insurance claims in IL without the rfema package ------------------
 
 # define the url for the appropriate api end point
 base_url <- "https://www.fema.gov/api/open/v2/FimaNfipClaims"
@@ -79,14 +78,14 @@ data <- as.data.frame(lapply(data, function(data) gsub("\n", "", data)))
 # view the retrieved data
 # data
 
-data %>% write_csv("./inputs/data/nfipclaims_CookCounty.csv")
+data %>% write_csv("./inputs/data/nfipclaims_CookCounty2.csv")
 
 
 #######
 
 datalist = list()
 
-# Code needed to obtain data on flood insurance claims in FL without the rfema package ------------------
+# Code needed to obtain data on flood insurance claims in IL without the rfema package ------------------
 
 # define the url for the appropriate api end point
 base_url <- "https://www.fema.gov/api/open/v2/FimaNfipPolicies"

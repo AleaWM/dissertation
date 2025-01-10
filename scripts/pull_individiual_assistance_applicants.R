@@ -7,7 +7,7 @@ library("jsonlite")
 
 datalist = list()
 
-# Code needed to obtain data on flood insurance claims in FL without the rfema package ------------------
+# Code needed to obtain data on flood insurance claims in IL without the rfema package ------------------
 
 # define the url for the appropriate api end point
 base_url <- "https://www.fema.gov/api/open/v1/IndividualsAndHouseholdsProgramValidRegistrations"
@@ -24,7 +24,7 @@ api_query <- paste0(base_url, filters)
 # run a query setting the top_n parameter to 1 to check how many records match the filters
 # For Cook County only
 record_check_query <- "https://www.fema.gov/api/open/v1/IndividualsAndHouseholdsProgramValidRegistrations?$filter=disasterNumber%20%eq%20%4729%20%or%20%disasterNumber%20%eq%20%4728"
-record_check_query <- "https://www.fema.gov/api/open/v1/IndividualsAndHouseholdsProgramValidRegistrations?$inlinecount=allpages&$top=1&$filter=(county%20%eq%20%'Cook (County)')"
+#record_check_query <- "https://www.fema.gov/api/open/v1/IndividualsAndHouseholdsProgramValidRegistrations?$inlinecount=allpages&$top=1&$filter=(county%20%eq%20%'Cook (County)')"
 #disasterNumber%20%eq%20%4728"
 
 # for all of Illinois:
