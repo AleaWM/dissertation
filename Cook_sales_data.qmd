@@ -7,7 +7,7 @@ format:
     df-print: paged
 ---
 
-## Data Prep
+# Data Prep
 
 Code from [CCAO](https://ccao-data.github.io/assessr/articles/example-ratio-study.html).
 
@@ -16,37 +16,197 @@ Description of functions and [measurements](https://ccao-data.github.io/assessr/
 ```{r setup, warning=FALSE, message=FALSE}
 library(sf)
 library(tidyverse)
+library(httr)
+library(jsonlite)
+library(glue)
 ```
 
-```{r eval=FALSE}
+# Old SFHA PINs as of 2018 NFHL
 
-# Load 100k rows of 2020 sales data
-sales <- read_json(
-  paste0(
-    "https://datacatalog.cookcountyil.gov/resource/wvhk-k5uv.json?",
-    "$where=year>2010&$limit=1000000&$sale_filter_less_than_10K=FALSE"
-  ),
-  simplifyVector = TRUE
-) %>%
-  # read_json removes leading zeroes, add them back
-  mutate(pin = str_pad(pin, 14, "left", "0"))
+Downloaded archieved replication materials from Miyuki et al. and took the Illinois Flood Hazard Layer as it was in 2018. Clipped all Parcels that intersected with the SFHAs and made a list of pins. 
 
+```{r warning = FALSE}
+# 
+sfha_pins2018 <-readxl::read_xlsx("inputs/data/Parcels_SFHA_2018NFHL.xlsx")
 
+string_sfha_pins2018 <- sfha_pins2018 |> 
+  select(PIN14) |> 
+  pull()
+```
 
-#base_url <- "https://datacatalog.cookcountyil.gov/resource/tx2p-k2g9.json"
+# FEMA Effective Floodzones as of 2024
 
+```{r warning = FALSE}
+ 
+sfha_pins2024 <-readxl::read_xlsx("inputs/data/parcels_inSFHA_2024NFHL.xlsx") 
 
-# link to the API output as a JSON file
-#nh_shp <- read_sf("https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.json")
-
+string_sfha_pins2024 <- sfha_pins2024 |> 
+  select(PIN14) |> 
+  pull()
 
 ```
+
+```{r}
+sfha_pins2024 |> filter(!PIN14 %in% string_sfha_pins2018)
+
+sfha_pins2018 |> filter(!PIN14 %in% string_sfha_pins2024)
+
+```
+
+```{r}
+res_sales |> 
+  filter(pin %in% string_sfha_pins2018) |> 
+  group_by(pin) |>
+  summarize(n=n()) |>
+  filter(n > 1)
+```
+
+```{r}
+res_sales |> 
+  filter(pin %in% string_sfha_pins2024) |> 
+  group_by(pin) |>
+  summarize(n=n()) |>
+  filter(n > 1)
+```
+
+# FEMA Preliminary Floodzones - For NW Cook County Update
+
+Used preliminary SFHA boundaries for North West areas of Cook County Used parcel boundaries and flood plain in arcgis pro to clip parcels that were changed.
+
+```{r}
+prelim_SFHA <- readxl::read_xlsx("inputs/data/Parcels_in_PrelimFIRMSFHA_NWCook.xlsx")
+
+prelim_SFHA %>% filter(!PIN14 %in% string_sfha_pins2018)
+
+prelim_SFHA %>% filter(!PIN14 %in% string_sfha_pins2024)
+
+```
+
+
+# Sales Data
+
+1,762,627 sales for all property classes (1,869,796 after new download in January)
+
+1,070,348 sales for Class 2 Residential properties (1,655,745 after new download and identifying any pin that was residential at any point in time and including it)
+
+
 
 ```{r, warning=FALSE, message=FALSE}
 #sales <- read_csv("./inputs/Assessor_Parcel_Sales_20240911.csv")
-sales <- read_csv("./inputs/Assessor_Parcel_Sales_20241126.csv") %>% filter(year > 2005)
+sales <- read_csv("./inputs/Assessor_Parcel_Sales_20250105.csv") %>% 
+  filter(year > 2005) %>%
+  mutate(date = lubridate::mdy(sale_date))
 
 
+sales |> 
+  mutate(class = as.numeric(class),
+         res_c2 = ifelse(class >= 200 & class <= 299, 1, 0)) |> 
+  group_by(pin) |>
+  mutate(
+    res_c2 = ifelse(sum(res_c2) > 1, TRUE, FALSE),
+    sold_once = ifelse(n() == 1, TRUE, FALSE),
+    sold_multi = ifelse(n() > 1, TRUE, FALSE),
+    
+    sold_pre2014 = ifelse(year <= 2013, TRUE, FALSE),
+    sold_post2013 = ifelse(year > 2013, TRUE, FALSE),
+    
+    sold_pre2024 = ifelse(year <= 2023, TRUE, FALSE),
+    sold_post2023 = ifelse(year > 2023, TRUE, FALSE),
+) |> 
+    ungroup() |> 
+    group_by(res_c2, sold_once, sold_multi) |> 
+    summarize(n=n())
+
+
+res_sales <- sales |> 
+  mutate(class = as.numeric(class),
+         res_c2 = ifelse(class >= 200 & class <= 299, TRUE, FALSE),
+) |> 
+  group_by(pin) |>
+  filter(sum(res_c2==TRUE) >= 1) |>
+  mutate(
+    times_sold = n(),
+
+    sold_once = ifelse(times_sold == 1, TRUE, FALSE),
+    sold_multi = ifelse(times_sold > 1 , TRUE, FALSE),
+    ) |> 
+  ungroup() |>
+  mutate(
+    sold_pre2014 = ifelse(year <= 2013, TRUE, FALSE),
+    sold_post2013 = ifelse(year > 2013, TRUE, FALSE),
+    
+    sold_btwn_20132023 = ifelse(year > 2013 & year < 2024, TRUE, FALSE),
+    
+    sold_pre2024 = ifelse(year <= 2023, TRUE, FALSE),
+    sold_post2023 = ifelse(year > 2023, TRUE, FALSE),
+    ) |> 
+  ungroup()
+
+
+res_sales <- res_sales |> 
+  mutate(insfha_2018 = ifelse(pin %in% string_sfha_pins2018, 1, 0),
+         insfha_2024 = ifelse(pin %in% string_sfha_pins2024, 1, 0),
+         inprelimsfha = ifelse(pin %in% prelim_SFHA$PIN14, 1, 0))
+
+res_sales <- res_sales |> 
+  mutate(change_sfha = insfha_2024 - insfha_2018)
+```
+
+
+```{r}
+#| tbl-cap: "6,594 distinct pins have been in an SFHA and sold"
+
+res_sales |> 
+  filter(sold_multi == TRUE & 
+           (pin %in% string_sfha_pins2018 | 
+              pin %in% string_sfha_pins2024) ) |> distinct(pin)
+```
+
+
+```{r}
+#| tbl-cap: "465  distinct pins have either been added to or removed from an SFHA and sold multiple times."
+
+res_sales |> 
+  filter(sold_multi == TRUE & change_sfha !=0 ) |> 
+  distinct(pin)
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+table(res_sales$insfha_2018)
+table(res_sales$insfha_2024)
+table(res_sales$change_sfha)
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+res_sales |> 
+  group_by(sold_multi) |> 
+    summarize(n=n(),
+              distinct_pins = n_distinct(pin))
+
+res_sales |> 
+  group_by(times_sold) |> 
+    summarize(distinct_pins = n_distinct(pin))
+
+res_sales |>
+  group_by(sold_pre2014, sold_btwn_20132023, sold_post2023) |> 
+  summarize(n = n(), n_distinct = n_distinct(pin))
+
+res_sales |>
+  filter(times_sold < 10 & sale_price > 5000) |>
+  group_by(sold_multi, 
+         #  sold_pre2014, sold_btwn_20132023, sold_post2023, 
+           insfha_2024, insfha_2018) |> 
+  summarize(n = n(), n_distinct = n_distinct(pin))
+```
+
+
+
+
+
+
+```{r, warning=FALSE, message=FALSE}
 ccao_loa <- read_csv("./inputs/ccao_loa.csv") %>%
   mutate(loa = ifelse(loa == 0, NA, loa))
  # mutate(class_code = as.character(class_code))
@@ -62,55 +222,133 @@ landblock_pins <- read_csv("outputs/pins_in_Blocks_2006_2023_20241126.csv") |>
    mutate(fmv_mailed = av_mailed/loa,
           fmv_board = av_board/loa,
           fmv_clerk = av_clerk/loa
-         ) 
+         ) |>
+  mutate(across(fmv_mailed:fmv_clerk, round, digits = 0))
 
 
 nbh_pins <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
 
 
-sfha_pins <- nbh_pins %>% 
-  filter(env_flood_fema_sfha == TRUE) %>%
-  select(-c(year, env_flood_fema_sfha, class))
 
-flood_pins <- nbh_pins %>% 
+
+sfha_pins <- landblock_pins %>% 
+  filter(SFHA == 1) %>%
+  select(pin) |> 
+  distinct() |> 
+  pull()
+
+fsf_5plus <- nbh_pins %>% 
   filter(env_flood_fs_factor >= 5) %>%
-  select(-c(year, class))
+  select(pin) |>
+  distinct() |> 
+  pull()
+
+fsf_4plus <- nbh_pins %>% 
+  filter(env_flood_fs_factor >= 4) %>%
+  select(pin) |>
+  distinct() |> 
+  pull()
+
+
 ```
 
-**Note that `sfha_pins` are PINs that have the SFHA indicator == 1 and `flood_pins` are PINs that have a flood factor rating of 5 or higher**  
 
 
-```{r, warning=FALSE, message=FALSE, include=FALSE, eval=FALSE}
-#| label: tbl-commercindust-properties
-#| tbl-cap: "Commercial and Industrial Sales. **NOTE - This is probably the best Project to PIN crosswalk to exist! Group by document number! This document number is the same document number that can be searched in the Clerk's Recordings online. That is how we were checking projects and the PINs within before the BOR appeal dataset and during manual project keypin creation.**"
-# sales %>% 
-#   filter(mydec_deed_type == "Quit Claim Deed") %>% 
-#   arrange(desc(as.numeric(num_parcels_sale)))
 
-## Commercial and Industrial Sales. 4701 observations
-sales %>% group_by(sale_document_num) %>% 
-  filter(class > 499 & class < 900) %>%
-  arrange( desc(as.numeric(num_parcels_sale)), sale_buyer_name, pin) %>% 
-  select(pin, class, sale_buyer_name, num_parcels_sale, everything())
+**Note that `sfha_pins` are PINs that have the SFHA indicator == 1 and `fsf_5plus` are PINs that have a flood factor rating of 5 or higher**  
+
+```{r}
+#| label: sold-properties-infloodzones
+
+res_sales <- res_sales |>
+  mutate(in_sfha = ifelse(pin %in% sfha_pins, 1, 0), # according to CCAO dataset, not FEMA shapefiles
+         in_ffs_4plus = ifelse(pin %in% fsf_4plus, 1, 0),
+         in_ffs_5plus = ifelse(pin %in% fsf_5plus, 1, 0),
+         # group1 = ifelse(sold_pre2014 == T & sold_btwn_20132023 == T & sold_post2023 == T, 1, 0),
+         # group2 = ifelse(sold_pre2014 == F & sold_btwn_20132023 == T & sold_post2023 == T, 1, 0),
+         # group3 = ifelse(sold_pre2014 == T & sold_btwn_20132023 == T & sold_post2023 == T, 1, 0),
+         # group4 = ifelse(sold_pre2014 == T & sold_btwn_20132023 == T & sold_post2023 == T, 1, 0),
+         
+  )
+
+pin_groups <- res_sales |>
+  mutate(risk_change = case_when(
+    insfha_2018 != insfha_2024  ~ "Changes SFHA - Recent",
+    insfha_2018 == 1 & insfha_2024 == 1 ~ "Always in SFHA",
+    insfha_2018 == 0 & insfha_2024 == 0 ~ "Never in SFHA",
+    T ~ "Check me") )|>
+  filter(sale_price > 5000) |>
+  group_by(pin, risk_change) |> 
+  mutate(n = n(),
+         ) |>
+  filter(n() < 10) |>
+  summarize(times_sold = ifelse(n() > 1, "Multi", "Once"),
+           # years_sold = as.character(list(unique(year))),
+            sold_post2023 = ifelse(any(year > 2022), 1, 0)            
+            ) |>
+  mutate(
+      risk_type = case_when(
+     #   pin %in% sfha_pins ~ "In SFHA",     ## Too vague!
+        pin %in% sfha_pins & !pin %in% fsf_5plus ~ "In SFHA Only",
+        pin %in% fsf_5plus & pin %in% sfha_pins ~ "SFHA & FSF Score 5+",
+        pin %in% fsf_5plus & !pin %in% sfha_pins ~"FSF Score 5+ Only",
+        T ~ "Low Risk"
+      )  #,
+    #  flooded = case_when(
+    # ...   ~ "Reported Damage",
+    # ...   ~ "Did not report Damage",
+    # ...   ~ "Flooded Pre-Sale",
+    # ...   ~ "Flooded Post-Sale"
+    #  )
+    
+  )
+  
+table(pin_groups$risk_type, pin_groups$times_sold, pin_groups$sold_post2023)
+table(pin_groups$risk_type, pin_groups$times_sold, pin_groups$risk_change)
+
 ```
 
-Above, we pulled sales data from Cook County's Open Data Portal.
+```{r}
+pin_groups |>
+  group_by(times_sold, risk_type, risk_change
+         #  sold_pre2014, sold_btwn_20132023, sold_post2023, 
+          # insfha_2024, insfha_2018
+           ) |> 
+  summarize(n = n(), n_distinct = n_distinct(pin))
+```
+
 
 ```{r}
 #| label: tbl-SFHAparcels
 #| tbl-cap-location: margin
 #| tbl-cap: "Parcels in SFHAs that have been sold."
 
-sfhasales <-  sales %>%
-  filter(pin %in% sfha_pins$pin) %>%
-  left_join(landblock_pins, by = c("year", "pin", "class")) %>%
-  mutate(parcel = str_sub(pin, 1, 10),
-         major_class = str_sub(class, 1, 1))
+sfhasales <-  res_sales %>%
+  filter(pin %in% sfha_pins) %>%
+  left_join(landblock_pins, by = c("year", "pin")) %>%
+  mutate(parcel = str_sub(pin, 1, 10))
 
-sfhasales %>% group_by(parcel, year, sale_document_num) %>%
+sfhasales %>% 
+  group_by(parcel, year, sale_document_num) %>%
   summarize(pincount = n(),
-            sale_price = first(sale_price)) %>% 
+            sale_price = first(sale_price),
+            sale_price_sum = sum(sale_price)) %>% 
   arrange(desc(pincount))
+
+sfhasales %>% 
+  filter(sale_price >5000) |>
+  group_by(parcel, year, sale_document_num) %>%
+  summarize(pincount = n(),
+            sale_price = first(sale_price),
+            sale_price_sum = sum(sale_price)) %>% 
+  arrange(desc(parcel))
+
+duplicates <- sfhasales |> janitor::get_dupes(pin, parcel, year, sale_price)
+
+sfhasales |> 
+  filter(sale_price > 5000) |>
+  group_by(pin, parcel, year, sale_price) |> 
+  distinct(pin,year,sale_price, .keep_all = TRUE)
 ```
 
 
@@ -119,7 +357,9 @@ sfhasales %>% group_by(parcel, year, sale_document_num) %>%
 #| tbl-cap-location: margin
 #| tbl-cap: "SFHA PIN Sales: Number of times sold and count of years properties were sold in"
 
-sfhasales %>% group_by(pin) %>% 
+sfhasales %>% 
+  filter(sale_price>5000) |>
+  group_by(pin) %>% 
   summarize(timessold=n(),
             distinct_years = n_distinct(year),
             max_price= max(sale_price),
@@ -183,7 +423,7 @@ sfhasales %>%
 #| tbl-cap: "Parcels with Flood Factor Risk Rating >= 5  that have been sold. 206,304 PINs have sales prices above $5K and flood factor ratings."
 
 floodsales <- sales %>% 
-  filter(pin %in% flood_pins$pin) %>%
+  filter(pin %in% sfha_pins) %>%
   left_join(landblock_pins, by = c("year", "pin", "class"))
 
 
@@ -197,6 +437,23 @@ floodsales %>% filter(#!is.na(sale_price) &
 
 
 ### SFHA PINs
+
+#### 2018 SHFA PINs
+
+```{r}
+sales |> 
+  filter(pin %in% sfhapins2018) |>
+  distinct(pin)
+
+sales |> 
+  filter(sale_price> 5000) |>
+  filter(pin %in% sfhapins2018) |>
+  group_by(pin) |> 
+  summarize(timessold=n()) |> arrange(desc(timessold))
+```
+
+
+#### 2022? or more recent SFHA Pins
 
 ```{r}
 #| label: fig-saleprices-bymajorclass
@@ -268,7 +525,7 @@ sfhasales %>%
 #| message: false
 #| 
 landblock_pins %>% 
-  filter(pin %in% sfha_pins$pin & class_1dig %in% c(2, 5)) %>%
+  filter(pin %in% sfha_pins & class_1dig %in% c(2, 5)) %>%
   mutate(major_class = str_sub(class, 1,1)) %>%
   group_by(year, major_class) %>%
   summarize(fmv_mailed = mean(fmv_mailed, na.rm=TRUE),
@@ -290,7 +547,7 @@ landblock_pins %>%
 
 ```{r}
 landblock_pins %>% 
-  mutate(sfha_flag = as.factor(ifelse(pin %in% sfha_pins$pin, 1, 0))) %>%
+  mutate(sfha_flag = as.factor(ifelse(pin %in% sfha_pins, 1, 0))) %>%
   mutate(major_class = str_sub(class, 1,1)) %>%
   group_by(year, major_class, sfha_flag) %>%
   summarize( pincount = n()) %>% 
@@ -305,7 +562,7 @@ landblock_pins %>%
 #| message: false
 #| 
 landblock_pins %>% 
-  mutate(sfha_flag = as.factor(ifelse(pin %in% sfha_pins$pin, 1, 0))) %>%
+  mutate(sfha_flag = as.factor(ifelse(pin %in% sfha_pins, 1, 0))) %>%
   mutate(major_class = str_sub(class, 1,1)) %>%
   group_by(year, major_class, sfha_flag) %>%
   summarize(fmv_mailed = mean(fmv_mailed, na.rm=TRUE),
@@ -339,7 +596,7 @@ landblock_pins %>%
 #| message: false
 
 landblock_pins %>% 
-  mutate(ff_flag = as.factor(ifelse(pin %in% flood_pins$pin, 1, 0))) %>%
+  mutate(ff_flag = as.factor(ifelse(pin %in% fsf_5plus, 1, 0))) %>%
   mutate(major_class = str_sub(class, 1,1)) %>%
   group_by(year, major_class, ff_flag) %>%
   summarize(fmv_mailed = mean(fmv_mailed, na.rm=TRUE),
@@ -369,7 +626,7 @@ landblock_pins %>%
 #| message: false
 #| 
 landblock_pins %>% 
-  filter(pin %in% sfha_pins$pin) %>%
+  filter(pin %in% sfha_pins) %>%
   mutate(major_class = str_sub(class, 1,1)) %>%
   group_by(year, major_class) %>%
   summarize(av_mailed = mean(av_mailed, na.rm=TRUE),
@@ -396,7 +653,7 @@ landblock_pins %>%
 
 landblock_pins %>% 
   left_join(sales %>% filter(sale_price > 5000) %>% select(-class), by = c("year", "pin")) %>%
-  mutate(ff_flag = as.factor(ifelse(pin %in% flood_pins$pin, 1, 0))) %>%
+  mutate(ff_flag = as.factor(ifelse(pin %in% fsf_5plus, 1, 0))) %>%
   mutate(major_class = str_sub(class, 1,1)) %>%
   group_by(year, major_class) %>%
   summarize(fmv_mailed = mean(fmv_mailed, na.rm=TRUE),
@@ -414,36 +671,58 @@ landblock_pins %>%
   #   geom_line(aes(x=year, y = fmv_board, color = ff_flag), linetype = 2 ) + 
   #   geom_point(aes(x=year, y = fmv_board, color = ff_flag)) + 
   theme_classic() + 
-  scale_y_continuous(name = "Avg FMV by Major Class", labels = scales::dollar ) +
+  scale_y_continuous(name = "Dollars", labels = scales::dollar ) +
   scale_x_continuous(breaks = c(2006, 2015, 2023), name = ""  ) + 
   facet_wrap(~major_class, scales = "free" )
 ```
 
 
+# Lived Experience PINs
 
-## Commercial & Industrial Projects 
+## Flood Event 2023 - Disaster Declarations / Lived Experience
 
-Move to PTAX project. Use sales data to create Project identifiers.
+Cicero and Berwyn had lots of damage during DR 4728. Cicero had 25,836 housing units in 2020 and over 6000 of them applied and were granted IHP funds. 
+
+
+Dolton and Calumet City were damaged during DR 4749.
 
 ```{r}
-#| label: tbl-multisales
-#| tbl-cap-location: margin
-#| tbl-cap: "Projects identified by grouping PINs by the year, buyer name, and neighborhood code. PINs were associated with a project and documented with Clerk's document number"
-#| warning: false
-#| message: false
-#
-sales %>% 
-  filter(is_multisale == TRUE) %>%
-  mutate(class = ifelse(class == "EX" | class == "RR", 0, as.numeric(class))) %>%
-  group_by(year, sale_buyer_name, neighborhood_code, num_parcels_sale) %>%
-  summarize(amount = first(sale_price),
-            buyer = first(sale_buyer_name), 
-            seller= first(sale_seller_name),
-            pincount = n_distinct(pin),
-            obscount = n(),
-            class = mean(class)) %>% 
-  mutate(soldmulti_inyear = ifelse(obscount > num_parcels_sale, 1, 0)) %>%
-  arrange(desc(num_parcels_sale), year, buyer) %>% 
-  filter(class >=500) # %>% filter(amount > 200)
+ptax245 <- readxl::read_xlsx("inputs/PTAX-245_data.xlsx")
+
+ptax245 <- ptax245 %>% 
+  mutate(
+    pin = str_remove_all(pin, "-"),
+    keypin = as.character(KeyPIN)) %>%
+  mutate(keypin_concat = as.character(keypin),
+         keypin_concat = str_remove_all(keypin_concat, "-"),
+         keypin_concat = str_pad(keypin_concat, 14, "left", pad = "0"),
+         major_class = str_sub(Class, 1, 1),
+         parcel = str_sub(pin, 1, 10),
+         block = str_sub(pin, 1, 7),
+         year = 2023,
+         appealed = 1 ) %>%
+  select(pin, keypin_concat, parcel, block, Class, major_class, everything()) %>% 
+  distinct() %>% 
+  arrange(pin)
+ptax_pins <- ptax245 |> select(pin) |> pull()
+
+res_sales <- res_sales |> mutate(flood2023 = ifelse(pin %in% ptax245, 1, 0))
 
 ```
+
+245 PINs in Cicero and 45 PINs in Berwyn appealed their property tax (plus 2 in Oak Park, 2 in River Forest, and 1 in Riverside).
+
+```{r}
+
+res_sales %>% filter(pin %in% ptax245)
+
+```
+
+
+90,000 Post Disaster Individual Assistance Grants between the two disasters in 2023. 
+Only a few million in NFIP claims were paid out from these flood events but over $300 million in IHP fund were distributed. 
+
+- Part of this is because the areas hit hardest (Cicero and Berwyn have no SFHAs and no properties are required to have flood insurance. In general, not many properties in SFHAs in Cook County, especially where these flood events occurred. Makes it unlikely that residents have flood insurance and they can't file flood insurance claims if they don't have flood insurance. )
+
+Cook County also had disaster declarations in 1993, 1996, 1997, 2007, 2009, 2010, 2013, and 2023X2.
+
