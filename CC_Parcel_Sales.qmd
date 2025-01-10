@@ -28,7 +28,7 @@ library(tidyr)
 library(knitr)
 library(kableExtra)
 
-ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2021.0.4.db")
+ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2023.0.0.db")
 ```
 
 ```{r}
@@ -37,7 +37,7 @@ ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Do
 assessments <- read_json(
   paste0(
     "https://datacatalog.cookcountyil.gov/resource/uzyt-m557.json?",
-    "$where=starts_with(class,'2')&year=2020&$limit=500000"
+    "$where=starts_with(class,'2')&tax_year=2023&$limit=500000"
   ),
   simplifyVector = TRUE
 )
@@ -46,7 +46,7 @@ assessments <- read_json(
 sales <- read_json(
   paste0(
     "https://datacatalog.cookcountyil.gov/resource/wvhk-k5uv.json?",
-    "year=2020&$limit=500000"
+    "year=2023&$limit=500000"
   ),
   simplifyVector = TRUE
 ) %>%
@@ -59,7 +59,7 @@ base_url <- "https://datacatalog.cookcountyil.gov/resource/tx2p-k2g9.json"
 
 
 # link to the API output as a JSON file
-nh_shp <- read_sf("https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.json")
+#nh_shp <- read_sf("https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.json")
 
 # https://datacatalog.cookcountyil.gov/resource/pcdw-pxtg.geojson
 
@@ -83,7 +83,8 @@ flood_pins <- GET(
   base_url,
   query = list(
     env_flood_fema_sfha = TRUE,
-    `$select` = c("pin"),
+    year = 2021,
+    `$select` = paste0(c("pin")),
     `$limit` = 500000L
   )
 )
