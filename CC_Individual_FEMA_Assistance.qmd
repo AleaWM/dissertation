@@ -1,0 +1,140 @@
+---
+title: "FEMA Individual Assistance Funds"
+format: 
+  html:
+    df-print: paged
+    
+---
+
+```{r setup, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(modelsummary)
+
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+ind_assist <- read_csv("./inputs/data/indiv_assistance_CookCounty.csv")
+
+ind_assist <- ind_assist %>% 
+  filter(county == "Cook (County)" & disasterNumber %in% c("4728", "4749") )
+
+
+```
+
+
+```{r}
+#| tbl-cap: "Number of applications for individual assistance received for the two disaster declarations in Cook County during 2023." 
+
+ind_assist %>% 
+  group_by(declarationDate, disasterNumber) %>% 
+  summarize(n = n(),
+            ihpAmount = sum(ihpAmount),
+            haAmount = sum(haAmount))
+```
+
+
+```{r}
+#| tbl-cap: "Number of applications for individual assistance received for the two disaster declarations in Cook County during 2023 by if they had flood insurance or not."
+#| 
+ind_assist %>% 
+  group_by(damagedCity, floodInsurance) %>% 
+  summarize(claimcount = n(),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE)))  %>% 
+  arrange(desc(claimcount)) %>%
+  pivot_wider(values_from = claimcount, names_from = floodInsurance)
+```
+
+
+```{r}
+#| tbl-cap: "Number of applications per zipcode by if if they had flood insurance."
+
+
+ind_assist %>% 
+  group_by(damagedZipCode, floodInsurance) %>% 
+  summarize(claimcount = n()) %>% 
+  arrange(desc(claimcount)) %>%
+ pivot_wider(values_from = claimcount, names_from = floodInsurance)
+
+```
+
+```{r}
+table(ind_assist$residenceType, ind_assist$disasterNumber)
+table(ind_assist$grossIncome, ind_assist$disasterNumber)
+
+# datasummary_skim(ind_assist, type = "dataset")
+# datasummary_skim(ind_assist, type = "numeric")
+# datasummary_skim(ind_assist, type = "categorical")
+
+datasummary_balance(~disasterNumber, data = ind_assist %>% filter(ihpAmount > 0))
+
+```
+
+
+# Applications with Grants Awarded
+
+```{r}
+#| tbl-cap: "`ihpAmount` includes amount awarded for HA and ONA."
+
+ind_assist %>% 
+  filter(ihpAmount > 0) |> 
+  group_by(declarationDate, disasterNumber) %>% 
+  summarize(n = n(),
+            ihpAmount = sum(ihpAmount),
+            haAmount = sum(haAmount))
+```
+
+
+```{r}
+#| tbl-cap: "Applications with flood premiums paid from the two disaster declarations. 160 applications did not have flood insurance and had a flood insurance premium greater than $0. (which doesnn't make sense?)"
+
+
+ind_assist %>% 
+  filter(fipAmount > 0) |> 
+  group_by(declarationDate, disasterNumber, floodInsurance) %>% 
+  summarize(n = n())
+```
+
+
+```{r}
+#| tbl-cap: "Applications awarded funds: by if they had flood insurance or not."
+
+
+ind_assist %>% 
+  filter(ihpAmount > 0) |>
+  group_by(damagedCity, floodInsurance) %>% 
+  summarize(claimcount = n(),
+                #ihpAmount = round(sum(ihpAmount, na.rm=TRUE)),
+           # haAmount = round(sum(haAmount, na.rm=TRUE) )
+           )  %>% 
+  arrange(desc(claimcount)) %>%
+  pivot_wider(values_from = claimcount, names_from = floodInsurance) %>% 
+  arrange(desc(`TRUE`))
+```
+
+
+```{r}
+#| tbl-cap: "July Disaster Declaration. Number of applicants who were awarded funds."
+
+ind_assist %>% 
+    filter(disasterNumber == 4728 & ihpAmount > 0) |>
+  group_by(damagedCity, residenceType#, floodInsurance
+           ) %>% 
+  summarize(claimcount = n(),
+            awardedfunds = round(sum(ihpAmount, na.rm=TRUE))) %>% 
+  arrange(desc(claimcount))
+  #pivot_wider(values_from = awardedfunds, names_from = floodInsurance)
+```
+
+
+```{r}
+#| tbl-cap: "September Disaster Declaration. Number of applicants who received funds."
+
+
+ind_assist %>% 
+  filter(disasterNumber == 4749 & ihpAmount > 0) |>
+  group_by(damagedCity, residenceType#, floodInsurance
+           ) %>% 
+  summarize(claimcount = n(),
+            awardedfunds = round(sum(ihpAmount, na.rm=TRUE))) %>% 
+  arrange(desc(claimcount))
+```
+
