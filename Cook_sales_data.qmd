@@ -19,6 +19,12 @@ library(tidyverse)
 library(httr)
 library(jsonlite)
 library(glue)
+
+sales <- read_csv("./inputs/Assessor_Parcel_Sales_20250105.csv") %>% 
+  filter(year > 2005) %>%
+  mutate(date = lubridate::mdy(sale_date))
+
+
 ```
 
 # Old SFHA PINs as of 2018 NFHL
@@ -54,7 +60,7 @@ sfha_pins2018 |> filter(!PIN14 %in% string_sfha_pins2024)
 ```
 
 ```{r}
-res_sales |> 
+sales |> 
   filter(pin %in% string_sfha_pins2018) |> 
   group_by(pin) |>
   summarize(n=n()) |>
@@ -62,7 +68,7 @@ res_sales |>
 ```
 
 ```{r}
-res_sales |> 
+sales |> 
   filter(pin %in% string_sfha_pins2024) |> 
   group_by(pin) |>
   summarize(n=n()) |>
@@ -93,10 +99,6 @@ prelim_SFHA %>% filter(!PIN14 %in% string_sfha_pins2024)
 
 ```{r, warning=FALSE, message=FALSE}
 #sales <- read_csv("./inputs/Assessor_Parcel_Sales_20240911.csv")
-sales <- read_csv("./inputs/Assessor_Parcel_Sales_20250105.csv") %>% 
-  filter(year > 2005) %>%
-  mutate(date = lubridate::mdy(sale_date))
-
 
 sales |> 
   mutate(class = as.numeric(class),
@@ -278,13 +280,14 @@ pin_groups <- res_sales |>
     insfha_2018 == 0 & insfha_2024 == 0 ~ "Never in SFHA",
     T ~ "Check me") )|>
   filter(sale_price > 5000) |>
-  group_by(pin, risk_change) |> 
+  group_by(pin) |> 
   mutate(n = n(),
          ) |>
   filter(n() < 10) |>
   summarize(times_sold = ifelse(n() > 1, "Multi", "Once"),
            # years_sold = as.character(list(unique(year))),
-            sold_post2023 = ifelse(any(year > 2022), 1, 0)            
+           # sold_post2023 = ifelse(any(year > 2022), 1, 0),  
+           risk_change = first(risk_change)
             ) |>
   mutate(
       risk_type = case_when(
@@ -303,7 +306,7 @@ pin_groups <- res_sales |>
     
   )
   
-table(pin_groups$risk_type, pin_groups$times_sold, pin_groups$sold_post2023)
+table(pin_groups$risk_type, pin_groups$times_sold)
 table(pin_groups$risk_type, pin_groups$times_sold, pin_groups$risk_change)
 
 ```
@@ -314,7 +317,8 @@ pin_groups |>
          #  sold_pre2014, sold_btwn_20132023, sold_post2023, 
           # insfha_2024, insfha_2018
            ) |> 
-  summarize(n = n(), n_distinct = n_distinct(pin))
+  summarize(
+            n_pins = n_distinct(pin))
 ```
 
 
