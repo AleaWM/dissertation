@@ -1,6 +1,6 @@
 ---
 title: "PINs with High Flood Risk Factors"
-subtitle: "With 2023 data update "
+subtitle: "With 2023 data update"
 author: "Alea Wilbur"
 published: "August 14, 2024"
 modified: "`r Sys.Date()`"
@@ -67,7 +67,7 @@ source('C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman R
 
 
 ```{r}
-#| label: tbl-ptax245datapreview
+#| label: ptax245datapreview
 #| tbl-cap: "Data downloaded from CCAO parcel universe. Uses 2019 Flood Risk Factor from First Street."
 
 nbh_pins <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv") %>% select(-year)
