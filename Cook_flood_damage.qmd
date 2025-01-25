@@ -16,7 +16,7 @@ ilclaims <- read_csv("inputs/data/nfipclaims_CookCounty2.csv") %>%
        amountPaidOnIncreasedCostOfComplianceClaim = as.numeric(amountPaidOnIncreasedCostOfComplianceClaim),
        totalclaims = amountPaidOnBuildingClaim + amountPaidOnContentsClaim + amountPaidOnIncreasedCostOfComplianceClaim)
 
-table(ilclaims$yearOfLoss)
+#table(ilclaims$yearOfLoss)
 ```
 
 ```{r}
@@ -24,16 +24,21 @@ ilclaims %>%
   group_by(yearOfLoss) %>% 
   summarize(claims = n()) %>%
   ggplot() + 
-  geom_line(aes(x=yearOfLoss, y = claims))+
-  labs(y = "Number of Claims")
+  geom_col(aes(x=yearOfLoss, y = claims))+
+  theme_classic() +
+  scale_x_continuous(breaks = c(1980, 1990, 2000, 2010, 2020, 2024) )+
+  labs(y = "Number of Claims", x = element_blank())
 
 
 ilclaims %>% 
   group_by(yearOfLoss) %>% 
   summarize(claims = sum(amountPaidOnBuildingClaim + amountPaidOnContentsClaim + amountPaidOnIncreasedCostOfComplianceClaim, na.rm=TRUE)) %>%
   ggplot() + 
-  geom_line(aes(x=yearOfLoss, y = claims)) +
-  labs(y = "Claims Paid ($)")
+  theme_classic() +
+  geom_col(aes(x=yearOfLoss, y = claims)) +
+  scale_x_continuous(breaks = c(1980, 1990, 2000, 2010, 2020, 2024))+
+  scale_y_continuous(labels = scales::dollar)+
+  labs(y = "Claims Paid ($)", x = element_blank()) 
 
 ```
 
@@ -53,6 +58,127 @@ table(ilclaims$stateOwnedIndicator)
 
 ```
 
+# Insurance Policies
+```{r}
+
+
+ilpolicies <- read_csv("inputs/data/nfippolicies_CookCounty_all.csv", na="NULL") |>
+#ilpolicies <- read_csv("inputs/nfippolicies_IL.csv") |>
+  mutate(
+ #   start_year = as_date(policyEffectiveDate),
+#  end_year = as_date(policyTerminationDate),
+    start_year = str_sub(policyEffectiveDate, 1, 4),
+    end_year = str_sub(policyTerminationDate, 1, 4),
+         )
+```
+
+```{r}
+ilpolicies %>%  
+  group_by(start_year) %>% 
+  summarize(policies = n()) %>%
+  ggplot() + 
+  geom_col(aes(x=start_year, y = policies))+
+  theme_classic() +
+  #scale_x_continuous(breaks = c(1980, 1990, 2000, 2010, 2020, 2024) )+
+  labs(y = "Number of Policies", x = element_blank())
+```
+
+
+Indicates if the policy is required by the mortgage lender. 
+Yes is indicated with either a 'true' or '1'. No is indicated with either a 'false' or '0'	
+
+
+
+```{r}
+ilpolicies %>%  
+  group_by(start_year, nfipCommunityName, mandatoryPurchaseFlag) %>% 
+  summarize(policies = n()) 
+```
+
+Code indicating the use and occupancy type of the insured structure. Note, 2-digit codes are for Risk Rating 2.0 policies. 1 = Single family residence; 2 = 2 to 4 Unit residential building; 3 = Residential building with more than 4 units; 4 = Non-residential building; 6 = Non-Residential Business; 
+
+11 = Single-family residential building with the exception of a mobile home or a single residential unit within a multi unit building;   
+12 = A residential non-condo building with 2, 3, or 4 units seeking insurance on all units;  
+13 = A residential non-condo building with 5 or more units seeking insurance on all units;   
+14 = Residential mobile/manufactured home;    
+15 = Residential condo association seeking coverage on a building with one or more units;   
+16 = Single residential unit within a multi-unit building;   
+17 = Non-residential mobile/manufactured home;   
+18 = A non-residential building;    
+19 = A non-residential unit within a multi-unit building;
+
+```{r}
+
+ilpolicies %>%  
+  filter(start_year == 2013) |>
+  group_by(nfipCommunityName, occupancyType) %>% 
+  summarize(policies = n())
+
+
+ilpolicies %>%  
+  filter(start_year == 2025) |>
+  group_by(nfipCommunityName, occupancyType) %>% 
+  summarize(policies = n())
+
+
+
+ilpolicies %>%  
+  filter(start_year == 2024 | start_year == 2013) |>
+  group_by(start_year, mandatoryPurchaseFlag) %>% 
+  summarize(policies = n())
+
+ilpolicies %>%  
+  filter(start_year == 2024) |>
+  group_by(nfipCommunityName, mandatoryPurchaseFlag) %>% 
+  summarize(policies = n())
+
+
+ilpolicies %>%  
+  filter(start_year == 2024) |>
+  group_by(nfipCommunityName, occupancyType, mandatoryPurchaseFlag) %>% 
+  summarize(policies = n())
+```
+
+```{r}
+
+ilpolicies %>%  
+  group_by(start_year) %>% 
+  summarize(policies = n()) |>
+  ggplot(aes(x=start_year, y = policies)) +
+  theme_classic() +
+  geom_col() +
+  labs(title = "Flood Insurance Policies, Cook County IL",
+       y = "# Policies", x = element_blank())
+
+
+
+ilpolicies %>%  
+  group_by(start_year, mandatoryPurchaseFlag) %>% 
+  summarize(policies = n()) |>
+    pivot_wider(names_from = mandatoryPurchaseFlag, values_from = policies)
+  
+
+
+
+ilpolicies %>%  
+  group_by(start_year, mandatoryPurchaseFlag) %>% 
+  summarize(policies = n()) |>
+  ggplot() +
+  geom_line(aes(x=start_year, y = policies, group = mandatoryPurchaseFlag, color = mandatoryPurchaseFlag))
+
+
+
+ilpolicies %>%
+  mutate(purchase_year = str_sub(propertyPurchaseDate, 1,4)) |>
+  group_by(purchase_year ) %>% 
+  summarize(distinct_props = n_distinct(propertyPurchaseDate),
+            policy_cost = sum(policyCost))
+
+```
+
+
 ## Sources
+
+FEMA's Open FEMA datasets.
 
 National Weather Service Chicago, IL, 2023. "The July 2 and September 17, 2023, Flash Flood Events in the Chicago Metro Area." [Website](https://www.weather.gov/media/lot/events/2023/07_02/2023_07_02_and_2023_09_17_Chicago_FlashFloods.pdf)
