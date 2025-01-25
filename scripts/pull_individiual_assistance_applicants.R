@@ -16,7 +16,7 @@ base_url <- "https://www.fema.gov/api/open/v1/IndividualsAndHouseholdsProgramVal
 filters <- "?$count=true&$filter=(damagedStateAbbreviation%20eq%20'IL')"
 
 #filters <- "?$inlinecount=allpages&$filter=(state%20eq%20'IL')"
-#filters <- "?$count=true&$filter=(county%20eq%20'Cook (County')"
+filters <- "?$count=true&$filter=(county%20eq%20'Cook (County')"
 #filters <- "?$inlinecount=allpages&$filter=(disasterNumber%20eq%204728)"
 
 api_query <- paste0(base_url, filters)
@@ -88,4 +88,28 @@ data <- as.data.frame(lapply(data, function(data) gsub("\n", "", data)))
 # view the retrieved data
 # data
 
-data %>% write_csv("./inputs/data/indiv_assistance_CookCounty.csv")
+data %>% write_csv("./inputs/data/indiv_assistance_CookCounty2.csv")
+
+
+
+##### New way ###########
+filters< -"?$inlinecount=allpages&$filter=(damagedStateAbbreviation%20eq%20'IL'&$allrecords=true)"
+
+#filters <- "?$inlinecount=allpages&$filter=(countyCode%20eq%20'17031')&$allrecords=true"
+datalist = list()
+
+# Code needed to obtain data on flood insurance claims in IL without the rfema package ------------------
+
+# define the url for the appropriate api end point
+base_url <- "https://www.fema.gov/api/open/v1/IndividualsAndHouseholdsProgramValidRegistrations"
+# append the base_url to apply filters
+#filters <- "?$count=true&$filter=(damagedStateAbbreviation%20eq%20'IL')"
+
+api_query <- paste0(base_url, filters)
+result <- GET(paste0(base_url, 
+                     "?$inlinecount=allpages&$filter=(damagedStateAbbreviation%20eq%20'IL')&$allrecords=true"))
+jsonData <- httr::content(result)[[2]]
+data <- data.frame(do.call(rbind, jsonData))
+data <- as.data.frame(lapply(data, function(data) gsub("\n", "", data)))
+data %>% write_csv("./inputs/data/indiv_assistance_CookCounty3.csv")
+
