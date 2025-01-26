@@ -169,6 +169,8 @@ prelim_SFHA %>% filter(!PIN14 %in% string_sfha_pins2024)
 
 # Frequency of Sales
 
+## Sales in and Out of FEMA SFHAs
+
 ```{r}
 
 sales |> 
@@ -247,13 +249,19 @@ res_sales <- res_sales |>
 res_sales
 ```
 
+There are `r scales::comma(res_sales |>  filter(sold_multi == TRUE & (pin %in% string_sfha_pins2018 | pin %in% string_sfha_pins2024)) |> n_distinct(pin)) ` distinct residential pins in the 2018 NFHL located in SFHAs that have sold multiple times. The 2018 NFHL was downloaded from [Miyuki Hino's (2022)](https://dataverse.unc.edu/dataset.xhtml?persistentId=doi:10.15139/S3/ZOL7Q10) replication data.
+
+
+There are `r scales::comma(res_sales |> filter(sold_multi == TRUE & change_sfha !=0 ) |> n_distinct(pin))` distinct residential pins that have been added to or removed from an SFHA and sold multiple times. 
 
 ```{r}
 #| tbl-cap: "Residential PINs with multiple sales"
 #| tbl-subcap:
 #| - "6,594 distinct residential pins have been in an SFHA and sold multiple times"
 #| - "465  distinct pins have either been added to or removed from an SFHA and sold multiple times."
-
+#| eval: false
+#| include: false 
+#| 
 res_sales |> 
   filter(sold_multi == TRUE & 
            (pin %in% string_sfha_pins2018 | 
