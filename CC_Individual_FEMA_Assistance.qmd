@@ -9,17 +9,33 @@ format:
 ```{r setup, warning = FALSE, message = FALSE}
 library(tidyverse)
 library(modelsummary)
+library(sf)
+
 
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 
-ind_assist <- read_csv("./inputs/data/indiv_assistance_CookCounty.csv")
+# all disasters in Illinois, filter in next step
+ind_assist <- read_csv("./inputs/data/indiv_assistance_CookCounty3.csv")
 
+# all disasters in Cook County, IL
+cook_assist <- ind_assist %>% filter(county == "Cook (County)")
+
+# Just Flood events in 2023
 ind_assist <- ind_assist %>% 
   filter(county == "Cook (County)" & disasterNumber %in% c("4728", "4749") )
 
 
 ```
 
+```{r}
+#| tbl-cap: "Number of applications for individual assistance received for all declarations in Cook County" 
+
+cook_assist %>% 
+  group_by(declarationDate, disasterNumber) %>% 
+  summarize(n = n(),
+            ihpAmount = sum(ihpAmount),
+            haAmount = sum(haAmount))
+```
 
 ```{r}
 #| tbl-cap: "Number of applications for individual assistance received for the two disaster declarations in Cook County during 2023." 
@@ -82,6 +98,52 @@ ind_assist %>%
             haAmount = sum(haAmount))
 ```
 
+```{r mapzipcodes}
+zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
+
+ind_assist |> 
+  filter(disasterNumber == 4749 & ihpAmount > 0) |>
+  group_by(damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  ggplot(aes(fill = claimcount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "September Storm - Claims by Zip Codes", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  )
+```
+
+
+```{r mapzipcodes4728}
+ind_assist |> 
+  filter(disasterNumber == 4728 & ihpAmount > 0) |>
+  group_by(damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  ggplot(aes(fill = claimcount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "July Storm - Claims by Zip Codes", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  )
+```
 
 ```{r}
 #| tbl-cap: "Applications with flood premiums paid from the two disaster declarations. 160 applications did not have flood insurance and had a flood insurance premium greater than $0. (which doesnn't make sense?)"
