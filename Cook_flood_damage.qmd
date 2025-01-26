@@ -1,7 +1,6 @@
 ---
 title: "Cook County Flood Damage"
 format: html
-editor: visual
 ---
 
 ## Illinois Flood Insurance Claims
@@ -59,6 +58,7 @@ table(ilclaims$stateOwnedIndicator)
 ```
 
 # Insurance Policies
+
 ```{r}
 
 
@@ -83,11 +83,7 @@ ilpolicies %>%
   labs(y = "Number of Policies", x = element_blank())
 ```
 
-
-Indicates if the policy is required by the mortgage lender. 
-Yes is indicated with either a 'true' or '1'. No is indicated with either a 'false' or '0'	
-
-
+Indicates if the policy is required by the mortgage lender. Yes is indicated with either a 'true' or '1'. No is indicated with either a 'false' or '0'
 
 ```{r}
 ilpolicies %>%  
@@ -95,16 +91,16 @@ ilpolicies %>%
   summarize(policies = n()) 
 ```
 
-Code indicating the use and occupancy type of the insured structure. Note, 2-digit codes are for Risk Rating 2.0 policies. 1 = Single family residence; 2 = 2 to 4 Unit residential building; 3 = Residential building with more than 4 units; 4 = Non-residential building; 6 = Non-Residential Business; 
+Code indicating the use and occupancy type of the insured structure. Note, 2-digit codes are for Risk Rating 2.0 policies. 1 = Single family residence; 2 = 2 to 4 Unit residential building; 3 = Residential building with more than 4 units; 4 = Non-residential building; 6 = Non-Residential Business;
 
-11 = Single-family residential building with the exception of a mobile home or a single residential unit within a multi unit building;   
-12 = A residential non-condo building with 2, 3, or 4 units seeking insurance on all units;  
-13 = A residential non-condo building with 5 or more units seeking insurance on all units;   
-14 = Residential mobile/manufactured home;    
-15 = Residential condo association seeking coverage on a building with one or more units;   
-16 = Single residential unit within a multi-unit building;   
-17 = Non-residential mobile/manufactured home;   
-18 = A non-residential building;    
+11 = Single-family residential building with the exception of a mobile home or a single residential unit within a multi unit building;\
+12 = A residential non-condo building with 2, 3, or 4 units seeking insurance on all units;\
+13 = A residential non-condo building with 5 or more units seeking insurance on all units;\
+14 = Residential mobile/manufactured home;\
+15 = Residential condo association seeking coverage on a building with one or more units;\
+16 = Single residential unit within a multi-unit building;\
+17 = Non-residential mobile/manufactured home;\
+18 = A non-residential building;\
 19 = A non-residential unit within a multi-unit building;
 
 ```{r}
@@ -174,6 +170,137 @@ ilpolicies %>%
   summarize(distinct_props = n_distinct(propertyPurchaseDate),
             policy_cost = sum(policyCost))
 
+```
+
+## Census Block summaries
+
+
+```{r}
+block_totals <- ilpolicies |> 
+  filter(start_year <= 2024 ) |>
+  group_by(start_year, reportedZipCode, censusBlockGroupFips) |>
+  summarize(n=n(),
+            totalContentsInsuranceCoverage = sum(totalContentsInsuranceCoverage),
+            totalInsurancePremiumOfThePolicy = sum(totalInsurancePremiumOfThePolicy),
+            totalBuildingInsuranceCoverage = sum(totalBuildingInsuranceCoverage)
+            ) |>
+  arrange(desc(start_year))
+block_totals
+
+library(sf)
+blocks <- read_sf("inputs/cb_2023_17_bg_500k/cb_2023_17_bg_500k.shp") |> 
+  filter(COUNTYFP == "031")
+
+block_totals %>%
+  filter(start_year == 2024) %>%
+  mutate(censusBlockGroupFips = as.character(censusBlockGroupFips))|>
+  full_join(blocks, by = c("censusBlockGroupFips" = "GEOID") ) %>%    
+  ggplot(aes(fill = n)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "2024: Flood Insurance Policy Counts",
+  caption = "") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  )
+```
+
+
+## Census Tract summaries
+
+```{r}
+tract_totals <- ilpolicies |> 
+  filter(start_year <= 2024 ) |>
+  group_by(start_year, reportedZipCode, censusTract) |>
+  summarize(n=n(),
+            totalContentsInsuranceCoverage = sum(totalContentsInsuranceCoverage),
+            totalInsurancePremiumOfThePolicy = sum(totalInsurancePremiumOfThePolicy),
+            totalBuildingInsuranceCoverage = sum(totalBuildingInsuranceCoverage)
+            ) |>
+  arrange(desc(start_year))
+tract_totals
+
+tracts <- read_sf("inputs/cb_2023_17_tract_500k/cb_2023_17_tract_500k.shp") |> 
+  filter(COUNTYFP == "031")
+
+tract_totals %>%
+  filter(start_year == 2024) %>%
+  mutate(censusTract = as.character(censusTract))|>
+  full_join(tracts, by = c("censusTract" = "GEOID") ) %>%    
+  ggplot(aes(fill = n)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "2024: Flood Insurance Policy Counts",
+  caption = "") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  )
+```
+
+```{r}
+muni_totals <- ilpolicies |> 
+  filter(start_year <= 2024 ) |>
+  group_by(start_year, nfipCommunityName, #reportedZipCode, censusBlockGroupFips
+                       ) |>
+  summarize(n=n(),
+            totalContentsInsuranceCoverage = sum(totalContentsInsuranceCoverage),
+            totalInsurancePremiumOfThePolicy = sum(totalInsurancePremiumOfThePolicy),
+            totalBuildingInsuranceCoverage = sum(totalBuildingInsuranceCoverage)
+            )
+muni_totals
+```
+## TIGER shapefiles
+
+```{r}
+zips <- ilpolicies |> 
+  filter(start_year <= 2024 ) |>
+  group_by(start_year, reportedZipCode
+                       ) |>
+  summarize(n=n(),
+            totalContentsInsuranceCoverage = sum(totalContentsInsuranceCoverage),
+            totalInsurancePremiumOfThePolicy = sum(totalInsurancePremiumOfThePolicy),
+            totalBuildingInsuranceCoverage = sum(totalBuildingInsuranceCoverage)
+            )
+
+faces <- read_sf("inputs/tl_2023_17031_faces/tl_2023_17031_faces.shp")
+
+zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
+
+# zipcodes <- faces %>% 
+#     group_by(ZCTA5CE20) %>%
+#     dplyr::summarize(  # geometry = sf::st_union(geometry)
+#                      )
+# 
+# zipcodes2 <- faces %>% 
+#   st_make_valid() %>% 
+#   st_union(ZCTA5CE20)
+
+zips |> 
+  filter(start_year == 2024) |>
+  mutate(reportedZipCode = as.character(reportedZipCode))|>
+  full_join(zipcodes, by = c("reportedZipCode" = "ZCTA5CE20")) %>%    
+  ggplot(aes(fill = n)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "Zip Codes", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  )
 ```
 
 
