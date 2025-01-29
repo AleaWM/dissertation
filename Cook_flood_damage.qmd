@@ -57,6 +57,103 @@ table(ilclaims$stateOwnedIndicator)
 
 ```
 
+## Claims per Area
+```{r}
+library(sf)
+tract_claims <- ilclaims |> 
+  filter(yearOfLoss >= 2023 ) |>
+  group_by(censusTract) |>
+  summarize(n=n(),
+            totalclaims = round(sum(totalclaims)))
+tract_claims
+
+tracts <- read_sf("inputs/shapefiles_cook/CookTracts.shp") |> mutate(tract = paste0("17031", TRACTCE))
+
+tract_claims %>%
+  mutate(censusTract = as.character(censusTract))|>
+  full_join(tracts, by = c("censusTract" = "tract") ) %>%    
+  ggplot(aes(fill = n)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "2023 and 2024: Flood Insurance Policy Claims",
+  caption = "") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "navy", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  )
+
+
+tract_claims %>%
+  mutate(censusTract = as.character(censusTract))|>
+  full_join(tracts, by = c("censusTract" = "tract") ) %>%    
+  ggplot(aes(fill = totalclaims)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "2023 and 2024: Flood Insurance Policy Claims",
+  caption = "") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "navy", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+  labels = scales::dollar,
+    name = "$",
+  )
+```
+
+```{r}
+zip_claims <- ilclaims |> 
+  filter(yearOfLoss >= 2023 ) |>
+  group_by(reportedZipCode) |>
+  summarize(n=n(),
+            totalclaims = round(sum(totalclaims)))
+zip_claims
+
+
+zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
+
+zip_claims %>%
+  mutate(reportedZipCode = as.character(reportedZipCode))|>
+  full_join(zipcodes, by = c("reportedZipCode" = "ZCTA5CE20") ) %>%    
+  ggplot(aes(fill = n)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "2023 and 2024: Flood Insurance Policy Claims",
+  caption = "") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "navy", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  )
+
+
+zip_claims %>%
+  mutate(reportedZipCode = as.character(reportedZipCode))|>
+  full_join(zipcodes, by = c("reportedZipCode" = "ZCTA5CE20") ) %>%    
+  ggplot(aes(fill = totalclaims)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "2023 and 2024: Flood Insurance Policy Claims",
+  caption = "") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "navy", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+  labels = scales::dollar,
+    name = "$",
+  )
+```
+
 # Insurance Policies
 
 ```{r}
@@ -188,13 +285,18 @@ block_totals <- ilpolicies |>
 block_totals
 
 library(sf)
-blocks <- read_sf("inputs/cb_2023_17_bg_500k/cb_2023_17_bg_500k.shp") |> 
-  filter(COUNTYFP == "031")
+```
+
+
+```{r}
+#| eval: false
+#blocks <- read_sf("inputs/cb_2023_17_bg_500k/cb_2023_17_bg_500k.shp") |> filter(COUNTYFP == "031")
+block <- read_sf("inputs/shapefiles_cook/CookBlock.shp") |> mutate(block = paste0("17031", BLOCKCE20))
 
 block_totals %>%
   filter(start_year == 2024) %>%
   mutate(censusBlockGroupFips = as.character(censusBlockGroupFips))|>
-  full_join(blocks, by = c("censusBlockGroupFips" = "GEOID") ) %>%    
+  full_join(block, by = c("censusBlockGroupFips" = "block") ) %>%    
   ggplot(aes(fill = n)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "2024: Flood Insurance Policy Counts",
@@ -216,7 +318,7 @@ block_totals %>%
 ```{r}
 tract_totals <- ilpolicies |> 
   filter(start_year <= 2024 ) |>
-  group_by(start_year, reportedZipCode, censusTract) |>
+  group_by(start_year, censusTract) |>
   summarize(n=n(),
             totalContentsInsuranceCoverage = sum(totalContentsInsuranceCoverage),
             totalInsurancePremiumOfThePolicy = sum(totalInsurancePremiumOfThePolicy),
@@ -225,13 +327,14 @@ tract_totals <- ilpolicies |>
   arrange(desc(start_year))
 tract_totals
 
-tracts <- read_sf("inputs/cb_2023_17_tract_500k/cb_2023_17_tract_500k.shp") |> 
-  filter(COUNTYFP == "031")
+#tracts <- read_sf("inputs/cb_2023_17_tract_500k/cb_2023_17_tract_500k.shp") |> filter(COUNTYFP == "031")
+
+tracts <- read_sf("inputs/shapefiles_cook/CookTracts.shp") |> mutate(tract = paste0("17031", TRACTCE))
 
 tract_totals %>%
   filter(start_year == 2024) %>%
   mutate(censusTract = as.character(censusTract))|>
-  full_join(tracts, by = c("censusTract" = "GEOID") ) %>%    
+  full_join(tracts, by = c("censusTract" = "tract") ) %>%    
   ggplot(aes(fill = n)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "2024: Flood Insurance Policy Counts",
@@ -259,7 +362,7 @@ muni_totals <- ilpolicies |>
             )
 muni_totals
 ```
-## TIGER shapefiles
+## Zipcodes
 
 ```{r}
 zips <- ilpolicies |> 
@@ -272,18 +375,8 @@ zips <- ilpolicies |>
             totalBuildingInsuranceCoverage = sum(totalBuildingInsuranceCoverage)
             )
 
-faces <- read_sf("inputs/tl_2023_17031_faces/tl_2023_17031_faces.shp")
 
 zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
-
-# zipcodes <- faces %>% 
-#     group_by(ZCTA5CE20) %>%
-#     dplyr::summarize(  # geometry = sf::st_union(geometry)
-#                      )
-# 
-# zipcodes2 <- faces %>% 
-#   st_make_valid() %>% 
-#   st_union(ZCTA5CE20)
 
 zips |> 
   filter(start_year == 2024) |>
@@ -291,17 +384,18 @@ zips |>
   full_join(zipcodes, by = c("reportedZipCode" = "ZCTA5CE20")) %>%    
   ggplot(aes(fill = n)) +
   geom_sf(aes(geometry = geometry), color = "black") +
-  labs(title = "Zip Codes", caption = "") +
+  labs(title = "FEMA Flood Insurance Policies", caption = "") +
     theme_void() +
   theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
   scale_fill_steps2(
-    high = "darkblue", low = "black",
+    high = "brown", low = "black",
   na.value = "white",
     nice.breaks = FALSE,
     show.limits=TRUE,
     name = "Count",
   )
 ```
+
 
 
 ## Sources
