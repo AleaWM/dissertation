@@ -3,6 +3,8 @@ title: "FEMA Individual Assistance Funds"
 format: 
   html:
     df-print: paged
+    code-fold: true
+    code-tools: true
     
 ---
 
@@ -20,12 +22,14 @@ ind_assist <- read_csv("./inputs/data/indiv_assistance_CookCounty3.csv")
 # all disasters in Cook County, IL
 cook_assist <- ind_assist %>% filter(county == "Cook (County)")
 
-# Just Flood events in 2023
+# Just Flood even1ts in 2023
 ind_assist <- ind_assist %>% 
   filter(county == "Cook (County)" & disasterNumber %in% c("4728", "4749") )
 
 
 ```
+
+# Applicants
 
 ```{r}
 #| tbl-cap: "Number of applications for individual assistance received for all declarations in Cook County" 
@@ -35,6 +39,35 @@ cook_assist %>%
   summarize(n = n(),
             ihpAmount = sum(ihpAmount),
             haAmount = sum(haAmount))
+```
+```{r}
+#| fig-label: fig-mapzipcodes-applicants
+#| fig-cap: "location of applicants"
+
+zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
+
+cook_assist |> 
+ # filter(disasterNumber == 4749 | disasterNumber == 4728) |>
+  group_by(disasterNumber, damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  ggplot(aes(fill = claimcount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "Applicants by Zip Code, all Federal Disaster Declarations", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+    labels = scales::comma
+
+  )+
+  facet_wrap(~disasterNumber)
 ```
 
 ```{r}
@@ -72,16 +105,60 @@ ind_assist %>%
 
 ```
 
+
 ```{r}
-table(ind_assist$residenceType, ind_assist$disasterNumber)
-table(ind_assist$grossIncome, ind_assist$disasterNumber)
+#| fig-label: fig-mapzipcodes-applicants
+#| fig-cap: "location of applicants"
+zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
 
-# datasummary_skim(ind_assist, type = "dataset")
-# datasummary_skim(ind_assist, type = "numeric")
-# datasummary_skim(ind_assist, type = "categorical")
+ind_assist |> 
+  filter(disasterNumber == 4749 | disasterNumber == 4728) |>
+  group_by(damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  ggplot(aes(fill = claimcount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "Applicants by Zip Code", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+      labels = scales::comma
 
-datasummary_balance(~disasterNumber, data = ind_assist %>% filter(ihpAmount > 0))
+  )
+```
 
+```{r}
+#| fig-label: fig-mapzipcodes-applicants
+#| fig-cap: "location of applicants"
+zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
+
+ind_assist |> 
+  filter(disasterNumber == 4749 | disasterNumber == 4728 & floodInsurance == TRUE) |>
+  group_by(damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  ggplot(aes(fill = claimcount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "Applicants with Flood Insurance by Zip Code", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  labels = scales::comma
+  )
 ```
 
 
@@ -98,8 +175,107 @@ ind_assist %>%
             haAmount = sum(haAmount))
 ```
 
-```{r mapzipcodes}
+
+```{r}
+#| tbl-cap: "Applications with flood premiums paid from the two disaster declarations. 160 applications did not have flood insurance and had a flood insurance premium greater than $0. (which doesn't make sense?)"
+
+
+ind_assist %>% 
+  filter(fipAmount > 0) |> 
+  group_by(declarationDate, disasterNumber, floodInsurance) %>% 
+  summarize(n = n())
+```
+
+
+```{r}
+#| tbl-cap: "Applications awarded funds: by if they had flood insurance or not. Both Flood Events in 2023"
+
+
+ind_assist %>% 
+  filter(ihpAmount > 0) |>
+  group_by(damagedCity, floodInsurance) %>% 
+  summarize(claimcount = n(),
+                #ihpAmount = round(sum(ihpAmount, na.rm=TRUE)),
+           # haAmount = round(sum(haAmount, na.rm=TRUE) )
+           )  %>% 
+  arrange(desc(claimcount)) %>%
+  pivot_wider(values_from = claimcount, names_from = floodInsurance) %>% 
+  arrange(desc(`TRUE`)) |> 
+  DT::datatable(rownames = FALSE)
+```
+
+
+
+
+## July Storm
+
+```{r}
+#| tbl-cap: "July Disaster Declaration. Number of applicants who were awarded funds."
+
+ind_assist %>% 
+    filter(disasterNumber == 4728 & ihpAmount > 0 & floodDamage == TRUE) |>
+  group_by(damagedCity, residenceType#, floodInsurance
+           ) %>% 
+  summarize(claimcount = n(),
+            awardedfunds = round(sum(ihpAmount, na.rm=TRUE))) %>% 
+  arrange(desc(claimcount)) |> 
+  DT::datatable(rownames = FALSE)
+```
+
+```{r mapzipcodes4728}
+
 zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
+
+
+ind_assist |> 
+  filter(disasterNumber == 4728 & ihpAmount > 0 & floodDamage==TRUE) |>
+  group_by(damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  ggplot(aes(fill = claimcount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "July Storm - Claims by Zip Codes", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+  )
+
+
+ind_assist |> 
+  filter(disasterNumber == 4728 & ihpAmount > 0
+         & floodDamage==TRUE) |>
+  group_by(damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  ggplot(aes(fill = ihpAmount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "July Storm - IHP Grants by Zip Codes", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Dollars",
+  labels = scales::dollar
+  )
+```
+
+## September Storm
+
+
+```{r}
+#| label: fig-mapzipcodes-septstorm
 
 ind_assist |> 
   filter(disasterNumber == 4749 & ihpAmount > 0) |>
@@ -119,21 +295,20 @@ ind_assist |>
     nice.breaks = FALSE,
     show.limits=TRUE,
     name = "Count",
+    labels = scales::comma
+
   )
-```
 
-
-```{r mapzipcodes4728}
 ind_assist |> 
-  filter(disasterNumber == 4728 & ihpAmount > 0) |>
+  filter(disasterNumber == 4749 & ihpAmount > 0) |>
   group_by(damagedZipCode) %>%
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
   full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
-  ggplot(aes(fill = claimcount)) +
+  ggplot(aes(fill = ihpAmount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
-  labs(title = "July Storm - Claims by Zip Codes", caption = "") +
+  labs(title = "September Storm - IHP Grants by Zip Codes", caption = "") +
     theme_void() +
   theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
   scale_fill_steps2(
@@ -141,50 +316,13 @@ ind_assist |>
   na.value = "white",
     nice.breaks = FALSE,
     show.limits=TRUE,
-    name = "Count",
+    name = "Dollars",
+  labels = scales::dollar
   )
 ```
 
-```{r}
-#| tbl-cap: "Applications with flood premiums paid from the two disaster declarations. 160 applications did not have flood insurance and had a flood insurance premium greater than $0. (which doesnn't make sense?)"
 
 
-ind_assist %>% 
-  filter(fipAmount > 0) |> 
-  group_by(declarationDate, disasterNumber, floodInsurance) %>% 
-  summarize(n = n())
-```
-
-
-```{r}
-#| tbl-cap: "Applications awarded funds: by if they had flood insurance or not."
-
-
-ind_assist %>% 
-  filter(ihpAmount > 0) |>
-  group_by(damagedCity, floodInsurance) %>% 
-  summarize(claimcount = n(),
-                #ihpAmount = round(sum(ihpAmount, na.rm=TRUE)),
-           # haAmount = round(sum(haAmount, na.rm=TRUE) )
-           )  %>% 
-  arrange(desc(claimcount)) %>%
-  pivot_wider(values_from = claimcount, names_from = floodInsurance) %>% 
-  arrange(desc(`TRUE`))
-```
-
-
-```{r}
-#| tbl-cap: "July Disaster Declaration. Number of applicants who were awarded funds."
-
-ind_assist %>% 
-    filter(disasterNumber == 4728 & ihpAmount > 0) |>
-  group_by(damagedCity, residenceType#, floodInsurance
-           ) %>% 
-  summarize(claimcount = n(),
-            awardedfunds = round(sum(ihpAmount, na.rm=TRUE))) %>% 
-  arrange(desc(claimcount))
-  #pivot_wider(values_from = awardedfunds, names_from = floodInsurance)
-```
 
 
 ```{r}
@@ -197,6 +335,25 @@ ind_assist %>%
            ) %>% 
   summarize(claimcount = n(),
             awardedfunds = round(sum(ihpAmount, na.rm=TRUE))) %>% 
-  arrange(desc(claimcount))
+  arrange(desc(claimcount)) |> 
+  DT::datatable(rownames = FALSE)
 ```
 
+
+# Descriptive Stats
+
+```{r}
+table(ind_assist$residenceType, ind_assist$disasterNumber)
+
+table(ind_assist$grossIncome, ind_assist$disasterNumber)
+
+ind_assist <- ind_assist |> mutate(across(c(disasterNumber, damagedZipCode), as.factor))
+
+# datasummary_skim(ind_assist, type = "dataset")
+# datasummary_skim(ind_assist, type = "numeric")
+# datasummary_skim(ind_assist, type = "categorical")
+
+datasummary_balance(~disasterNumber, data = ind_assist %>% 
+                      filter(ihpAmount > 0 & floodDamage == TRUE))
+
+```
