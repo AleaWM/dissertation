@@ -16,7 +16,7 @@ is.integer64 <- function(x){
 }
 
 # Instantiate DB connection.
-ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2023.0.0.db")
+ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/ptaxsim.db/ptaxsim-2023.0.0.db")
 
 ## Pull Muni Taxing Agency Names from agency_info table
 muni_agency_names <- DBI::dbGetQuery(
@@ -70,3 +70,6 @@ res_pins_ever <- DBI::dbGetQuery(
   mutate(class = as.character(class)) 
 
 n_distinct(res_pins_ever$pin) # 1,708,501 PINs that were residential at some point in time
+
+write_csv(res_pins_ever, "./data/raw/residential_pins_ever.csv")
+
