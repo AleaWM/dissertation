@@ -1,0 +1,234 @@
+library(tidyverse)
+library(sf)
+#library(geodata)
+
+
+# Cook County Border
+border <- st_read("inputs/Mapping_FIRMs/Cook_County_Border/Cook_County_Border.shp") |> 
+  st_transform("EPSG:6454")
+
+# pulled from ptaxsim parcel polygons 
+# parcels <- st_read("./data/raw/parcel_shapefiles_ty2023.gpkg", layer = "parcels") |> 
+#   st_transform("EPSG:6454")
+
+#st_layers("inputs/Mapping_Firms/Historical_Parcels_-_2022.gdb/ccao_2022parcels.gdb")
+parcels <- st_read("inputs/Mapping_Firms/Historical_Parcels_-_2022.gdb/ccao_2022parcels.gdb", 
+                   layer = "parcel_2022_parcel2022_enhanced")
+parcels <- parcels |>
+  st_transform("EPSG:6454") |>
+#  select(-c(pina:cc_floordesignator, comissionerdistrict:unitschltaxdist)) |>
+  select(name, pin10, municipality, politicaltownship, assessornbhd, 
+         assessorbldgclass, geoid, shape_Length, shape_Area, shape)
+
+
+# NFHL as of 2018 from Miyuki archive  -----------------------
+#### Identify FIRM updates Between Years ##### 
+st_layers("inputs/Mapping_FIRMs/NFHL_17_20180129.gdb/NFHL_17_20180129.gdb")
+
+firm_2018 <- st_read("inputs/Mapping_FIRMs/NFHL_17_20180129.gdb/NFHL_17_20180129.gdb", 
+                     layer = "S_FIRM_PAN") |>
+  st_transform("EPSG:6454") |>
+  st_intersection(border)
+
+lomrs2018 <- st_read("inputs/Mapping_FIRMs/NFHL_17_20180129.gdb/NFHL_17_20180129.gdb", 
+                     layer = "S_LOMR") |>
+  st_transform("EPSG:6454") |>
+  st_intersection(border)
+
+fld_haz_ar_2018 <- st_read("inputs/Mapping_FIRMs/NFHL_17_20180129.gdb/NFHL_17_20180129.gdb", 
+                           layer = "S_Fld_Haz_Ar") |>
+  st_transform("EPSG:6454") |>
+  filter(SFHA_TF == "T") |>
+  st_intersection(border)
+
+effective_firms_2018 <- ggplot() +
+  geom_sf(data = border, color = "black") +
+  geom_sf(data = firm_2018, aes(geometry = SHAPE, fill = as.character(EFF_DATE)),
+          color = "black") +
+  ggtitle(label = "2018 NFHL - Clipped from State NFHL",
+          subtitle = "Data from Miyuki archive")
+effective_firms_2018
+
+
+table(st_is_valid(parcels)) ## 77 were not valid
+table(st_is_simple(parcels))
+notvalid <- parcels[!st_is_valid(parcels), ]
+
+# keep valid parcels only:
+parcels <- parcels[st_is_valid(parcels), ]
+
+
+#sfha_2018_no_lomrs$SHAPE <- st_make_valid(sfha_2018_no_lomrs$SHAPE)   # were already valid 
+
+st_geometry(parcels)
+attributes(parcels)
+
+st_geometry(sfha_2018_no_lomrs)
+attributes(sfha_2018_no_lomrs)
+
+fld_haz_ar_2018 <- st_cast(fld_haz_ar_2018, "MULTIPOLYGON")
+common_crs <- st_crs(parcels)
+fld_haz_ar_2018 <- st_transform(fld_haz_ar_2018, common_crs)
+sf_use_s2(TRUE)
+parcels <- st_set_precision(parcels, 1e6)    # Set precision to reduce computational load
+
+parcels_sfha_2018 <- st_join(parcels, fld_haz_ar_2018, join = st_intersects) # kept all 1.44 million parcels
+parcels_sfha_2018 <- parcels_sfha_2018 |> filter(!is.na(DFIRM_ID))
+write_sf(parcels_sfha_2018, "./data/processed/parcels_sfha_2018.shp", )
+
+
+parcels_lomrs_2018 <- st_join(parcels, lomrs2018, join = st_intersects)
+parcels_lomrs_2018 <- parcels_lomrs_2018 |> filter(!is.na(LOMR_ID))
+write_sf(parcels_lomrs_2018, "./data/processed/parcels_lomrs_2018.shp", )
+
+# State NFHL Database ------------------------------------------------
+# as of June 28 2024, filtered to just cook county when read in.
+# otherwise shows entire state flood layers
+st_layers("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NFHL_17_20240628.gdb")
+
+st_clip_firms_2024 <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NFHL_17_20240628.gdb",
+                             layer = "S_FIRM_PAN") |>  
+  st_transform("EPSG:6454") |>
+  st_intersection(border) |>
+  mutate(
+    pre_date = paste0(year(PRE_DATE), "-", str_pad(month(PRE_DATE), width = 2, side = "left", pad = "0")),
+    eff_date = paste0(year(EFF_DATE), "-", str_pad(month(EFF_DATE), width = 2, side = "left", pad = "0")),
+  )
+
+st_clip_lomr_2024 <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NFHL_17_20240628.gdb",
+                      layer = "S_LOMR") |>  
+  st_transform("EPSG:6454") |>
+  st_intersection(border) 
+
+# state flood hazard areas, filter for Cook County only.
+st_clip_sfha_2024 <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NFHL_17_20240628.gdb", 
+                         layer = "S_FLD_HAZ_AR") |>
+  filter(SFHA_TF == "T") |>
+  st_transform("EPSG:6454") |>
+  st_intersection(border)
+
+# FIRMS as of 2024 from State NFHL
+ggplot() +
+  geom_sf(data = border, fill = "gray20", color = "black") +
+  geom_sf(data = st_clip_firms_2024, linewidth = 0.3, aes(fill = eff_date)) +
+  theme_void() +
+  scale_fill_ordinal() +
+  labs( title = "FIRM Effective Date" , fill = "", )
+
+
+
+
+# SFHA areas, and LOMRs mapped on top. 
+version233 <- ggplot() +
+  geom_sf(data = st_clip_sfha_2024 |> filter(VERSION_ID == "2.4.3.5"), aes(geometry = SHAPE), fill = "blue", alpha = 0.5, color = "black") +
+  geom_sf(data = st_clip_lomr_2024 |> filter(VERSION_ID == "2.4.3.5"), fill = "gray50", alpha = 0.7, color = "black") +
+  theme_void() +
+  labs(title = "FEMA Flood Hazard Areas and LOMRs",
+       subtitle = "Version ID 2.4.3.5",
+       fill = "Flood Zones",
+       caption = "Source: FEMA NFHL database, as of June 2024")
+version233
+
+
+
+singularFIRM <- st_transform(st_clip_firms_2024[st_clip_firms_2024$FIRM_PAN == "17031C0702K", ], "EPSG:6454")
+
+st_clip_sfha_2024 |> 
+  st_intersection(singularFIRM) |> 
+  ggplot() +
+  geom_sf(aes(geometry = SHAPE), fill = "blue", alpha = 0.7) +
+  geom_sf(data = singularFIRM, aes(geometry = SHAPE), color = "black", fill = NA) 
+
+
+
+
+
+fld_haz_ar_2024 <- st_cast(st_clip_sfha_2024, "MULTIPOLYGON")
+fld_haz_ar_2024 <- st_transform(fld_haz_ar_2024, common_crs)
+
+library(tictoc)
+library(beepr)
+
+tic()
+beep_on_error(parcels_sfha_2024 <- st_join(parcels, fld_haz_ar_2024, join = st_intersects), sound = "wilhelm" )# kept all 1.44 million parcels
+parcels_sfha_2024 <- parcels_sfha_2024 |> filter(!is.na(DFIRM_ID))
+write_sf(parcels_sfha_2024, "./data/processed/parcels_sfha_2024.shp" )
+beep("coin")
+toc()
+
+
+
+lomrs2024 <- st_cast(st_clip_lomr_2024, "MULTIPOLYGON")
+
+tic()
+beep_on_error(parcels_lomrs_2024 <- st_join(parcels, lomrs2024, join = st_intersects), sound = "wilhelm")
+parcels_lomrs_2024 <- parcels_lomrs_2024 |> filter(!is.na(LOMR_ID))
+write_sf(parcels_lomrs_2024, "./data/processed/parcels_lomrs_2024.shp")
+beep("coin")
+toc()
+
+
+## 2021 County Flood hazard layer database -------------------------------------
+## most recent County database is from Sept 2021
+# firm_2021 <- st_read("inputs/Mapping_FIRMs/17031C_20240319/S_FIRM_PAN.shp") |>
+#   st_transform("EPSG:6454")|>
+#   st_intersection(border)
+# 
+# effective_firms_2021 <- ggplot() +
+#   geom_sf(data = border, color = "black") +
+#   geom_sf(data = firm_2021, aes(geometry = geometry, fill = as.character(EFF_DATE)),
+#           color = "black") +
+#   ggtitle(label = "2021 NFHL - County Database",
+#           subtitle = "Data from FEMA effective map products")
+# effective_firms_2021
+# 
+# lomrs2021 <- st_read("inputs/Mapping_FIRMs/17031C_20240319/S_LOMR.shp") |>
+#   st_transform("EPSG:6454") |>
+#   st_intersection(border)
+# 
+# fld_haz_ar_2021 <- st_read("inputs/Mapping_FIRMs/17031C_20240319/S_Fld_Haz_Ar.shp") |>
+#   st_transform("EPSG:6454") |>
+#   filter(SFHA_TF == "T") |>
+#   st_intersection(border)
+
+
+
+
+# Preliminary Changes for Northern Cook County # ----------------------------------
+
+prelim_sfha <-read_sf("inputs/Mapping_Firms/Prelim_DL20230702/Prelim_CSLF.shp")  |> 
+  st_transform("EPSG:6454") |>
+  st_intersection(border)
+
+prelim_sfha <- st_cast(prelim_sfha, "MULTIPOLYGON")
+prelim_sfha <- st_transform(prelim_sfha, common_crs)
+
+
+tic()
+beep_on_error(parcels_prelimchanges <- st_join(parcels, prelim_sfha, join = st_intersects), sound = "wilhelm" )# kept all 1.44 million parcels
+parcels_prelimchanges <- parcels_prelimchanges |> filter(!is.na(SFHACHG))
+write_sf(parcels_prelimchanges, "./data/processed/parcels_prelimchange.shp" )
+beep("coin")
+toc()
+
+res_changed <- parcels_prelimchanges |> filter(SFHACHG == "Increase"& assessorbldgclass > "199")
+
+
+
+# Make a map of rivers in cook county -----------------------------------------
+county_rivers <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NFHL_17_20240628.gdb", 
+                             layer = "S_WTR_LN") |>
+  st_transform("EPSG:6454") |>
+  st_intersection(border)
+
+
+# makes black county shape with white rivers
+ggplot() +
+  geom_sf(data = border, aes(geometry = geometry), fill = "gray20", color = "black") +
+  geom_sf(data = county_rivers, aes(geometry = SHAPE), color = "white", linewidth = 0.3)+
+  theme_void()
+
+
+
+
+
