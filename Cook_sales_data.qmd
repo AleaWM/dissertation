@@ -16,9 +16,10 @@ Code from [CCAO](https://ccao-data.github.io/assessr/articles/example-ratio-stud
 
 Description of functions and [measurements](https://ccao-data.github.io/assessr/reference/index.html).
 
-Parcel shapefile used in ArcGIS Pro is downloaded from CCAO's Archived 2022 parcel dataset [here.](https://datacatalog.cookcountyil.gov/Property-Taxation/ccgisdata-Parcel-2021/77tz-riq7/about_data)
+Parcel shapefile used in ArcGIS Pro is downloaded from CCAO's Archived 2022 and 2018 parcel dataset [here.](https://datacatalog.cookcountyil.gov/Property-Taxation/ccgisdata-Parcel-2021/77tz-riq7/about_data)
 
 ```{r setup, warning=FALSE, message=FALSE}
+library(DescTools)
 library(sf)
 library(tidyverse)
 library(httr)
@@ -27,66 +28,163 @@ library(glue)
 
 sales <- read_csv("./inputs/Assessor_Parcel_Sales_20250105.csv") %>% 
   filter(year > 2005) %>%
-  mutate(date = lubridate::mdy(sale_date))
+  mutate(class = as.numeric(class)) |>
+  filter(class > 199 & class < 1000) |>
+  mutate(date = lubridate::mdy(sale_date)) |>
+  group_by(year)|>
+  mutate(sale_price = Winsorize(sale_price, quantile(sale_price, probs = c(0.01, 0.99), na.rm=FALSE) )) |>
+  ungroup() 
 
 
 ```
 
 # FEMA FIRM Shapefiles
+
 ## FEMA Effective Floodzones from 2018 NFHL
 
-Downloaded archieved replication materials from Miyuki et al. and took the Illinois Flood Hazard Layer as it was in 2018. Clipped all Parcels that intersected with the SFHAs and made a list of pins. 
+Downloaded archived replication materials from Miyuki et al. and took the Illinois Flood Hazard Layer as it was in 2018. Clipped all Parcels that intersected with the SFHAs and made a list of pins.
+
+> string_sfha_pin items filter out the LOMRs that existed in 2024. Its not perfect, but it is a start.
 
 ```{r warning = FALSE}
-# 
-sfha_pins2018 <-readxl::read_xlsx("inputs/data/Parcels_SFHA_2018NFHL.xlsx") |>
-  select(PIN14, township = PINA, AssessorBLDGclass, `Parcel Type`, MUNICIPALITY, UPPER_ELEV, LOWER_ELEV, everything())
 
-string_sfha_pins2018 <- sfha_pins2018 |> 
-  select(PIN14) |> 
-  pull()
+lomr_pins_2024 <- sf::read_sf("data/processed/parcels_lomrs_2024.shp")
+
+lomr_2024 <- lomr_pins_2024 |> select(pin = name, pin10, assssrb, assssrn, mncplty, DFIRM_I) |> as_data_frame() |> select(-geometry)
+
+sfha_pins_2024 <- sf::read_sf("data/processed/parcels_sfha_2024.shp")
+
+sfha_2024 <- sfha_pins_2024 |> select(pin = name, pin10, assssrb, assssrn, mncplty, DFIRM_I) |> as_data_frame() |> select(-geometry) |>
+  filter(assssrb != "RR")
+
+lomr_parcels_2024 <- unique(lomr_pins_2024$pin10)
+sfha_parcels_2024 <- unique(sfha_pins_2024$pin10)
+
+innerjoin_2024 <- inner_join(sfha_2024, lomr_2024)
+antijoin_2024 <- anti_join(sfha_2024, lomr_2024)
+
+table(antijoin_2024$assssrb)
+
+### 2018 Version ### 
+lomr_pins_2018 <- sf::read_sf("data/processed/parcels_lomrs_2018.shp")
+
+lomr_2018 <- lomr_pins_2018 |> 
+ # select(pin = name, pin10, PINB, mncplty = MUNICIPALITY, DFIRM_I) |> 
+  as_data_frame() |> select(-geometry)
+
+sfha_pins_2018 <- sf::read_sf("data/processed/parcels_sfha_2018.shp")
+
+sfha_2018 <- sfha_pins_2018 |> 
+  select(pin = name, pin10, # assssrb, assssrn, mncplty,
+         DFIRM_I) |> 
+  as_data_frame() |> select(-geometry)
+
+lomr_parcels_2018 <- unique(lomr_pins_2018$pin10)
+sfha_parcels_2018 <- unique(sfha_pins_2018$pin10)
+
+innerjoin_2018 <- inner_join(sfha_2018, lomr_2018)
+antijoin_2018 <- anti_join(sfha_2018, lomr_2018)
+```
+
+```{r}
+pin_muni_key <- read_csv("./data/raw/pin_muni_key.csv")
+
+antijoin_2018 <- antijoin_2018 |> left_join(pin_muni_key, by =c("pin" = "pin"))
+
+t1 <- antijoin_2018 |> 
+  summarize(n2018 = n_distinct(pin), .by=agency_name) |>
+  mutate(agency_name = ifelse(is.na(agency_name), "Unknown", agency_name))
+
+antijoin_2024 <- antijoin_2024 |> left_join(pin_muni_key, by = "pin")
+
+t2 <- summarize(antijoin_2024, n2024 = n_distinct(pin), .by = agency_name) |>
+  mutate(agency_name = ifelse(is.na(agency_name), "Unknown", agency_name))
+
+t3 <- full_join(t1, t2, by = "agency_name")
+#t3 <- cbind(t1, #|> select(-mncplty),
+ #           t2)
+t3 |> mutate(change = n2024 - n2018) |> arrange(desc(abs(change)))
+```
+
+Seems suspicious that that many PINs were removed from FEMA floodplain between 2018 and 2024. Lets check on the LOMR data and their effective dates.
+
+```{r}
+lomr_pins_2024 |> filter(year(EFF_DAT)  < 2015)
+lomr_pins_2024 |> filter(year(EFF_DAT)  > 2020 & STATUS == "Effective") |> select(mncplty, assssrb, EFF_DAT, everything())
+
+lomr_pins_2024 |> group_by(EFF_DAT, mncplty)|>
+  summarize(pins_in_LOMR = n()) |> arrange(desc(EFF_DAT))
+
 ```
 
 ## FEMA Effective Floodzones as of 2024
 
 ```{r warning = FALSE}
 #| layout-ncol: 2
-#| tbl-cap: "SFHA Comparison. Data from FEMA FIRMs downloaded in 2018 and in 2024."
+#| tbl-cap: "SFHA Comparison. Data from FEMA FIRMs downloaded in 2018 and in 2024. This SFHA object made from ARCGIS instead of R"
 #| tbl-subcap: 
 #|  - "PINs that were in SFHAs in 2024 but not in 2018."
 #|  - "PINs that were in SFHAs in 2018 but not in 2024."
  
-sfha_pins2024 <- readxl::read_xlsx("inputs/data/parcels_inSFHA_2024NFHL.xlsx") |>
-  select(PIN14, township = PINA, AssessorBLDGclass, `Parcel Type`, MUNICIPALITY, UPPER_ELEV, LOWER_ELEV, everything())
 
-string_sfha_pins2024 <- sfha_pins2024 |> 
+# lomr_pins <-readxl::read_xlsx("inputs/data/LOMR_PINs_2024NFHLasofMarch2024.xlsx")  |>
+#   select(PIN14,
+#          AssessorBLDGclass, `Parcel Type`, MUNICIPALITY, UPPER_ELEV, LOWER_ELEV)
+
+sfha_pins2018 <-readxl::read_xlsx("inputs/data/Parcels_SFHA_2018NFHL.xlsx") |>
+  select(PIN14,AssessorBLDGclass, `Parcel Type`, MUNICIPALITY, UPPER_ELEV, LOWER_ELEV, everything())
+
+sfha_pins2018 <- sfha_pins2018 |>
+  anti_join(lomr_2018, by = c("PIN14" = "name"))
+
+muni_pin_key <- sfha_pins2018 |> select(PIN14, MUNICIPALITY)
+
+string_sfha_pins2018 <- sfha_pins2018 |>
+  select(PIN14) |>
+  pull()
+
+sfha_pins2024 <- readxl::read_xlsx("inputs/data/parcels_inSFHA_2024NFHL.xlsx") |> 
+  select(PIN14, township = PINA, AssessorBLDGclass, `Parcel Type`, MUNICIPALITY, UPPER_ELEV, LOWER_ELEV, everything()) 
+
+
+sfha_pins2024 <- sfha_pins2024 |> 
+  anti_join(lomr_2024, by = c("PIN14" = "pin")) 
+
+string_sfha_pins2024 <- sfha_pins2024 |>
   select(PIN14) |> 
   pull()
 
+# PINs that were NOT in 2018 sfha that were in 2024
 sfha_pins2024 |> filter(!PIN14 %in% string_sfha_pins2018)
 
+# PINs that were NOT in 2024 sfha but were in 2018
 sfha_pins2018 |> filter(!PIN14 %in% string_sfha_pins2024)
 
 ```
 
+PINs above were in LOMRs and were removed from the SFHA. LOMRs can potentially remove the federal flood insurance requirement for a specific property, but lenders retain the right to require it regardless.
+
+Example: Wheeling removed an entire section of land. Any PIN within the blue polygon would be considered removed from the SFHA. This area had its most recent flood insurance study in November 2019
+
+![](images/clipboard-3935770303.png)
 
 ```{r, warning=FALSE, message=FALSE}
 ccao_loa <- read_csv("./inputs/ccao_loa.csv") %>%
   mutate(loa = ifelse(loa == 0, NA, loa))
- # mutate(class_code = as.character(class_code))
+# mutate(class_code = as.character(class_code))
 
 
 # All PINs that are located in land blocks that have at least 1 SFHA pin
 landblock_pins <- read_csv("outputs/pins_in_Blocks_2006_2023_20241126.csv") |> 
   # landblock_pins <- read_csv("./inputs/flood_pins_ptax.csv") %>%
-
+  
   left_join(ccao_loa, by = c("year","class" = "class_code")) %>%
   mutate(class = as.character(class),
          class_1dig = str_sub(class, 1, 1)) %>%
-   mutate(fmv_mailed = av_mailed/loa,
-          fmv_board = av_board/loa,
-          fmv_clerk = av_clerk/loa
-         ) |>
+  mutate(fmv_mailed = av_mailed/loa,
+         fmv_board = av_board/loa,
+         fmv_clerk = av_clerk/loa
+  ) |>
   mutate(across(fmv_mailed:fmv_clerk, round, digits = 0))
 
 
@@ -115,7 +213,6 @@ fsf_4plus <- nbh_pins %>%
 
 
 ```
-
 
 ```{r}
 #| layout-ncol: 2
@@ -159,7 +256,6 @@ prelim_SFHA %>% filter(!PIN14 %in% string_sfha_pins2018)
 prelim_SFHA %>% filter(!PIN14 %in% string_sfha_pins2024)
 
 ```
-
 
 # Sales Data
 
@@ -256,7 +352,6 @@ sales |>
        caption = "Ratio = Median Sale Price in FP / Median Price outside FP")
 ```
 
-
 # Timing of Sales around variables of interest
 
 ```{r, warning=FALSE, message=FALSE}
@@ -302,14 +397,13 @@ res_sales |>  filter(sold_multi == TRUE & (insfha_2018==1 | insfha_2024 ==1) ) |
 
 There are `r scales::comma(res_sales |>  filter(sold_multi == TRUE & (insfha_2018==1 | insfha_2024 ==1) ) |> select(pin) |> n_distinct() )` distinct residential pins in the 2018 NFHL located in SFHAs that have sold multiple times. The 2018 NFHL was downloaded from [Miyuki Hino's (2022)](https://dataverse.unc.edu/dataset.xhtml?persistentId=doi:10.15139/S3/ZOL7Q10) replication data.
 
-
-There are `r scales::comma(res_sales |> filter(sold_multi == TRUE & change_sfha !=0 ) |> select(pin) |> n_distinct())` distinct residential pins that have been added to or removed from an SFHA and sold multiple times. 
+There are `r scales::comma(res_sales |> filter(sold_multi == TRUE & change_sfha !=0 ) |> select(pin) |> n_distinct())` distinct residential pins that have been added to or removed from an SFHA and sold multiple times.
 
 ```{r}
 #| tbl-cap: "Residential PINs with multiple sales"
 #| tbl-subcap:
-#| - "6,594 distinct residential pins have been in an SFHA and sold multiple times"
-#| - "465  distinct pins have either been added to or removed from an SFHA and sold multiple times."
+#| - "5942 distinct residential pins have been in an SFHA and sold multiple times"
+#| - "133  distinct pins have either been added to or removed from an SFHA and sold multiple times."
 #| eval: false
 #| include: false 
 #| 
@@ -326,13 +420,11 @@ res_sales |>
   n_distinct()
 ```
 
-
 ```{r, warning=FALSE, message=FALSE}
 table(res_sales$insfha_2018)
 table(res_sales$insfha_2024)
 table(res_sales$change_sfha)
 ```
-
 
 ```{r, warning=FALSE, message=FALSE}
 res_sales |> 
@@ -356,16 +448,7 @@ res_sales |>
   summarize(n_sales = n(), n_distinct_PIN = n_distinct(pin))
 ```
 
-
-
-
-
-
-
-
-
-
-**Note that `sfha_pins` are PINs that have the SFHA indicator == 1 according to CCAO data and `fsf_5plus` are PINs that have a flood factor rating of 5 or higher**  
+**Note that `sfha_pins` are PINs that have the SFHA indicator == 1 according to CCAO data and `fsf_5plus` are PINs that have a flood factor rating of 5 or higher**
 
 ```{r}
 #| label: sold-properties-infloodzones
@@ -446,7 +529,7 @@ pin_groups |>
             n_pins = n_distinct(pin))
 ```
 
-### Research Question 1 
+### Research Question 1
 
 ```{r}
 tbl_R1 <- res_sales |>
@@ -571,7 +654,6 @@ sfhasales |>
   distinct(pin,year,sale_price, .keep_all = TRUE)
 ```
 
-
 ```{r}
 #| label: tbl-SFHAparcels-soldtimes
 #| tbl-cap-location: margin
@@ -589,7 +671,6 @@ sfhasales %>%
   arrange(desc(timessold))
 ```
 
-
 ```{r}
 #| label: tbl-salesover5K
 #| tbl-cap-location: margin
@@ -606,7 +687,7 @@ sfhasales %>%
 #| fig-subcap: 
 #| - pin == 09163040191019
 #| - pin == 05201210150000
-#| - pin == 05201210150000
+#| - pin == 09281140060000
 #| layout-ncol: 3
 
 
@@ -648,6 +729,7 @@ sfhasales %>%
 
 floodsales <- sales %>% 
   filter(pin %in% sfha_pins) %>%
+  mutate(class = as.character(class)) |>
   left_join(landblock_pins, by = c("year", "pin", "class"))
 
 
@@ -658,16 +740,13 @@ floodsales %>% filter(#!is.na(sale_price) &
 # 206,304 sales for pins in flood factor high risk areas of 5 or higher
 ```
 
-
-
 # SFHA PINs
 
-There were `{r} sales |> filter(sale_price> 5000) |> filter(pin %in% string_sfha_pins2018) |> n_distinct()` sale observations for the properties that were in the SFHA (FEMA 100-year floodzone) according to the 2018 NFHL. 
-
+There were `{r} sales |> filter(sale_price> 5000) |> filter(pin %in% string_sfha_pins2018) |> n_distinct()` sale observations for the properties that were in the SFHA (FEMA 100-year floodzone) according to the 2018 NFHL.
 
 ## Average Sales Prices
 
-Uses the CCAO indicator for if it was in a floodplain. 
+Uses the CCAO indicator for if it was in a floodplain.
 
 ```{r}
 #| label: fig-saleprices-bymajorclass
@@ -715,8 +794,8 @@ res_sales %>%
   scale_x_continuous(breaks = c(2006, 2015, 2020, 2024), name = ""  )
 ```
 
- On average, there are around `{r} round(avg_sales_peryear$average_salecount[[1]])` sales for properties outside of an SFHA and around `{r} round(avg_sales_peryear$average_salecount[[2]])`
- 
+On average, there are around `{r} round(avg_sales_peryear$average_salecount[[1]])` sales for properties outside of an SFHA and around `{r} round(avg_sales_peryear$average_salecount[[2]])`
+
 ```{r}
 #| label: tbl-SFHAsales-byclass
 #| tbl-cap: "Number of SFHA sales per year by major class."
@@ -726,7 +805,6 @@ sfhasales %>%
   summarize(NumberSold=n()) %>%
   pivot_wider(names_from = major_class, values_from = NumberSold)
 ```
-
 
 ```{r}
 #| label: fig-FMV-bymajorclass
@@ -755,7 +833,6 @@ landblock_pins %>%
   scale_x_continuous(breaks = c(2006, 2015, 2024), name = ""  ) + 
   facet_wrap(~major_class, scales = "free" )
 ```
-
 
 ```{r}
 #| label: fig-FMV-bymajorclass-comparison
@@ -822,8 +899,6 @@ landblock_pins %>%
   facet_wrap(~major_class, scales = "free" )
 ```
 
-
-
 # Assessed Value
 
 ## Flood Factor Score 5+ PINs and Assessed Value
@@ -882,13 +957,11 @@ landblock_pins %>%
   facet_wrap(~major_class, scales = "free" )
 ```
 
-
 # Lived Experience PINs
 
 ## Flood Event 2023 - Disaster Declarations / Lived Experience
 
-Cicero and Berwyn had lots of damage during DR 4728. Cicero had 25,836 housing units in 2020 and over 6000 of them applied and were granted IHP funds. 
-
+Cicero and Berwyn had lots of damage during DR 4728. Cicero had 25,836 housing units in 2020 and over 6000 of them applied and were granted IHP funds.
 
 Dolton and Calumet City were damaged during DR 4749.
 
@@ -924,11 +997,8 @@ res_sales %>% filter(pin %in% ptax245)
 
 ```
 
+90,000 Post Disaster Individual Assistance Grants between the two disasters in 2023. Only a few million in NFIP claims were paid out from these flood events but over \$300 million in IHP fund were distributed.
 
-90,000 Post Disaster Individual Assistance Grants between the two disasters in 2023. 
-Only a few million in NFIP claims were paid out from these flood events but over $300 million in IHP fund were distributed. 
-
-- Part of this is because the areas hit hardest (Cicero and Berwyn have no SFHAs and no properties are required to have flood insurance. In general, not many properties in SFHAs in Cook County, especially where these flood events occurred. Makes it unlikely that residents have flood insurance and they can't file flood insurance claims if they don't have flood insurance. )
+-   Part of this is because the areas hit hardest (Cicero and Berwyn have no SFHAs and no properties are required to have flood insurance. In general, not many properties in SFHAs in Cook County, especially where these flood events occurred. Makes it unlikely that residents have flood insurance and they can't file flood insurance claims if they don't have flood insurance. )
 
 Cook County also had disaster declarations in 1993, 1996, 1997, 2007, 2009, 2010, 2013, and 2023X2.
-
