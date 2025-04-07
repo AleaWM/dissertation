@@ -1,12 +1,20 @@
 ---
 title: "Cook County Flood Damage"
-format: html
+format: 
+  html:
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    toc: true
+    tbl-cap-location: top
+    fig-cap-location: top
 ---
 
 ## Illinois Flood Insurance Claims
 
 ```{r warning=FALSE, message=FALSE}
 library(tidyverse)
+library(sf)
 
 
 ilclaims <- read_csv("inputs/data/nfipclaims_CookCounty2.csv") %>%   
@@ -16,6 +24,9 @@ ilclaims <- read_csv("inputs/data/nfipclaims_CookCounty2.csv") %>%
        totalclaims = amountPaidOnBuildingClaim + amountPaidOnContentsClaim + amountPaidOnIncreasedCostOfComplianceClaim)
 
 #table(ilclaims$yearOfLoss)
+county_rivers <- read_sf("inputs/Mapping_Firms/17031C_20240319/S_WTR_LN.shp")
+
+
 ```
 
 ```{r}
@@ -58,8 +69,8 @@ table(ilclaims$stateOwnedIndicator)
 ```
 
 ## Claims per Area
+
 ```{r}
-library(sf)
 tract_claims <- ilclaims |> 
   filter(yearOfLoss >= 2023 ) |>
   group_by(censusTract) |>
@@ -69,11 +80,12 @@ tract_claims
 
 tracts <- read_sf("inputs/shapefiles_cook/CookTracts.shp") |> mutate(tract = paste0("17031", TRACTCE))
 
-tract_claims %>%
+tract_claims <- tract_claims %>%
   mutate(censusTract = as.character(censusTract))|>
-  full_join(tracts, by = c("censusTract" = "tract") ) %>%    
-  ggplot(aes(fill = n)) +
-  geom_sf(aes(geometry = geometry), color = "black") +
+  full_join(tracts, by = c("censusTract" = "tract") )
+
+tract_map <- ggplot() +
+  geom_sf(data = tract_claims, aes(geometry = geometry, fill = n),color = "black") +
   labs(title = "2023 and 2024: Flood Insurance Policy Claims",
   caption = "") +
   theme_void() +
@@ -84,12 +96,18 @@ tract_claims %>%
     nice.breaks = FALSE,
     show.limits=TRUE,
     name = "Count",
-  )
+  )  
+tract_map
+#table(county_rivers$SHOWN_INDX)
+#table(county_rivers$SHOWN_FIRM)
 
+
+  
+# all rivers
+#tract_map + geom_sf(data = county_rivers, aes(geometry = geometry), color = "blue", lwd = .5, alpha = .5) 
+  
 
 tract_claims %>%
-  mutate(censusTract = as.character(censusTract))|>
-  full_join(tracts, by = c("censusTract" = "tract") ) %>%    
   ggplot(aes(fill = totalclaims)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "2023 and 2024: Flood Insurance Policy Claims",
@@ -111,35 +129,37 @@ zip_claims <- ilclaims |>
   filter(yearOfLoss >= 2023 ) |>
   group_by(reportedZipCode) |>
   summarize(n=n(),
-            totalclaims = round(sum(totalclaims)))
+            totalclaims = round(sum(totalclaims, na.rm = T)))
 zip_claims
 
 
 zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
 
-zip_claims %>%
+zip_claims <- zip_claims %>%
   mutate(reportedZipCode = as.character(reportedZipCode))|>
-  full_join(zipcodes, by = c("reportedZipCode" = "ZCTA5CE20") ) %>%    
-  ggplot(aes(fill = n)) +
-  geom_sf(aes(geometry = geometry), color = "black") +
+  full_join(zipcodes, by = c("reportedZipCode" = "ZCTA5CE20") )
+
+ggplot() +
+  geom_sf(data = zip_claims, 
+          aes(fill = n, geometry = geometry), 
+          color = "black") +
   labs(title = "2023 and 2024: Flood Insurance Policy Claims",
   caption = "") +
   theme_void() +
   theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
   scale_fill_steps2(
     high = "navy", low = "black",
-  na.value = "white",
+    na.value = "white",
     nice.breaks = FALSE,
     show.limits=TRUE,
     name = "Count",
-  )
+  ) + 
+  geom_sf(data = county_rivers, aes(geometry = geometry), color = "blue", lwd = .5, alpha = .5) 
 
 
-zip_claims %>%
-  mutate(reportedZipCode = as.character(reportedZipCode))|>
-  full_join(zipcodes, by = c("reportedZipCode" = "ZCTA5CE20") ) %>%    
-  ggplot(aes(fill = totalclaims)) +
-  geom_sf(aes(geometry = geometry), color = "black") +
+ggplot() +
+  geom_sf(data = zip_claims, 
+          aes(geometry = geometry, fill = totalclaims), color = "black") +
   labs(title = "2023 and 2024: Flood Insurance Policy Claims",
   caption = "") +
   theme_void() +
@@ -151,7 +171,8 @@ zip_claims %>%
     show.limits=TRUE,
   labels = scales::dollar,
     name = "$",
-  )
+  ) + 
+  geom_sf(data = county_rivers, aes(geometry = geometry), color = "blue", lwd = .5, alpha = .5) 
 ```
 
 # Insurance Policies
@@ -284,7 +305,6 @@ block_totals <- ilpolicies |>
   arrange(desc(start_year))
 block_totals
 
-library(sf)
 ```
 
 
@@ -362,38 +382,60 @@ muni_totals <- ilpolicies |>
             )
 muni_totals
 ```
+
 ## Zipcodes
 
 ```{r}
 zips <- ilpolicies |> 
-  filter(start_year <= 2024 ) |>
-  group_by(start_year, reportedZipCode
-                       ) |>
-  summarize(n=n(),
-            totalContentsInsuranceCoverage = sum(totalContentsInsuranceCoverage),
-            totalInsurancePremiumOfThePolicy = sum(totalInsurancePremiumOfThePolicy),
-            totalBuildingInsuranceCoverage = sum(totalBuildingInsuranceCoverage)
-            )
+  filter(start_year <= 2024) |>
+  group_by(start_year, reportedZipCode) |>
+  summarize(
+    n=n(),
+    totalContentsInsuranceCoverage = sum(totalContentsInsuranceCoverage),
+    totalInsurancePremiumOfThePolicy = sum(totalInsurancePremiumOfThePolicy),
+    totalBuildingInsuranceCoverage = sum(totalBuildingInsuranceCoverage)
+  ) |>
+  mutate(across(where(is.numeric), round, digits =0))
 
 
 zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
 
-zips |> 
-  filter(start_year == 2024) |>
+zips <- zips |> 
   mutate(reportedZipCode = as.character(reportedZipCode))|>
-  full_join(zipcodes, by = c("reportedZipCode" = "ZCTA5CE20")) %>%    
-  ggplot(aes(fill = n)) +
-  geom_sf(aes(geometry = geometry), color = "black") +
-  labs(title = "FEMA Flood Insurance Policies", caption = "") +
+  full_join(zipcodes, by = c("reportedZipCode" = "ZCTA5CE20")) 
+
+ggplot() +
+  geom_sf(data = (zips |> filter(start_year == 2024)), 
+          aes(geometry = geometry, fill = n), 
+          color = "black") +
+    labs(title = "2024 FEMA Flood Insurance Policies", caption = "") +
     theme_void() +
+    theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+    scale_fill_steps2(
+      
+      na.value = "white",
+      nice.breaks = FALSE,
+      show.limits=TRUE,
+      name = "Count",
+    ) +
+    geom_sf(data = county_rivers, aes(geometry = geometry), color = "blue", lwd = .5, alpha = .5) 
+  
+
+ggplot() +
+  geom_sf(data = (zips |> filter(start_year == 2023)), 
+                  aes(geometry = geometry, fill = n), 
+                  color = "black") +
+  labs(title = "2023 FEMA Flood Insurance Policies", caption = "") +
+  theme_void() +
   theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
   scale_fill_steps2(
     high = "brown", low = "black",
-  na.value = "white",
+    na.value = "white",
     nice.breaks = FALSE,
     show.limits=TRUE,
     name = "Count",
-  )
+  ) +
+  geom_sf(data = county_rivers, aes(geometry = geometry), color = "blue", lwd = .5, alpha = .5) 
 ```
 
 
