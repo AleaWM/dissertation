@@ -8,22 +8,30 @@ border <- st_read("inputs/Mapping_FIRMs/Cook_County_Border/Cook_County_Border.sh
   st_transform("EPSG:6454")
 
 # pulled from ptaxsim parcel polygons 
-# parcels <- st_read("./data/raw/parcel_shapefiles_ty2023.gpkg", layer = "parcels") |> 
+# parcels_2024 <- st_read("./data/raw/parcel_shapefiles_ty2023.gpkg", layer = "parcels_2024") |> 
 #   st_transform("EPSG:6454")
 
-#st_layers("inputs/Mapping_Firms/Historical_Parcels_-_2022.gdb/ccao_2022parcels.gdb")
-parcels <- st_read("inputs/Mapping_Firms/Historical_Parcels_-_2022.gdb/ccao_2022parcels.gdb", 
+#st_layers("inputs/Mapping_Firms/Historical_parcels_-_2022.gdb/ccao_2022parcels_2024.gdb")
+parcels_2024 <- st_read("inputs/Mapping_Firms/Historical_parcels_2024_-_2022.gdb/ccao_2022parcels_2024.gdb", 
                    layer = "parcel_2022_parcel2022_enhanced")
-parcels <- parcels |>
+parcels_2024 <- parcels_2024 |>
   st_transform("EPSG:6454") |>
 #  select(-c(pina:cc_floordesignator, comissionerdistrict:unitschltaxdist)) |>
   select(name, pin10, municipality, politicaltownship, assessornbhd, 
          assessorbldgclass, geoid, shape_Length, shape_Area, shape)
 
+# st_layers("inputs/Historical_parcels_-_2018.gdb/parcels_2018.gdb")
+
+parcels_2018 <- st_read("inputs/Historical_Parcels_-_2018.gdb/parcels_2018.gdb", 
+                   layer = "parcel_2018_parcel")
+
+parcels_2018 <- parcels_2018 |>
+  st_transform("EPSG:6454") |>
+  select(name, pin10, shape_Length, shape_Area, shape)
 
 # NFHL as of 2018 from Miyuki archive  -----------------------
 #### Identify FIRM updates Between Years ##### 
-st_layers("inputs/Mapping_FIRMs/NFHL_17_20180129.gdb/NFHL_17_20180129.gdb")
+#st_layers("inputs/Mapping_FIRMs/NFHL_17_20180129.gdb/NFHL_17_20180129.gdb")
 
 firm_2018 <- st_read("inputs/Mapping_FIRMs/NFHL_17_20180129.gdb/NFHL_17_20180129.gdb", 
                      layer = "S_FIRM_PAN") |>
@@ -50,34 +58,36 @@ effective_firms_2018 <- ggplot() +
 effective_firms_2018
 
 
-table(st_is_valid(parcels)) ## 77 were not valid
-table(st_is_simple(parcels))
-notvalid <- parcels[!st_is_valid(parcels), ]
+table(st_is_valid(parcels_2018)) ## 77 were not valid for 2024
+table(st_is_simple(parcels_2018))
+table(st_is_simple(parcels_2024))
+
+# can check ones that weren't valid
+# notvalid <- parcels_2018[!st_is_valid(parcels_2018), ]
 
 # keep valid parcels only:
-parcels <- parcels[st_is_valid(parcels), ]
+parcels_2018 <- parcels_2018[st_is_valid(parcels_2018), ]
 
-
-#sfha_2018_no_lomrs$SHAPE <- st_make_valid(sfha_2018_no_lomrs$SHAPE)   # were already valid 
-
-st_geometry(parcels)
-attributes(parcels)
-
-st_geometry(sfha_2018_no_lomrs)
-attributes(sfha_2018_no_lomrs)
+parcels_2024 <- parcels_2024[st_is_valid(parcels_2024), ]
+st_geometry(parcels_2024)
+attributes(parcels_2024)
 
 fld_haz_ar_2018 <- st_cast(fld_haz_ar_2018, "MULTIPOLYGON")
-common_crs <- st_crs(parcels)
+common_crs <- st_crs(parcels_2018)
+parcels_2018 <- st_transform(parcels_2018, common_crs)
+
 fld_haz_ar_2018 <- st_transform(fld_haz_ar_2018, common_crs)
 sf_use_s2(TRUE)
-parcels <- st_set_precision(parcels, 1e6)    # Set precision to reduce computational load
 
-parcels_sfha_2018 <- st_join(parcels, fld_haz_ar_2018, join = st_intersects) # kept all 1.44 million parcels
+parcels_2018 <- st_set_precision(parcels_2018, 1e6)    # Set precision to reduce computational load
+parcels_2024 <- st_set_precision(parcels_2024, 1e6)    # Set precision to reduce computational load
+
+parcels_sfha_2018 <- st_join(parcels_2018, fld_haz_ar_2018, join = st_intersects) # kept all 1.43 million parcels_2024
 parcels_sfha_2018 <- parcels_sfha_2018 |> filter(!is.na(DFIRM_ID))
 write_sf(parcels_sfha_2018, "./data/processed/parcels_sfha_2018.shp", )
 
 
-parcels_lomrs_2018 <- st_join(parcels, lomrs2018, join = st_intersects)
+parcels_lomrs_2018 <- st_join(parcels_2018, lomrs2018, join = st_intersects)
 parcels_lomrs_2018 <- parcels_lomrs_2018 |> filter(!is.na(LOMR_ID))
 write_sf(parcels_lomrs_2018, "./data/processed/parcels_lomrs_2018.shp", )
 
@@ -150,7 +160,7 @@ library(tictoc)
 library(beepr)
 
 tic()
-beep_on_error(parcels_sfha_2024 <- st_join(parcels, fld_haz_ar_2024, join = st_intersects), sound = "wilhelm" )# kept all 1.44 million parcels
+beep_on_error(parcels_sfha_2024 <- st_join(parcels_2024, fld_haz_ar_2024, join = st_intersects), sound = "wilhelm" )# kept all 1.44 million parcels_2024
 parcels_sfha_2024 <- parcels_sfha_2024 |> filter(!is.na(DFIRM_ID))
 write_sf(parcels_sfha_2024, "./data/processed/parcels_sfha_2024.shp" )
 beep("coin")
@@ -161,7 +171,7 @@ toc()
 lomrs2024 <- st_cast(st_clip_lomr_2024, "MULTIPOLYGON")
 
 tic()
-beep_on_error(parcels_lomrs_2024 <- st_join(parcels, lomrs2024, join = st_intersects), sound = "wilhelm")
+beep_on_error(parcels_lomrs_2024 <- st_join(parcels_2024, lomrs2024, join = st_intersects), sound = "wilhelm")
 parcels_lomrs_2024 <- parcels_lomrs_2024 |> filter(!is.na(LOMR_ID))
 write_sf(parcels_lomrs_2024, "./data/processed/parcels_lomrs_2024.shp")
 beep("coin")
@@ -205,13 +215,13 @@ prelim_sfha <- st_transform(prelim_sfha, common_crs)
 
 
 tic()
-beep_on_error(parcels_prelimchanges <- st_join(parcels, prelim_sfha, join = st_intersects), sound = "wilhelm" )# kept all 1.44 million parcels
-parcels_prelimchanges <- parcels_prelimchanges |> filter(!is.na(SFHACHG))
-write_sf(parcels_prelimchanges, "./data/processed/parcels_prelimchange.shp" )
+beep_on_error(parcels_2024_prelimchanges <- st_join(parcels_2024, prelim_sfha, join = st_intersects), sound = "wilhelm" )# kept all 1.44 million parcels_2024
+parcels_2024_prelimchanges <- parcels_2024_prelimchanges |> filter(!is.na(SFHACHG))
+write_sf(parcels_2024_prelimchanges, "./data/processed/parcels_2024_prelimchange.shp" )
 beep("coin")
 toc()
 
-res_changed <- parcels_prelimchanges |> filter(SFHACHG == "Increase"& assessorbldgclass > "199")
+res_changed <- parcels_2024_prelimchanges |> filter(SFHACHG == "Increase"& assessorbldgclass > "199")
 
 
 
