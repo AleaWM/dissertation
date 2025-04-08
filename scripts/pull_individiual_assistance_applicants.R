@@ -1,3 +1,10 @@
+# ----
+# Purpose: Pull FEMA Individual Assistance application data for Cook County, including accepted and rejected applications
+# Input(s): FEMA Individual Assistance API (two methods implemented)
+# Output(s): data/raw/indiv_assistance_CookCounty.csv
+# Last updated: 
+# ----
+
 # Receiving data in JSON, saving in RDS - a single R object.
 library(tidyverse)
 library(httr)         # wrapper for curl package - may require installation

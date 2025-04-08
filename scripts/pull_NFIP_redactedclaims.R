@@ -1,3 +1,12 @@
+# ----
+# Purpose: Pull NFIP claims and insurance policy data for Cook County, IL from FEMA API
+# Input(s): FEMA OpenFEMA API
+# Output(s): 
+#   data/raw/nfippolicies_CookCounty_all.csv, 
+#   data/raw/nfipclaims_CookCounty.csv
+# Last updated: 2025-04-07
+# ----
+
 # Receiving data in JSON, saving in RDS - a single R object.
 library(tidyverse)
 library(httr)         # wrapper for curl package - may require installation

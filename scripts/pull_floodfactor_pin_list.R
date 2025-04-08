@@ -1,3 +1,10 @@
+# ----
+# Purpose: Merge Cook County parcel universe with 2019 Flood Factor scores to assign flood risk to PINs
+# Input(s): CCAO API Parcel data with PINs, Flood Factor 2019 snapshot
+# Output(s): data/raw/ NONE YET
+# Last updated: 2025-01-05
+# ----
+
 ## Pull list of PINs with First Street Flood Rating above Threshold
 
 library(tidyverse)
