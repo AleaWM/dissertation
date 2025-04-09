@@ -131,7 +131,7 @@ nbh_pins <- GET(
   base_url,
   query = list(
     year = 2023,
-   #  env_flood_fema_sfha = TRUE,
+     env_flood_fema_sfha = TRUE,
     `$select` = paste0(c("pin", "pin10", 
                          "class", "year",
                          "township_code", "township_name",
