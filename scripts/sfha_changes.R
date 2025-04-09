@@ -1,5 +1,8 @@
 library(tidyverse)
 library(sf)
+
+library(tictoc)
+library(beepr)
 #library(geodata)
 
 
@@ -8,26 +11,31 @@ border <- st_read("inputs/Mapping_FIRMs/Cook_County_Border/Cook_County_Border.sh
   st_transform("EPSG:6454")
 
 # pulled from ptaxsim parcel polygons 
-# parcels_2024 <- st_read("./data/raw/parcel_shapefiles_ty2023.gpkg", layer = "parcels_2024") |> 
+# parcels_2024 <- st_read("./data/raw/parcel_shapefiles_ty2023.gpkg", layer = "parcels") |> 
 #   st_transform("EPSG:6454")
 
+# downloaded from Cook County Parcel Archive for 2022
 #st_layers("inputs/Mapping_Firms/Historical_parcels_-_2022.gdb/ccao_2022parcels_2024.gdb")
-parcels_2024 <- st_read("inputs/Mapping_Firms/Historical_parcels_2024_-_2022.gdb/ccao_2022parcels_2024.gdb", 
-                   layer = "parcel_2022_parcel2022_enhanced")
+parcels_2024 <- st_read("data/raw/Historical_parcels_2024_-_2022.gdb/ccao_2022parcels_2024.gdb", 
+                        layer = "parcel_2022_parcel2022_enhanced")
+
 parcels_2024 <- parcels_2024 |>
-  st_transform("EPSG:6454") |>
+  st_transform("EPSG:6454") #|>
 #  select(-c(pina:cc_floordesignator, comissionerdistrict:unitschltaxdist)) |>
-  select(name, pin10, municipality, politicaltownship, assessornbhd, 
-         assessorbldgclass, geoid, shape_Length, shape_Area, shape)
+  # select(name, pin10, municipality, politicaltownship, assessornbhd, 
+  #        assessorbldgclass, geoid, shape_Length, shape_Area, shape)
 
 # st_layers("inputs/Historical_parcels_-_2018.gdb/parcels_2018.gdb")
-
+# from CCAO parcel shapefiles online
 parcels_2018 <- st_read("inputs/Historical_Parcels_-_2018.gdb/parcels_2018.gdb", 
                    layer = "parcel_2018_parcel")
 
+# parcel boundaries from ptaxsim package database.
+#parcels_2018 <- st_read("./data/raw/parcel_shapefiles_ty2018.gpkg", layer = "parcels") 
+
 parcels_2018 <- parcels_2018 |>
-  st_transform("EPSG:6454") |>
-  select(name, pin10, shape_Length, shape_Area, shape)
+  st_transform("EPSG:6454")# |>
+ # select(name, pin10, shape_Length, shape_Area, shape)
 
 # NFHL as of 2018 from Miyuki archive  -----------------------
 #### Identify FIRM updates Between Years ##### 
@@ -82,14 +90,26 @@ sf_use_s2(TRUE)
 parcels_2018 <- st_set_precision(parcels_2018, 1e6)    # Set precision to reduce computational load
 parcels_2024 <- st_set_precision(parcels_2024, 1e6)    # Set precision to reduce computational load
 
-parcels_sfha_2018 <- st_join(parcels_2018, fld_haz_ar_2018, join = st_intersects) # kept all 1.43 million parcels_2024
+tic()
+beep_on_error(
+  parcels_sfha_2018 <- st_join(parcels_2018, fld_haz_ar_2018, join = st_intersects), sound = "wilhelm"  ) # kept all 1.43 million parcels_2024
 parcels_sfha_2018 <- parcels_sfha_2018 |> filter(!is.na(DFIRM_ID))
+# write_sf(parcels_sfha_2018, "./data/processed/ptaxsim_parcels_sfha_2018.shp", )
 write_sf(parcels_sfha_2018, "./data/processed/parcels_sfha_2018.shp", )
 
+beep("coin")
+toc()
 
-parcels_lomrs_2018 <- st_join(parcels_2018, lomrs2018, join = st_intersects)
+tic()
+beep_on_error(
+  parcels_lomrs_2018 <- st_join(parcels_2018, lomrs2018, join = st_intersects), sound = "wilhelm"  )
 parcels_lomrs_2018 <- parcels_lomrs_2018 |> filter(!is.na(LOMR_ID))
 write_sf(parcels_lomrs_2018, "./data/processed/parcels_lomrs_2018.shp", )
+# write_sf(parcels_lomrs_2018, "./data/processed/ptaxsim_parcels_lomrs_2018.shp", )
+beep("coin")
+toc()
+
+
 
 # State NFHL Database ------------------------------------------------
 # as of June 28 2024, filtered to just cook county when read in.
@@ -156,8 +176,6 @@ st_clip_sfha_2024 |>
 fld_haz_ar_2024 <- st_cast(st_clip_sfha_2024, "MULTIPOLYGON")
 fld_haz_ar_2024 <- st_transform(fld_haz_ar_2024, common_crs)
 
-library(tictoc)
-library(beepr)
 
 tic()
 beep_on_error(parcels_sfha_2024 <- st_join(parcels_2024, fld_haz_ar_2024, join = st_intersects), sound = "wilhelm" )# kept all 1.44 million parcels_2024
