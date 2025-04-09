@@ -5,7 +5,7 @@ format:
     df-print: paged
     code-fold: true
     code-tools: true
-    
+    toc: true
 ---
 
 ```{r setup, warning = FALSE, message = FALSE}
@@ -17,19 +17,24 @@ library(sf)
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 
 # all disasters in Illinois, filter in next step
-ind_assist <- read_csv("./inputs/data/indiv_assistance_CookCounty3.csv")
+ind_assist <- read_csv("./inputs/data/indiv_assistance_CookCounty3.csv") |> filter(incidentType != "Biological" & disasterNumber != "1763")
 
 # all disasters in Cook County, IL
 cook_assist <- ind_assist %>% filter(county == "Cook (County)")
 
-# Just Flood even1ts in 2023
-ind_assist <- ind_assist %>% 
-  filter(county == "Cook (County)" & disasterNumber %in% c("4728", "4749") )
+# # Just Flood events in 2023
+# ind_assist <- ind_assist %>% 
+#   filter(county == "Cook (County)" & disasterNumber %in% c("4728", "4749") )
 
+# Include other big flood events:
+ind_assist <- ind_assist %>% 
+  filter(county == "Cook (County)" & disasterNumber %in% c("4728", "4749", "1935", "4116") )
+
+zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
 
 ```
 
-# Applicants
+# Applicants (Granted and Denied together)
 
 ```{r}
 #| tbl-cap: "Number of applications for individual assistance received for all declarations in Cook County" 
@@ -42,9 +47,9 @@ cook_assist %>%
 ```
 ```{r}
 #| fig-label: fig-mapzipcodes-applicants
-#| fig-cap: "location of applicants"
+# #| fig-cap: "location of applicants"
+#| layout-ncol: 2
 
-zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
 
 cook_assist |> 
  # filter(disasterNumber == 4749 | disasterNumber == 4728) |>
@@ -55,7 +60,30 @@ cook_assist |>
   full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
   ggplot(aes(fill = claimcount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
-  labs(title = "Applicants by Zip Code, all Federal Disaster Declarations", caption = "") +
+  labs(title = "Applicants by Zip Code & Disaster Declaration", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+    labels = scales::comma
+
+  )+
+  facet_wrap(~disasterNumber)
+
+cook_assist |> 
+  filter(ihpAmount > 0 & disasterNumber != "NA" & !is.na(disasterNumber) & !is.na(damagedZipCode )) |>
+  group_by(disasterNumber, damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  ggplot(aes(fill = claimcount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "Granted Aid by Zip Code & Disaster Declaration", caption = "") +
     theme_void() +
   theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
   scale_fill_steps2(
@@ -69,6 +97,31 @@ cook_assist |>
   )+
   facet_wrap(~disasterNumber)
 ```
+
+```{r}
+cook_assist |> 
+  filter(!is.na(incidentType) & incidentType != "NA") |>
+  group_by(incidentType, damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  ggplot(aes(fill = claimcount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "Applicants per Year", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+    labels = scales::comma
+  )+
+  facet_wrap(~incidentType)
+```
+
 
 ```{r}
 #| tbl-cap: "Number of applications for individual assistance received for the two disaster declarations in Cook County during 2023." 
@@ -94,7 +147,7 @@ ind_assist %>%
 
 
 ```{r}
-#| tbl-cap: "Number of applications per zipcode by if if they had flood insurance."
+#| tbl-cap: "Number of applications per zipcode by if they had flood insurance."
 
 
 ind_assist %>% 
@@ -109,7 +162,7 @@ ind_assist %>%
 ```{r}
 #| fig-label: fig-mapzipcodes-applicants
 #| fig-cap: "location of applicants"
-zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
+
 
 ind_assist |> 
   filter(disasterNumber == 4749 | disasterNumber == 4728) |>
@@ -137,7 +190,6 @@ ind_assist |>
 ```{r}
 #| fig-label: fig-mapzipcodes-applicants
 #| fig-cap: "location of applicants"
-zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
 
 ind_assist |> 
   filter(disasterNumber == 4749 | disasterNumber == 4728 & floodInsurance == TRUE) |>
@@ -148,11 +200,12 @@ ind_assist |>
   full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
   ggplot(aes(fill = claimcount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
-  labs(title = "Applicants with Flood Insurance by Zip Code", caption = "") +
+  labs(title = "Applicants with Flood Insurance by Zip Code", 
+       caption = "Disaster Declarations 4729 and 4728 only") +
     theme_void() +
   theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
   scale_fill_steps2(
-    high = "darkblue", low = "black",
+    high = "blue", low = "black",
   na.value = "white",
     nice.breaks = FALSE,
     show.limits=TRUE,
@@ -165,7 +218,64 @@ ind_assist |>
 # Applications with Grants Awarded
 
 ```{r}
-#| tbl-cap: "`ihpAmount` includes amount awarded for HA and ONA."
+#| fig-label: fig-mapzipcodes-applicants
+# #| fig-cap: "location of applicants"
+#| layout-ncol: 2
+
+
+cook_assist |> 
+  filter(disasterNumber %in% c(1935,4116, 4728, 4749) ) |>
+    filter(ihpAmount > 0 & disasterNumber != "NA" & !is.na(disasterNumber) & !is.na(damagedZipCode )) |>
+
+  group_by(disasterNumber, damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  left_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  ggplot(aes(fill = ihpAmount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "Granted Aid by Zip Code & Disaster Declaration", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Dollars",
+    labels = scales::dollar
+
+  )+
+  facet_wrap(~disasterNumber)
+
+cook_assist |> 
+  filter(disasterNumber %in% c(1935,4116, 4728, 4749) ) |>
+  filter(ihpAmount > 0 & disasterNumber != "NA" & !is.na(disasterNumber) & !is.na(damagedZipCode )) |>
+  group_by(disasterNumber, damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  left_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  ggplot(aes(fill = claimcount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "Granted Aid by Zip Code & Disaster Declaration", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+    labels = scales::comma
+
+  )+
+  facet_wrap(~disasterNumber)
+```
+
+
+```{r}
+#| tbl-cap: "`ihpAmount` includes amount awarded for Housing Assistance (HA) and Other Needs Assistance (ONA)."
 
 ind_assist %>% 
   filter(ihpAmount > 0) |> 
@@ -223,9 +333,6 @@ ind_assist %>%
 ```
 
 ```{r mapzipcodes4728}
-
-zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
-
 
 ind_assist |> 
   filter(disasterNumber == 4728 & ihpAmount > 0 & floodDamage==TRUE) |>
@@ -342,7 +449,7 @@ ind_assist %>%
 
 # Descriptive Stats
 
-```{r}
+```{r eval=FALSE}
 table(ind_assist$residenceType, ind_assist$disasterNumber)
 
 table(ind_assist$grossIncome, ind_assist$disasterNumber)
