@@ -52,7 +52,7 @@ puni_pins |>
 ## 1,585,866 residential PINs
 
 puni_pins |> 
-  filter(env_flood_fs_factor>3 & class>199&class < 300) |> count() 
+  filter(env_flood_fs_factor >3 & class > 199 & class < 300) |> count() 
 ## 331,556 > 3 (all classes)
 ## 276,004 Class 2 PINs
 
