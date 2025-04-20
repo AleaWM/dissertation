@@ -301,8 +301,8 @@ prelim_sfha |>filter(pin %in% lomrs_2024$pin)
 pin_indicators <- sfha_2018 |> full_join(sfha_2024, by = c("pin", "DFIRM_ID"), suffix = c("2018", "2024"))
  
 pin_indicators <- pin_indicators|>full_join(prelim_sfha, by = "pin")
-lomr_join <- lomrs_2018 |> full_join(lomrs_2024, by = c("pin", "DFIRM_ID"))
-pin_indicators <- pin_indicators|>full_join(lomr_join, by = c("pin","DFIRM_ID"), suffix = c("2018", "2024"))
+lomr_join <- lomrs_2018 |> full_join(lomrs_2024, by = c("pin", "DFIRM_ID"), suffix = c("2018", "2024"))
+pin_indicators <- pin_indicators|>full_join(lomr_join)
 
 n_distinct(pin_indicators$pin) # 58,363 unique PINs
 
@@ -314,7 +314,7 @@ pin_indicators <-pin_indicators|>
     lomr2018 =  ifelse(!is.na(LOMR_ID2018), 1, 0),
     lomr2024 = ifelse(!is.na(LOMR_ID2024), 1, 0)
          )
-
+pin_indicators |> write_csv("./data/processed/sfha_indicator_pins.csv")
 # Make a map of rivers in cook county -----------------------------------------
 county_rivers <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NFHL_17_20240628.gdb", 
                              layer = "S_WTR_LN") |>
