@@ -15,27 +15,20 @@ border <- st_read("inputs/Mapping_FIRMs/Cook_County_Border/Cook_County_Border.sh
 #   st_transform("EPSG:6454")
 
 # downloaded from Cook County Parcel Archive for 2022
-#st_layers("inputs/Mapping_Firms/Historical_parcels_-_2022.gdb/ccao_2022parcels_2024.gdb")
-parcels_2024 <- st_read("data/raw/Historical_parcels_2024_-_2022.gdb/ccao_2022parcels_2024.gdb", 
+#st_layers("inputs/Mapping_Firms/Historical_parcels_-_2022.gdb/ccao_2022parcels.gdb")
+parcels_2024 <- st_read("./inputs/Mapping_Firms/Historical_Parcels_-_2022.gdb/ccao_2022parcels.gdb", 
                         layer = "parcel_2022_parcel2022_enhanced")
 
 parcels_2024 <- parcels_2024 |>
-  st_transform("EPSG:6454") #|>
-#  select(-c(pina:cc_floordesignator, comissionerdistrict:unitschltaxdist)) |>
-  # select(name, pin10, municipality, politicaltownship, assessornbhd, 
-  #        assessorbldgclass, geoid, shape_Length, shape_Area, shape)
+  st_transform("EPSG:6454") 
 
 # st_layers("inputs/Historical_parcels_-_2018.gdb/parcels_2018.gdb")
 # from CCAO parcel shapefiles online
 parcels_2018 <- st_read("inputs/Historical_Parcels_-_2018.gdb/parcels_2018.gdb", 
                    layer = "parcel_2018_parcel")
 
-# parcel boundaries from ptaxsim package database.
-#parcels_2018 <- st_read("./data/raw/parcel_shapefiles_ty2018.gpkg", layer = "parcels") 
-
 parcels_2018 <- parcels_2018 |>
-  st_transform("EPSG:6454")# |>
- # select(name, pin10, shape_Length, shape_Area, shape)
+  st_transform("EPSG:6454")
 
 # NFHL as of 2018 from Miyuki archive  -----------------------
 #### Identify FIRM updates Between Years ##### 
@@ -44,7 +37,8 @@ parcels_2018 <- parcels_2018 |>
 firm_2018 <- st_read("inputs/Mapping_FIRMs/NFHL_17_20180129.gdb/NFHL_17_20180129.gdb", 
                      layer = "S_FIRM_PAN") |>
   st_transform("EPSG:6454") |>
-  st_intersection(border)
+  filter(DFIRM_ID=="17031C")
+  #st_intersection(border)
 
 lomrs2018 <- st_read("inputs/Mapping_FIRMs/NFHL_17_20180129.gdb/NFHL_17_20180129.gdb", 
                      layer = "S_LOMR") |>
@@ -75,8 +69,9 @@ table(st_is_simple(parcels_2024))
 
 # keep valid parcels only:
 parcels_2018 <- parcels_2018[st_is_valid(parcels_2018), ]
-
 parcels_2024 <- parcels_2024[st_is_valid(parcels_2024), ]
+
+# check stuff
 st_geometry(parcels_2024)
 attributes(parcels_2024)
 
@@ -94,22 +89,40 @@ tic()
 beep_on_error(
   parcels_sfha_2018 <- st_join(parcels_2018, fld_haz_ar_2018, join = st_intersects), sound = "wilhelm"  ) # kept all 1.43 million parcels_2024
 parcels_sfha_2018 <- parcels_sfha_2018 |> filter(!is.na(DFIRM_ID))
-# write_sf(parcels_sfha_2018, "./data/processed/ptaxsim_parcels_sfha_2018.shp", )
-write_sf(parcels_sfha_2018, "./data/processed/parcels_sfha_2018.shp", )
+write_sf(parcels_sfha_2018, "./data/processed/parcels_sfha_2018.shp")
 
 beep("coin")
 toc()
+
+## Make a CSV of just parcels and indicators
+parcels_sfha_2018 <- read_sf("./data/processed/parcels_sfha_2018.shp")
+
+sfha_2018 <- parcels_sfha_2018 |> 
+  as.data.frame() |> 
+  select(pin = name, 
+          DFIRM_ID = DFIRM_I, FLD_ZON, ZONE_SU, FLD_AR_) |> 
+  group_by(pin) |>
+  slice(1) |>
+  ungroup()
+
+write_csv(sfha_2018, "./data/processed/parcels_sfha_2018.csv")
 
 tic()
 beep_on_error(
   parcels_lomrs_2018 <- st_join(parcels_2018, lomrs2018, join = st_intersects), sound = "wilhelm"  )
 parcels_lomrs_2018 <- parcels_lomrs_2018 |> filter(!is.na(LOMR_ID))
 write_sf(parcels_lomrs_2018, "./data/processed/parcels_lomrs_2018.shp", )
-# write_sf(parcels_lomrs_2018, "./data/processed/ptaxsim_parcels_lomrs_2018.shp", )
 beep("coin")
 toc()
 
-
+## Make a CSV of just parcels and indicators
+parcels_lomrs_2018 <- read_sf("./data/processed/parcels_lomrs_2018.shp")
+lomrs_2018 <- parcels_lomrs_2018 |> as.data.frame() |> 
+  select(pin = name, 
+         DFIRM_ID = DFIRM_I, LOMR_ID, EFF_DAT, CASE_NO) |>  group_by(pin) |>
+  slice(1) |>
+  ungroup()
+write_csv(lomrs_2018, "./data/processed/parcels_lomrs_2018.csv")
 
 # State NFHL Database ------------------------------------------------
 # as of June 28 2024, filtered to just cook county when read in.
@@ -121,9 +134,14 @@ st_clip_firms_2024 <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_N
   st_transform("EPSG:6454") |>
   st_intersection(border) |>
   mutate(
-    pre_date = paste0(year(PRE_DATE), "-", str_pad(month(PRE_DATE), width = 2, side = "left", pad = "0")),
-    eff_date = paste0(year(EFF_DATE), "-", str_pad(month(EFF_DATE), width = 2, side = "left", pad = "0")),
+    pre_date = paste0(year(PRE_DATE), "-", 
+                      str_pad(month(PRE_DATE), width = 2, side = "left", pad = "0"), "-", 
+                      str_pad(day(PRE_DATE), width=2, side = "left", pad = "0")),
+    eff_date = paste0(year(EFF_DATE), "-",
+                      str_pad(month(EFF_DATE), width = 2, side = "left", pad = "0"), "-",
+                      str_pad(day(PRE_DATE), width=2, side = "left", pad = "0"))
   )
+write_csv(st_clip_firms_2024, "data/raw/S_FIRM_PAN.csv")
 
 st_clip_lomr_2024 <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NFHL_17_20240628.gdb",
                       layer = "S_LOMR") |>  
@@ -139,8 +157,8 @@ st_clip_sfha_2024 <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NF
 
 # FIRMS as of 2024 from State NFHL
 ggplot() +
-  geom_sf(data = border, fill = "gray20", color = "black") +
-  geom_sf(data = st_clip_firms_2024, linewidth = 0.3, aes(fill = eff_date)) +
+  geom_sf(data = border , fill = "gray20", color = "black") +
+  geom_sf(data = st_clip_firms_2024 |> filter(DFIRM_ID=="17031C"), linewidth = 0.3, aes(fill = eff_date)) +
   theme_void() +
   scale_fill_ordinal() +
   labs( title = "FIRM Effective Date" , fill = "", )
@@ -177,6 +195,7 @@ fld_haz_ar_2024 <- st_cast(st_clip_sfha_2024, "MULTIPOLYGON")
 fld_haz_ar_2024 <- st_transform(fld_haz_ar_2024, common_crs)
 
 
+## 2024 SFHA parcels
 tic()
 beep_on_error(parcels_sfha_2024 <- st_join(parcels_2024, fld_haz_ar_2024, join = st_intersects), sound = "wilhelm" )# kept all 1.44 million parcels_2024
 parcels_sfha_2024 <- parcels_sfha_2024 |> filter(!is.na(DFIRM_ID))
@@ -184,8 +203,22 @@ write_sf(parcels_sfha_2024, "./data/processed/parcels_sfha_2024.shp" )
 beep("coin")
 toc()
 
+# and as a CSV with less variables
+parcels_sfha_2024 <- sf::read_sf("data/processed/parcels_sfha_2024.shp")
+
+sfha_2024 <- parcels_sfha_2024 |> as.data.frame() |>
+  select(-c(GFID:geometry)) |>
+  select(pin = name, 
+         DFIRM_ID = DFIRM_I, FLD_ZON, ZONE_SU, FLD_AR_) |>
+  group_by(pin) |>
+  slice(1) |>
+  ungroup()
+
+sfha_2024 |>  write_csv("data/processed/sfha_pins_2024.csv")
 
 
+
+### 2024 LOMR parcels
 lomrs2024 <- st_cast(st_clip_lomr_2024, "MULTIPOLYGON")
 
 tic()
@@ -195,6 +228,18 @@ write_sf(parcels_lomrs_2024, "./data/processed/parcels_lomrs_2024.shp")
 beep("coin")
 toc()
 
+# Make it a smaller CSV
+parcels_lomrs_2024 <- sf::read_sf("data/processed/parcels_lomrs_2024.shp")
+
+lomrs_2024 <- parcels_lomrs_2024 |> as.data.frame() |>
+  select(pin = name,
+         DFIRM_ID = DFIRM_I,
+         LOMR_ID, EFF_DAT, CASE_NO) |>
+  group_by(pin) |>
+  slice(1) |>
+  ungroup()
+
+lomrs_2024 |>  write_csv("data/processed/lomr_pins_2024.csv")
 
 ## 2021 County Flood hazard layer database -------------------------------------
 ## most recent County database is from Sept 2021
@@ -231,18 +276,28 @@ prelim_sfha <-read_sf("inputs/Mapping_Firms/Prelim_DL20230702/Prelim_CSLF.shp") 
 prelim_sfha <- st_cast(prelim_sfha, "MULTIPOLYGON")
 prelim_sfha <- st_transform(prelim_sfha, common_crs)
 
+prelim_sfha <- prelim_sfha |> filter(!is.na(NEW_ZONE))
 
 tic()
 beep_on_error(parcels_2024_prelimchanges <- st_join(parcels_2024, prelim_sfha, join = st_intersects), sound = "wilhelm" )# kept all 1.44 million parcels_2024
-parcels_2024_prelimchanges <- parcels_2024_prelimchanges |> filter(!is.na(SFHACHG))
+parcels_2024_prelimchanges <- parcels_2024_prelimchanges |> filter(!is.na(NEW_ZONE))
 write_sf(parcels_2024_prelimchanges, "./data/processed/parcels_2024_prelimchange.shp" )
 beep("coin")
 toc()
 
-res_changed <- parcels_2024_prelimchanges |> filter(SFHACHG == "Increase"& assessorbldgclass > "199")
+
+prelim_sfha <- parcels_2024_prelimchanges |> as.data.frame() |>
+  select(pin = name,
+        SFHACHG) |>
+  group_by(pin) |>
+  slice(1) |>
+  ungroup()
+
+ write_sf(prelim_sfha, "./data/processed/parcels_preliminary_sfha.csv" )
 
 
-
+ 
+ 
 # Make a map of rivers in cook county -----------------------------------------
 county_rivers <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NFHL_17_20240628.gdb", 
                              layer = "S_WTR_LN") |>
@@ -258,5 +313,13 @@ ggplot() +
 
 
 
+# Join FIRM data to parcels --------------------------------------------------
+tic()
+beep_on_error(
+  parcels_sfha_2024 <- st_join(parcels_2024, st_clip_firms_2024, join = st_intersects), sound = "wilhelm"  ) # kept all 1.43 million parcels_2024
+parcels_sfha_2018 <- parcels_sfha_2024 |> filter(!is.na(name))
+write_sf(parcels_sfha_2024, "./data/processed/parcels_inFIRMs_2024.shp", )
 
+beep("coin")
+toc()
 
