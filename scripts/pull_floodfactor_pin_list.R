@@ -40,50 +40,47 @@ puni_pins <- GET(
 )
 
 puni_pins <- fromJSON(rawToChar(puni_pins$content))
-# 1,867,818 obs
-puni_pins <- puni_pins |> mutate(env_flood_fs_factor = as.numeric(env_flood_fs_factor) )
 
-table(puni_pins$env_flood_fema_sfha) # 29,539  TRUE
+n_distinct(puni_pins$pin) # 335,383 distinct pins with score > 3
+
+puni_pins2 <- puni_pins |> filter(!is.na(env_flood_fema_sfha))
+
+table(puni_pins2$env_flood_fema_sfha) 
+# FALSE   TRUE 
+# 313324  18478 
 
 table(puni_pins$env_flood_fs_factor)
+# 10.0    4.0    5.0    6.0    7.0    8.0    9.0 
+# 11826 185728  75022 323900  40384   7318  22883
+
+
+puni_pins2  |> 
+  filter(env_flood_fs_factor>4) |> count() 
+## 325928 > 4 (All Classes)
 
 
 
-puni_pins |> 
-  filter(class>199&class < 300) |> count() 
-## 1,585,866 residential PINs
 
-puni_pins |> 
-  filter(env_flood_fs_factor >3 & class > 199 & class < 300) |> count() 
-## 331,556 > 3 (all classes)
-## 276,004 Class 2 PINs
-
-
-puni_pins  |> 
-  filter(env_flood_fs_factor>4 & class>199&class < 300) |> count() 
-## 239,425 > 4 (All Classes)
-## 199,509 Class 2 PINs
-
-
-puni_pins |> mutate(env_flood_fs_factor = as.numeric(env_flood_fs_factor) ) |> 
-  filter(env_flood_fs_factor>5 & class>199&class < 300) |> count() 
-## 202,371 > 5 (all  classes)
-## 157,822 Class 2 PINs
-
-
-puni_pins  |> 
-  filter(env_flood_fema_sfha == T & class>199&class < 300) |> count() 
-## 29,539 in SFHA (all  classes)
-## 19,383 Class 2 PINs
-
-puni_pins_coded <- puni_pins |> 
-  mutate(SFHA = ifelse(env_flood_fema_sfha==TRUE, TRUE, FALSE),
-         FFS_4plus = ifelse(env_flood_fs_factor >= 4, TRUE, FALSE),
-         FFS_5plus = ifelse(env_flood_fs_factor >= 5, TRUE, FALSE),
-         FFS_6plus = ifelse(env_flood_fs_factor >= 6, TRUE, FALSE),
-         Res_C2 = ifelse(class > 199 & class < 300, TRUE, FALSE),
-  )
-
-puni_pins_coded |> 
-  group_by(Res_C2, SFHA, FFS_4plus, FFS_5plus, FFS_6plus) |>
-  summarize(n=n()) |> View()
+# Code for when Class was a variable in the API pull:
+# puni_pins |> mutate(env_flood_fs_factor = as.numeric(env_flood_fs_factor) ) |> 
+#   filter(env_flood_fs_factor>5 & class>199&class < 300) |> count() 
+# ## 202,371 > 5 (all  classes)
+# ## 157,822 Class 2 PINs
+# 
+# 
+# puni_pins  |> 
+#   filter(env_flood_fema_sfha == T & class>199&class < 300) |> count() 
+# ## 29,539 in SFHA (all  classes)
+# ## 19,383 Class 2 PINs
+# 
+# puni_pins_coded <- puni_pins |> 
+#   mutate(SFHA = ifelse(env_flood_fema_sfha==TRUE, TRUE, FALSE),
+#          FFS_4plus = ifelse(env_flood_fs_factor >= 4, TRUE, FALSE),
+#          FFS_5plus = ifelse(env_flood_fs_factor >= 5, TRUE, FALSE),
+#          FFS_6plus = ifelse(env_flood_fs_factor >= 6, TRUE, FALSE),
+#          Res_C2 = ifelse(class > 199 & class < 300, TRUE, FALSE),
+#   )
+# 
+# puni_pins_coded |> 
+#   group_by(Res_C2, SFHA, FFS_4plus, FFS_5plus, FFS_6plus) |>
+#   summarize(n=n()) |> View()
