@@ -23,16 +23,18 @@ base_url <- "https://datacatalog.cookcountyil.gov/resource/nj4t-kc8j.json"
 puni_pins <- GET(
   base_url,
   query = list(
-   year = 2021,
-    `$select` = paste0(c("pin", "pin10", 
-                         "class", "year",
-                         "township_code", "township_name",
-                         "nbhd_code", "census_puma_geoid",
-                         "env_flood_fema_sfha", "env_flood_fema_data_year",
-                         "env_flood_fs_risk_direction", "env_flood_fs_factor",
-                         "lat", "lon", 
-                         "triad_name" ),
-                       collapse = ","),
+    `$select` = "DISTINCT pin, nbhd_code, env_flood_fs_factor, env_flood_fema_sfha, env_flood_fs_risk_direction",
+    `$where` = "env_flood_fs_factor > 3",
+    
+     # paste0(c("pin", "pin10", 
+     #                     "class", "year",
+     #                     "township_code", "township_name",
+     #                     "nbhd_code", "census_puma_geoid",
+     #                     "env_flood_fema_sfha", "env_flood_fema_data_year",
+     #                     "env_flood_fs_risk_direction", "env_flood_fs_factor",
+     #                    # "lat", "lon", 
+     #                     "triad_name" ),
+     #                   collapse = ","),
     `$limit` = 5000000L
   )
 )
