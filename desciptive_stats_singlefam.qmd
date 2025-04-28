@@ -1,0 +1,169 @@
+---
+title: "Make Panel Data"
+format: 
+  html:
+    toc: true
+---
+
+> The single_fam csv is the "easy" PINs -- properties that were always residential and existed all years. 
+
+It was created in `create_panel_data.qmd`. 
+
+[ ] TO DO: Change pre_date of 9999-09-08 to beginning of study period
+
+
+- Start with all PINs that were ever residential for at least 1 year
+  - `data/raw/residential_pins_ever.csv` from `pull_distinct_res_PINs.R`
+  - made from PTAXSIM database (from CCAO) 
+  - has Assessed Values (Initial, Board of Review, Clerk/Final)
+  - has PIN class
+  
+- FIRM Update Dates
+  - [X] Join FIRM data to parcels      
+    - `parcels_wFIRMS.csv` from `pull_parcel_sfs.R`. Uses XY coordinates for parcel centroids from ptaxsim.db and intersects with 2024 FIRM polygons.
+    - CSV version of 2024 FIRMs in `S_FIRM_PAN.csv`
+  - [ ] **Need to manually add preliminary dates**  -- Partially done  
+  - [ ] Create variable for each pin-year: 
+    - [ ] if year < pre_date, then preliminary update == 0
+    - [ ] if year >= pre_date, then preliminary update == 1
+  - [ ] do same for effective date (when financial implications become active for mortgage holders)  
+
+
+- [ ] Left join flood factor score by PIN. It does not change with time.
+  - Flood Factor Score from Assessor's parcel universe API
+    - csv: `floodfactor_scores.csv`
+
+- [ ] Sale Date and Sale Price   
+  - Join by PIN and year
+  - csv: `./data/raw/Assessor_Parcel_Sales_20250105.csv`
+
+
+
+
+```{r setup, warning=FALSE, message=FALSE}
+library(tidyverse)
+
+```
+
+> Coding note: sale_price is winsorized by grouping the year & major class (technically the 1st digit of the class code). Check that this is how you want it to be winsorized. 
+
+```{r}
+pins <- read_csv("./data/processed/singlefamily_assessed_values.csv") |> 
+  select(-c(`building type`:landuse_change))
+
+
+```
+
+
+ff_score = 1-10, from parcel universe (CCAO obtained in 2019)
+
+> when grouping by pin, if there were duplicates in the data before comparing years in the dataset to the timespan, it would not be an accurate count of years.
+
+
+```{r}
+table(pins$class[pins$year==2023])
+
+```
+
+
+## Add in SFHA and LOMR indicators
+
+
+sfha_ind made from these files
+
+- lomrs <- read_csv("./data/processed/LOMR_pins_2024.csv")  
+
+- sfha_2018 <- read_csv("./data/processed/parcels_sfha_2018.csv")  
+
+- sfha_2024 <- read_csv("./data/processed/parcels_sfha_2024.csv")  
+
+- buyouts <- read_csv("./data/processed/BuyoutPoints_Statewide.xlsx")  
+
+
+```{r}
+
+sfha_ind <- read_csv("./data/processed/sfha_indicator_pins.csv")
+sfha_ind <- sfha_ind |> select(pin, sfha2018:lomr2024)
+
+pins <- pins |> full_join(sfha_ind, by ="pin")
+```
+
+
+```{r}
+table(pins$class[pins$year==2023])
+```
+
+
+```{r}
+table(pins$lomr2024[pins$year==2023])
+table(pins$lomr2018[pins$year==2023])
+```
+
+```{r}
+table(pins$sfha2018[pins$year==2023])
+table(pins$sfha2024[pins$year==2023])
+
+```
+
+
+- improvement_ind is all 0's -- drop it?
+
+```{r}
+# all 0's, drop variable?
+table(pins$improvement_ind[pins$year==2023])
+
+table(pins$prelimsfha[pins$year==2023])
+
+```
+
+
+```{r}
+pins <- pins |>
+  mutate(class = as.character(class),
+         lomr2024 = as.character(lomr2024),
+         sfha2024 = as.character(sfha2024))
+
+naive_ols <- lm(av_clerk ~ class,
+                data = pins |> filter(year==2023))
+
+naive_ols
+```
+
+```{r}
+naive_ols <- lm(av_clerk ~ class + lomr2024 + sfha2024,
+                data = pins |> filter(year==2023))
+
+naive_ols
+```
+
+```{r}
+naive_ols <- lm(av_clerk ~ lomr2024 + sfha2024,
+                data = pins |> filter(year==2023))
+
+naive_ols
+
+naive_ols <- lm(av_clerk ~ lomr2024 + sfha2024,
+                data = pins |> filter(year==2019))
+
+naive_ols
+```
+
+```{r eval=FALSE}
+library(fixest)
+
+models <- list(
+  "Project-Year FE" = feols(fmv_growth_2011_w ~  land_use2*incent_prop2 | actual_keypin + year, panel.id = c("actual_keypin", "year"),                                      vcov = "newey_west",
+
+                            data = proj_panel),
+  
+  "Project, Year & Muni FE" = feols(fmv_growth_2011_w ~ land_use2*incent_prop2  | actual_keypin + clean_name + year, 
+                                    vcov = "newey_west",
+                                          panel.id = c("actual_keypin", "year"), data = proj_panel)
+)
+
+
+modelsummary::modelsummary(model = models, output = "flextable",
+                           stars = TRUE,
+                           gof_omit = "AIC|BIC")
+```
+
