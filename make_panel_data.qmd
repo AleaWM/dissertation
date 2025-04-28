@@ -1,5 +1,239 @@
 ---
 title: "Make Panel Data"
-format: html
+format: 
+  html:
+    toc: true
 ---
+
+- Start with all PINs that were ever residential for at least 1 year
+  - `data/raw/residential_pins_ever.csv` from `pull_distinct_res_PINs.R`
+  - made from PTAXSIM database (from CCAO) 
+  - has Assessed Values (Initial, Board of Review, Clerk/Final)
+  - has PIN class
+  
+- FIRM Update Dates
+  - [X] Join FIRM data to parcels      
+    - `parcels_wFIRMS.csv` from `pull_parcel_sfs.R`. Uses XY coordinates for parcel centroids from ptaxsim.db and intersects with 2024 FIRM polygons.
+    - CSV version of 2024 FIRMs in `S_FIRM_PAN.csv`
+  - [ ] **Need to manually add preliminary dates**  -- Partially done  
+  - [ ] Create variable for each pin-year: 
+    - [ ] if year < pre_date, then preliminary update == 0
+    - [ ] if year >= pre_date, then preliminary update == 1
+  - [ ] do same for effective date (when financial implications become active for mortgage holders)  
+
+
+- [ ] Left join flood factor score by PIN. It does not change with time.
+  - Flood Factor Score from Assessor's parcel universe API
+    - csv: `floodfactor_scores.csv`
+
+- [ ] Sale Date and Sale Price   
+  - Join by PIN and year
+  - csv: `./data/raw/Assessor_Parcel_Sales_20250105.csv`
+  
+- [ ] Indicator for location in an LOMR   
+  - financial implications for if PIN is required to have insurance or not (for a federally backed mortgage) 
+  - is pin in LOMR? if yes --> if year > effective LOMR date, in_LOMR == 1, otherwise 0   
+   
+- [ ] Indicator for location in an SFHA.  
+  - SFHA area - LOMR area = PINs still in SFHA with flood insurance requirement.  
+  - Lenders can still require flood insurance based on their own risk assessment. (i.e. maybe they use First Streets data, which is now literally sold to insurance companies!)
+  
+- [ ] Robustness check? See if change in building characteristics or even create just a `had_permit` indicator to flag that work might havebeen done on the property. 
+
+- [ ] Flood event indicator?   
+  - unsure of details at  this point. probably will do land blocks or buffer around PINs that submitted PTAX 245 forms? Or use zip code level analysis baed on areas with the most proportional individual assistance funds received?
+  
+- [ ]  Buyouts? Case study of impact on tax rates after a buyout occured in Des Plaines? 
+
+
+```{r AVs, warning=FALSE, message=FALSE}
+library(tidyverse)
+
+# firm_info <- read_csv("./data/processed/parcels_wFIRMs.csv")
+
+res_pins <- read_csv("./data/raw/residential_pins_ever.csv")
+
+# Read in class dictionary
+cde <- read_csv("../Merriman RA/ptax/Necessary_Files/class_dict_expanded.csv") |>
+  mutate(class = as.character(class_code),    # rename to match other data frames
+         residential = ifelse(Res_nonRes == "Res", 1, 0)) |>  
+  select(-c(loa_2022, Option2, class_desc, land, vacant_ind, last2dig,
+            assessment_level, used_in2021, class_code, incent_prop, assess_ratio,)) %>%
+  mutate_at(.vars = c("improvement_ind",  "class_1dig", "major_class_code"), .funs = as.character
+  ) |>
+  rename(land_use = Alea_cat)
+```
+
+> Coding note: sale_price is winsorized by grouping the year & major class (technically the 1st digit of the class code). Check that this is how you want it to be winsorized. 
+
+
+```{r salesdata, eval=FALSE}
+sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") %>% 
+  filter(year > 2005) %>%
+  mutate(class = as.numeric(class), 
+         class_1dig = str_sub(class, 1, 1)) |>
+  filter(class > 199 & class < 1000) |>
+  mutate(date = lubridate::mdy(sale_date)) |>
+  group_by(year, class_1dig)|>
+  mutate(sale_price = DescTools::Winsorize(sale_price, quantile(sale_price, probs = c(0.01, 0.99), na.rm=FALSE) )) |>
+  ungroup()
+
+res_pins <- res_pins |> left_join(sales, by = c("year", "pin"))
+rm(sales)
+```
+
+[ ] TO DO: Change pre_date of 9999-09-08 to beginning of study period
+
+```{r FIRMdata, eval=FALSE}
+firms <- read_csv("./data/processed/parcels_wFIRMS.csv")
+
+res_pins <- res_pins |>
+  mutate(pin10 = str_sub(pin, 1, 10)) |>
+  left_join(firms, by = "pin10") 
+rm(firms)
+
+
+res_pins <- res_pins |> 
+  select(-c(geometry, PANEL_TYP, PRE_DATE, VERSION_ID, SCALE, BASE_TYP, PNP_REASON))
+
+res_pins <- res_pins |>
+  mutate(treated = ifelse(year < year(eff_date), 0, 1))
+
+treated <- res_pins |> filter(treated==1 & !is.na (sale_price) )
+write_csv(treated, "./data/processed/treated.csv")
+```
+
+
+treated = 0 or 1, from 
+
+sale_price = NA or sale_price, from Assessor Sales dataset
+
+
+```{r}
+fs_scores<- read_csv("./data/raw/floodfactor_scores.csv")
+
+res_pins <- left_join(res_pins, fs_scores, by = "pin")
+```
+
+ff_score = 1-10, from parcel universe (CCAO obtained in 2019)
+
+
+```{r}
+timespan = n_distinct(res_pins$year)
+
+res_pins <- res_pins|> mutate(class = as.character(class)) |> left_join(cde, by = "class")
+
+clean_pins <- res_pins  %>%
+  group_by(pin) |>
+  arrange(desc(year)) |>
+
+  mutate(
+    years_existed = n(),
+    residential_years = sum(residential == 1),
+    landuse_change =
+      ifelse(residential_years == timespan, "Always Residential",
+          #    ifelse(sum(land_use == "Industrial" | land_use == "Commercial") == timespan, "Always C&I",    # this won't be used since the PIN had to be residential at least one year to be included in the original res_pins dataframe.
+
+      
+               # created to remove PINs if they were tax exempt every year between 2011 and 2022.
+               ifelse(sum(land_use == "Exempt") > timespan - 3, "Drop Me",   # property has to be residential at least 3 years otherwise is labeled Drop Me. Picked 3 years randomly, not based on anything.
+                      ifelse(sum(land_use == "Exempt") > 0, "Exempt Sometime",
+                             "Changes Land Use")))
+  ) |>
+ungroup()
+```
+
+
+```{r}
+table(clean_pins$landuse_change[clean_pins$year==2023])
+```
+
+
+```{r}
+table(clean_pins$class[clean_pins$year==2023])
+
+```
+
+```{r}
+table(clean_pins$`building type`[clean_pins$year==2023])
+```
+
+
+```{r}
+table(clean_pins$major_class_code[clean_pins$year==2023])
+```
+
+
+## Add in SFHA and LOMR indicators
+
+
+sfha_ind made from these files
+
+- lomrs <- read_csv("./data/processed/LOMR_pins_2024.csv")  
+
+- sfha_2018 <- read_csv("./data/processed/parcels_sfha_2018.csv")  
+
+- sfha_2024 <- read_csv("./data/processed/parcels_sfha_2024.csv")  
+
+- buyouts <- read_csv("./data/processed/BuyoutPoints_Statewide.xlsx")  
+
+
+```{r}
+
+sfha_ind <- read_csv("./data/processed/sfha_indicator_pins.csv")
+sfha_ind <- sfha_ind |> select(pin, sfha2018:lomr2024)
+
+clean_pins <- clean_pins |> full_join(sfha_ind, by ="pin")
+```
+
+In 2023:   
+Around 855K Single-Family PINs  
+Around 457K Condos  
+25K Residential Land parcels  
+9600 Land Parcels  
+5K Exempt Parcels   
+
+Classes to keep: 202:210, 234, 295
+
+Maybe classes: 288,290? (Home improvements)
+
+
+| Class| Description | Pin Count|
+|---|-----|---|
+| 200 | Residential Land | n |
+| 201 | Garage | n
+| 211 | Apartments | n
+| 212 | Apartments | n
+| 218 | B&B | 2 | n
+| 219 | B&B | 2 | n
+| 224 | Farm Building | 80
+| 225 | Rental room? | n=25
+| 236 | C&I Primary | 2
+| 239 | Non-equalized ag land | ~=800
+| 241 | Land with Res. Parcel | n~=24,000
+| 288 | Home Improvement | n=88
+| 290 | Minor Improvement | n~=2600
+| 297 | Special Improvement | n=571
+| 299 | Condo | n~=457K
+
+```{r}
+names(clean_pins)
+
+clean_names <- clean_names |> 
+  mutate()
+```
+
+```{r}
+#| label: pins-to-use
+#| eval: false
+
+clean_pins <- clean_pins |> filter(`building type`=="Single-Family" & landuse_change == "Always Residential")
+
+write_csv(clean_pins, "./data/processed/singlefamily_assessed_values.csv")
+
+```
+
+28 million observations to 15 million observations after filtering for Single-Family and Always Residential.
+
+- I am interested in PINs that became exempt or vacant land!! But for now, these observations are the "easy", standard, single-family PINs commonly used in studies. 
 
