@@ -1,8 +1,10 @@
 # ----
-# Purpose: Merge Cook County parcel universe with 2019 Flood Factor scores to assign flood risk to PINs
-# Input(s): CCAO API Parcel data with PINs, Flood Factor 2019 snapshot
-# Output(s): data/raw/ NONE YET
-# Last updated: 2025-01-05
+# Purpose: Pull Cook County parcel universe PINs with FEMA Flood Risk Variables
+# and 2019 Flood Factor scores to assign flood risk to PINs
+# Input(s): CCAO API Parcel data with PINs, Flood Factor 2019 snapshot, SFHA indicator
+# Output(s): data/raw/floodfactor_scores.csv
+# Use: Information that the assessor uses for their valuation! Starting in 2021-ish
+# Last updated: 2025-05-02
 # ----
 
 ## Pull list of PINs with First Street Flood Rating above Threshold
@@ -12,38 +14,29 @@ library(data.table)
 library(jsonlite)
 library(glue)
 library(httr)
-library(rSocrata)
 
 
 # API Endpoint
 #new API, added to code January 5 2025
 base_url <- "https://datacatalog.cookcountyil.gov/resource/nj4t-kc8j.json"
 
-## Ideally I would use the env_flood_fs_factor > 3 in the filter but it never works??
 puni_pins <- GET(
   base_url,
   query = list(
     `$select` = "DISTINCT pin, nbhd_code, env_flood_fs_factor, env_flood_fema_sfha, env_flood_fs_risk_direction",
-    `$where` = "env_flood_fs_factor > 3",
-    
-     # paste0(c("pin", "pin10", 
-     #                     "class", "year",
-     #                     "township_code", "township_name",
-     #                     "nbhd_code", "census_puma_geoid",
-     #                     "env_flood_fema_sfha", "env_flood_fema_data_year",
-     #                     "env_flood_fs_risk_direction", "env_flood_fs_factor",
-     #                    # "lat", "lon", 
-     #                     "triad_name" ),
-     #                   collapse = ","),
+    `$where` = "env_flood_fs_factor IS NOT NULL AND env_flood_fema_sfha IS NOT NULL AND env_flood_fs_risk_direction IS NOT NULL",
     `$limit` = 5000000L
   )
 )
 
 puni_pins <- fromJSON(rawToChar(puni_pins$content))
+# 1,856,475 distinct pins with non missing values and any flood factor score.
 
 n_distinct(puni_pins$pin) # 335,383 distinct pins with score > 3
 
-puni_pins2 <- puni_pins |> filter(!is.na(env_flood_fema_sfha))
+puni_pins2 <- puni_pins |> 
+  group_by(pin, env_flood_fs_factor, env_flood_fs_risk_direction, nbhd_code) |>
+  summarize(env_flood_fema_sfha = first(env_flood_fema_sfha))
 
 table(puni_pins2$env_flood_fema_sfha) 
 # FALSE   TRUE 
@@ -56,10 +49,20 @@ table(puni_pins$env_flood_fs_factor)
 
 puni_pins2  |> 
   filter(env_flood_fs_factor>4) |> count() 
-## 325928 > 4 (All Classes)
+## 325,846 > 4 (All Classes)
+
+write_csv(puni_pins2, "./data/raw/floodfactor_scores.csv")
 
 
 
+
+##############
+
+scores <- read_csv("./data/raw/floodfactor_scores.csv")
+
+n_distinct(scores$pin)
+
+scores|> group_by(pin) |> mutate(n=n()) |> filter(n>1) |> View()
 
 # Code for when Class was a variable in the API pull:
 # puni_pins |> mutate(env_flood_fs_factor = as.numeric(env_flood_fs_factor) ) |> 
