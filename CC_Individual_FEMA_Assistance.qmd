@@ -17,7 +17,8 @@ library(sf)
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 
 # all disasters in Illinois, filter in next step
-ind_assist <- read_csv("./inputs/data/indiv_assistance_CookCounty3.csv") |> filter(incidentType != "Biological" & disasterNumber != "1763")
+ind_assist <- read_csv("./inputs/data/indiv_assistance_CookCounty3.csv") |> 
+  filter(incidentType != "Biological" & disasterNumber != "1763")
 
 # all disasters in Cook County, IL
 cook_assist <- ind_assist %>% filter(county == "Cook (County)")
@@ -28,11 +29,57 @@ cook_assist <- ind_assist %>% filter(county == "Cook (County)")
 
 # Include other big flood events:
 ind_assist <- ind_assist %>% 
-  filter(county == "Cook (County)" & disasterNumber %in% c("4728", "4749", "1935", "4116") )
+  filter(county == "Cook (County)" & disasterNumber %in% c("4728", "4749", "1935", "4116") ) |>
+    mutate(year = str_sub(declarationDate, 1, 4),
+         joinyear = ifelse(year < 2022, 2000, 2020))
+
+#table(ind_assist$damagedZipCode[ind_assist$disasterNumber=="1935"])
+#table(ind_assist$damagedZipCode[ind_assist$disasterNumber=="4728"])
 
 zipcodes <- read_sf("inputs/shapefiles_cook/CookZipcodes.shp")
 
+
+cook_assist <- cook_assist |> 
+  mutate(year = str_sub(declarationDate, 1, 4),
+         joinyear = ifelse(year < 2022, 2000, 2020))
 ```
+
+```{r warning = FALSE, message=FALSE, results='hide'}
+# PUMA shapefiles
+#pumasIL <- pumas("IL", cb=T, year=2019)
+
+library(tigris)
+
+
+zipsIL2000 <- zctas(starts_with="60", cb=T, year=2000) %>% mutate(year = 2000)
+
+zipsIL2020 <- zctas(cb=T, starts_with="60", year=2020) %>% mutate(year = 2020)
+
+
+zipsIL2000 <- zipsIL2000 |> 
+  select(ZCTA = ZCTA,
+         NAME = NAME,
+         year)
+
+zipsIL2020 <- zipsIL2020 |> 
+  select(ZCTA = ZCTA5CE20,
+         NAME = NAME20,
+         year)
+
+zips <- rbind(zipsIL2000, zipsIL2020)
+
+
+
+border <- st_read("inputs/Mapping_FIRMs/Cook_County_Border/Cook_County_Border.shp") |> st_transform("EPSG:6454")
+
+zips <- zips |> 
+    st_transform("EPSG:6454") |>
+
+    st_intersection(st_as_sf(border))
+  # filter(as.numeric(ZCTA) >=60600 & as.numeric(ZCTA) <= 60900)
+
+```
+
 
 # Applicants (Granted and Denied together)
 
@@ -45,6 +92,7 @@ cook_assist %>%
             ihpAmount = sum(ihpAmount),
             haAmount = sum(haAmount))
 ```
+
 ```{r}
 #| fig-label: fig-mapzipcodes-applicants
 # #| fig-cap: "location of applicants"
@@ -53,11 +101,13 @@ cook_assist %>%
 
 cook_assist |> 
  # filter(disasterNumber == 4749 | disasterNumber == 4728) |>
-  group_by(disasterNumber, damagedZipCode) %>%
+  group_by(joinyear, disasterNumber, damagedZipCode) %>%
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+#  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%   
+  full_join(zips, by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+
   ggplot(aes(fill = claimcount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "Applicants by Zip Code & Disaster Declaration", caption = "") +
@@ -76,11 +126,13 @@ cook_assist |>
 
 cook_assist |> 
   filter(ihpAmount > 0 & disasterNumber != "NA" & !is.na(disasterNumber) & !is.na(damagedZipCode )) |>
-  group_by(disasterNumber, damagedZipCode) %>%
+  group_by(joinyear, disasterNumber, damagedZipCode) %>%
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  #full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>% 
+    full_join(zips, by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+
   ggplot(aes(fill = claimcount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "Granted Aid by Zip Code & Disaster Declaration", caption = "") +
@@ -101,11 +153,13 @@ cook_assist |>
 ```{r}
 cook_assist |> 
   filter(!is.na(incidentType) & incidentType != "NA") |>
-  group_by(incidentType, damagedZipCode) %>%
+  group_by(joinyear, incidentType, damagedZipCode) %>%
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  #full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>% 
+  full_join(zips, by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+
   ggplot(aes(fill = claimcount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "Applicants per Year", caption = "") +
@@ -166,11 +220,13 @@ ind_assist %>%
 
 ind_assist |> 
   filter(disasterNumber == 4749 | disasterNumber == 4728) |>
-  group_by(damagedZipCode) %>%
+  group_by(joinyear, damagedZipCode) %>%
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+ # full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%  
+    full_join(zips, by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+
   ggplot(aes(fill = claimcount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "Applicants by Zip Code", caption = "") +
@@ -193,11 +249,13 @@ ind_assist |>
 
 ind_assist |> 
   filter(disasterNumber == 4749 | disasterNumber == 4728 & floodInsurance == TRUE) |>
-  group_by(damagedZipCode) %>%
+  group_by(joinyear, damagedZipCode) %>%
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+ # full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%  
+    full_join(zips, by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+
   ggplot(aes(fill = claimcount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "Applicants with Flood Insurance by Zip Code", 
@@ -227,11 +285,13 @@ cook_assist |>
   filter(disasterNumber %in% c(1935,4116, 4728, 4749) ) |>
     filter(ihpAmount > 0 & disasterNumber != "NA" & !is.na(disasterNumber) & !is.na(damagedZipCode )) |>
 
-  group_by(disasterNumber, damagedZipCode) %>%
+  group_by(joinyear, disasterNumber, damagedZipCode) %>%
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-  left_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  #left_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%   
+    full_join(zips, by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+
   ggplot(aes(fill = ihpAmount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "Granted Aid by Zip Code & Disaster Declaration", caption = "") +
@@ -251,11 +311,13 @@ cook_assist |>
 cook_assist |> 
   filter(disasterNumber %in% c(1935,4116, 4728, 4749) ) |>
   filter(ihpAmount > 0 & disasterNumber != "NA" & !is.na(disasterNumber) & !is.na(damagedZipCode )) |>
-  group_by(disasterNumber, damagedZipCode) %>%
+  group_by(joinyear, disasterNumber, damagedZipCode) %>%
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-  left_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+ # left_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%   
+    full_join(zips, by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+
   ggplot(aes(fill = claimcount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "Granted Aid by Zip Code & Disaster Declaration", caption = "") +
@@ -336,11 +398,13 @@ ind_assist %>%
 
 ind_assist |> 
   filter(disasterNumber == 4728 & ihpAmount > 0 & floodDamage==TRUE) |>
-  group_by(damagedZipCode) %>%
+  group_by(joinyear, damagedZipCode) %>%
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+ # full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>% 
+    full_join(zips, by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+
   ggplot(aes(fill = claimcount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "July Storm - Claims by Zip Codes", caption = "") +
@@ -358,11 +422,13 @@ ind_assist |>
 ind_assist |> 
   filter(disasterNumber == 4728 & ihpAmount > 0
          & floodDamage==TRUE) |>
-  group_by(damagedZipCode) %>%
+  group_by(joinyear, damagedZipCode) %>%
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  #full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%  
+    full_join(zips, by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+
   ggplot(aes(fill = ihpAmount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "July Storm - IHP Grants by Zip Codes", caption = "") +
@@ -386,11 +452,13 @@ ind_assist |>
 
 ind_assist |> 
   filter(disasterNumber == 4749 & ihpAmount > 0) |>
-  group_by(damagedZipCode) %>%
+  group_by(joinyear, damagedZipCode) %>%
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+  #full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+    full_join(zips, by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+
   ggplot(aes(fill = claimcount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "September Storm - Claims by Zip Codes", caption = "") +
@@ -408,11 +476,13 @@ ind_assist |>
 
 ind_assist |> 
   filter(disasterNumber == 4749 & ihpAmount > 0) |>
-  group_by(damagedZipCode) %>%
+  group_by(joinyear, damagedZipCode) %>%
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-  full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%    
+ # full_join(zipcodes, by = c("damagedZipCode" = "ZCTA5CE20")) %>%   
+    full_join(zips, by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+
   ggplot(aes(fill = ihpAmount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
   labs(title = "September Storm - IHP Grants by Zip Codes", caption = "") +
