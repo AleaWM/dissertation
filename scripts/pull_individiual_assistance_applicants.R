@@ -2,7 +2,8 @@
 # Purpose: Pull FEMA Individual Assistance application data for Cook County, including accepted and rejected applications
 # Input(s): FEMA Individual Assistance API (two methods implemented)
 # Output(s): data/raw/indiv_assistance_CookCounty.csv
-# Last updated: 
+#            data/raw/indiv_assistance_V2_CookCounty.csv
+# Last updated: May 19th 2025 - added V2 of API
 # ----
 
 # Receiving data in JSON, saving in RDS - a single R object.
@@ -100,23 +101,23 @@ data %>% write_csv("./inputs/data/indiv_assistance_CookCounty2.csv")
 
 
 ##### New way ###########
-filters< -"?$inlinecount=allpages&$filter=(damagedStateAbbreviation%20eq%20'IL'&$allrecords=true)"
+filters <-"?$inlinecount=allpages&$filter=(damagedStateAbbreviation%20eq%20'IL'&$allrecords=true)"
 
 #filters <- "?$inlinecount=allpages&$filter=(countyCode%20eq%20'17031')&$allrecords=true"
-datalist = list()
+#datalist = list()
 
 # Code needed to obtain data on flood insurance claims in IL without the rfema package ------------------
 
 # define the url for the appropriate api end point
-base_url <- "https://www.fema.gov/api/open/v1/IndividualsAndHouseholdsProgramValidRegistrations"
+base_url <- "https://www.fema.gov/api/open/v2/IndividualsAndHouseholdsProgramValidRegistrations"
 # append the base_url to apply filters
-#filters <- "?$count=true&$filter=(damagedStateAbbreviation%20eq%20'IL')"
+# filters <- "?$count=true&$filter=(damagedStateAbbreviation%20eq%20'IL')"
 
-api_query <- paste0(base_url, filters)
+#api_query <- paste0(base_url, filters)
 result <- GET(paste0(base_url, 
                      "?$inlinecount=allpages&$filter=(damagedStateAbbreviation%20eq%20'IL')&$allrecords=true"))
 jsonData <- httr::content(result)[[2]]
 data <- data.frame(do.call(rbind, jsonData))
 data <- as.data.frame(lapply(data, function(data) gsub("\n", "", data)))
-data %>% write_csv("./inputs/data/indiv_assistance_CookCounty3.csv")
+data %>% write_csv("./data/raw/indiv_assistance_V2_CookCounty.csv")
 
