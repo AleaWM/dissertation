@@ -5,11 +5,13 @@
 # which have differences in variables and naming convention.
 #
 # Input(s): ptaxsim database
-# Output(s):  "./data/raw/parcel_shapefiles_ty2023.gpkg" &  "./data/raw/parcel_shapefiles_ty2018.gpkg"
+# Output(s):  
 #             "data/processed/parcels_wFIRMs.csv"
+#             "./data/raw/parcel_shapefiles_ty2023.gpkg" <---  Not used
+#             "./data/raw/parcel_shapefiles_ty2018.gpkg" <--- not used
 #    Stores outputs in the `data/raw/` directory.
 # Author: AWM
-# Last updated: 2025-04-12
+# Last updated: 2025-05-06
 
 
 # Setup --------------------------------------------------
