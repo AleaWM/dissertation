@@ -1,3 +1,8 @@
+# Purpose: Identifies parcels in SFHA areas and LOMRs in 2018 and the 2024 NFHL.
+# Outputs: Creates sfha_indicator_pins.csv
+# Inputs:
+
+
 library(tidyverse)
 library(sf)
 
@@ -315,6 +320,10 @@ pin_indicators <-pin_indicators|>
     lomr2024 = ifelse(!is.na(LOMR_ID2024), 1, 0)
          )
 pin_indicators |> write_csv("./data/processed/sfha_indicator_pins.csv")
+
+
+
+
 # Make a map of rivers in cook county -----------------------------------------
 county_rivers <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NFHL_17_20240628.gdb", 
                              layer = "S_WTR_LN") |>
