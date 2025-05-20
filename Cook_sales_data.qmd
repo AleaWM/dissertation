@@ -26,16 +26,6 @@ library(httr)
 library(jsonlite)
 library(glue)
 
-sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") %>% 
-  filter(year > 2005) %>%
-  mutate(class = as.numeric(class)) |>
-  filter(class > 199 & class < 1000) |>
-  mutate(date = lubridate::mdy(sale_date)) |>
-  group_by(year)|>
-  mutate(sale_price = Winsorize(sale_price, quantile(sale_price, probs = c(0.01, 0.99), na.rm=FALSE) )) |>
-  ungroup() 
-
-
 ```
 
 # FEMA FIRM Shapefiles
@@ -44,8 +34,23 @@ sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") %>%
 
 Downloaded archived replication materials from Miyuki et al. and took the Illinois Flood Hazard Layer as it was in 2018. Clipped all Parcels (from 2018) that intersected with the SFHAs and made a list of pins. Also made file of LOMR parcels from 2018.
 
+LOMRS: "The effect of a LOMA is it removes the Federal requirement for the lender to require flood insurance coverage for the property described. The LOMA is not a waiver of the condition that the property owner maintain flood insurance coverage for the property. Only the lender can waive the flood insurance purchase requirement because the lender imposed the requirement. The property owner must request and receive a written waiver from the lender before canceling the policy. The lender may determine, on its own as a business decision that it wishes to continue the flood insurance requirement to protect its financial risk on the loan." - A Letter of Map Ammendment (LOMA)
 
 ```{r warning = FALSE}
+# Does NOT contain preliminary FIRM update info or the manually entered Preliminary FIRM dates in the S_FIRM_PAN.xlsx file
+parcels_inFIRMS <- read_csv("data/processed/parcels_wFIRMs.csv")
+
+border <- st_read("inputs/Mapping_FIRMs/Cook_County_Border/Cook_County_Border.shp") |> 
+  st_transform("EPSG:6454")
+
+st_clip_firms_2024 <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NFHL_17_20240628.gdb",
+                             layer = "S_FIRM_PAN") |>  
+  st_transform("EPSG:6454") |>
+  st_intersection(border) |>
+  mutate(
+    pre_date = paste0(year(PRE_DATE), "-", str_pad(month(PRE_DATE), width = 2, side = "left", pad = "0")),
+    eff_date = paste0(year(EFF_DATE), "-", str_pad(month(EFF_DATE), width = 2, side = "left", pad = "0")),
+  )
 
 lomr_pins_2024 <- sf::read_sf("data/processed/parcels_lomrs_2024.shp")
 
@@ -105,6 +110,18 @@ sfha_parcels_2018 <- unique(sfha_pins_2018$pin10)
 
 innerjoin_2018 <- inner_join(sfha_2018, lomr_2018)
 antijoin_2018 <- anti_join(sfha_2018, lomr_2018)
+
+
+
+sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") %>% 
+  filter(year > 2005) %>%
+  mutate(class = as.numeric(class)) |>
+  filter(class > 199 & class < 1000) |>
+  mutate(date = lubridate::mdy(sale_date)) |>
+  group_by(year)|>
+  mutate(sale_price = Winsorize(sale_price, quantile(sale_price, probs = c(0.01, 0.99), na.rm=FALSE) )) |>
+  ungroup() 
+
 ```
 
 ```{r}
@@ -140,9 +157,9 @@ Seems suspicious that that many PINs were removed from FEMA floodplain between 2
 #| message: false
 #| tbl-cap: "Change in PIN Counts"
 #| tbl-subcap: 
-#|  - "PINs in LOMRs before 2015"
-#|  - "PINs in LOMRs after 2015"
-#|  - "Number of PINs added to or removed from the SFHA since 2018."
+#| - "PINs in LOMRs before 2015"
+#| - "PINs in LOMRs after 2015"
+#| - "Number of PINs added to or removed from the SFHA since 2018."
 
 lomr_2024 |> filter(year(EFF_DAT)  < 2015)
 lomr_2024 |> filter(year(EFF_DAT)  > 2020 & STATUS == "Effective") |> select(mncplty, assssrb, EFF_DAT, everything())
@@ -159,8 +176,8 @@ lomr_2024 |> group_by(EFF_DAT, mncplty)|>
 #| layout-ncol: 2
 #| tbl-cap: "SFHA Comparison. Data from FEMA FIRMs downloaded in 2018 and in 2024."
 #| tbl-subcap:
-#|  - "PINs that were in SFHAs in 2024 but not in 2018. PINs in LOMRs are included in this list."
-#|  - "PINs that were in SFHAs in 2018 but not in 2024. PINs in LOMRs are included in this list."
+#| - "PINs that were in SFHAs in 2024 but not in 2018. PINs in LOMRs are included in this list."
+#| - "PINs that were in SFHAs in 2018 but not in 2024. PINs in LOMRs are included in this list."
  
 
 # lomr_pins <-readxl::read_xlsx("inputs/data/LOMR_PINs_2024NFHLasofMarch2024.xlsx")  |>
@@ -278,7 +295,7 @@ Used preliminary SFHA boundaries for North West areas of Cook County Used parcel
 
 ```{r}
 #| label: tbl-preliminarySFHA-pincount
-#| layout-ncol: 2
+#| layout-ncol: 3
 #| tbl-cap: "PINs in the preliminary SFHA released in NW Cook County that are not peviously in SFHAs."
 #| tbl-subcap:
 #| - "Preliminary PINs that are in LOMR as of 2024."
@@ -312,11 +329,11 @@ prelim_SFHA %>% filter(!PIN14 %in% string_sfha_pins2024)
 
 ```{r}
 #| label: tbl-salesovertime
-#| tbl-cap:
-#|   - "All property classes"
-#|   - "Residential Classes only (200-299)"
+#| layout-ncol: 2
+#| tbl-cap: "Residential Classes only (200-299)"
 
 sales |> 
+  filter(class >= 200 & class <= 299) |>
   mutate(Location = ifelse(pin %in% sfha_pins, "In FP", "Outside FP" )) |> 
   group_by(year, Location) |>
   summarize(Sales = n()) |>
@@ -338,23 +355,20 @@ sales |>
   mutate(Location = ifelse(pin %in% sfha_pins, "In FP", "Outside FP" )) |> 
   group_by(year, Location) |>
   summarize(Sales = n()) |>
-  # ungroup() |>
    pivot_wider(names_from = "Location", values_from = "Sales") |>
    mutate(
      TotalSales = `In FP` + `Outside FP`,
      `FP Share (%)` = `In FP` / TotalSales,
      # `FP Share (%)` =  scales::percent(`FP Share (%)`, accuracy = 0.01)
    ) |>
-  # select(-c(TotalSales, year)) |> 
-  # mutate(Year = as.character(Year), .before = `In FP`) |> 
-  # select(Year, `In FP`, `Outside FP`, `FP Share (%)`) |> 
+
   ggplot() +
   geom_line(aes(x=year, y= `FP Share (%)`)) + 
   scale_y_continuous(limits = c(0, 0.015), labels = scales::percent, expand = c(0, 0)) +
   scale_x_continuous(limits = c(2006, 2024), breaks = c(2006, 2010, 2015, 2020, 2024)) +
   
   theme_classic() +
-  labs(title = "Flood Plain Properties make up less than 1.5% of Sales",
+  labs(caption = "Flood Plain Properties make up less than 1.5% of Sales",
        x = element_blank(),
        y = "Share of Sales")
 ```
@@ -430,10 +444,10 @@ res_sales <- sales |>
 
 
 res_sales <- res_sales |> 
-  mutate(insfha_2018 = ifelse(pin %in% sfha_2018, 1, 0),
-         inlomr_2018 = ifelse(pin%in% lomr_2018, 1, 0),
-         insfha_2024 = ifelse(pin %in% sfha_2024, 1, 0),
-          inlomr_2024 = ifelse(pin %in% lomr_2024, 1, 0),
+  mutate(insfha_2018 = ifelse(pin %in% sfha_2018$pin, 1, 0),
+         inlomr_2018 = ifelse(pin%in% lomr_2018$pin, 1, 0),
+         insfha_2024 = ifelse(pin %in% sfha_2024$pin, 1, 0),
+          inlomr_2024 = ifelse(pin %in% lomr_2024$pin, 1, 0),
          inprelimsfha = ifelse(pin %in% prelim_SFHA$PIN14, 1, 0))
 
 res_sales <- res_sales |> 
@@ -453,8 +467,8 @@ There are `r scales::comma(res_sales |> filter(sold_multi == TRUE & change_sfha 
 ```{r}
 #| tbl-cap: "Residential PINs with multiple sales"
 #| tbl-subcap:
-#| - "5942 distinct residential pins have been in an SFHA and sold multiple times"
-#| - "133  distinct pins have either been added to or removed from an SFHA and sold multiple times."
+#| - "6483 distinct residential pins have been in an SFHA and sold multiple times"
+#| - "488 distinct pins have either been added to or removed from an SFHA and sold multiple times."
 #| eval: false
 #| include: false 
 #| 
@@ -471,11 +485,6 @@ res_sales |>
   n_distinct()
 ```
 
-```{r, warning=FALSE, message=FALSE}
-table(res_sales$insfha_2018)
-table(res_sales$insfha_2024)
-table(res_sales$change_sfha)
-```
 
 ```{r, warning=FALSE, message=FALSE}
 res_sales |> 
@@ -500,23 +509,25 @@ res_sales |>
 
 **Note that `sfha_pins` are PINs that have the SFHA indicator == 1 & `fsf_5plus` are PINs that have a flood factor rating of 5 or higher**
 
+
+
+
 ```{r}
 #| label: sold-properties-infloodzones
 #| layout-ncol: 2
 
 res_sales <- res_sales |>
-  mutate(#ccao_sfha = ifelse(pin %in% sfha_pins, 1, 0), # according to CCAO dataset, not FEMA shapefiles.
+  mutate(ccao_sfha = ifelse(pin %in% sfha_pins, 1, 0), # according to CCAO dataset, not FEMA shapefiles.
          in_ffs_4plus = ifelse(pin %in% fsf_4plus, 1, 0),
          in_ffs_5plus = ifelse(pin %in% fsf_5plus, 1, 0)
   )
 
 pin_groups <- res_sales |>
   mutate(risk_change = case_when(
-    insfha_2018 == 1 & insfha_2024 == 0 ~ "Removed from SFHA",
-    insfha_2018 != insfha_2024 ~ "Changes SFHA - since 2018",
-    insfha_2018 == 1 & insfha_2024 == 1 & ccao_sfha == 1 ~ "Always in SFHA",
+    insfha_2018 < insfha_2024 ~ "Added to SFHA",
+    insfha_2018 > insfha_2024 ~ "Removed from SFHA",
+    insfha_2018 == 1 & insfha_2024 == 1 ~ "Always in SFHA",
     insfha_2018 == 0 & insfha_2024 == 0 ~ "Never in SFHA",
-   # (insfha_2018 == 1 | insfha_2024 == 1) & ccao_sfha == 0 ~ "LOMAs?",
     T ~ "Check me") )|>
   filter(sale_price > 5000) |>
   group_by(pin) |> 
@@ -527,7 +538,7 @@ pin_groups <- res_sales |>
            # years_sold = as.character(list(unique(year))),
             sold_post2023 = ifelse(any(year > 2022), 1, 0),  
            risk_change = first(risk_change),
-         #  ccao_sfha = first(ccao_sfha),
+          ccao_sfha = first(ccao_sfha), 
            insfha_2018 = first(insfha_2018),
            insfha_2024 = first(insfha_2024),
          inlomr_2018 = first(inlomr_2018),
@@ -537,17 +548,21 @@ pin_groups <- res_sales |>
             ) |>
   mutate(
     loma_difs = case_when(
-      ccao_sfha == 1 & insfha_2018 == 1 ~ "In SFHA",
-      ccao_sfha == 0 & (insfha_2018 ==1 | insfha_2024==1) ~ "Probably LOMAs",
-      ccao_sfha == 0 & insfha_2018 == 0 ~ "Not SFHA",
+      insfha_2018 ==0 & insfha_2024 == 1 ~ "Added to LOMR",
+      inlomr_2018 == 1 & inlomr_2024 == 1 ~ "Always LOMR",
+      ccao_sfha == 1 & insfha_2024 ==1 ~ "CCAO Missing New LOMRs?",
+      insfha_2018 == 1 & insfha_2024 == 0 ~ "Removed from LOMR",
+      ccao_sfha == 0 & insfha_2018 == 0 & inlomr_2024 ==0 ~ "Not SFHA or LOMR",
+      ccao_sfha == 1 & insfha_2018 == 0 & inlomr_2024 ==0 ~ "Not SFHA or LOMR, but CCAO SFHA=1",
       T ~ "Check Me"
     ) ,
       risk_type = case_when(
-        loma_difs == "Probably LOMAs" ~ "Probably LOMAs",
-        pin %in% sfha_pins & !pin %in% fsf_5plus ~ "In CCAO SFHA Only",
-        pin %in% fsf_5plus & pin %in% sfha_pins ~ "SFHA & FSF Score 5+",
+
+        pin %in% insfha_2018 & !pin %in% fsf_5plus ~ "SFHA but not FF5+",
+        pin %in% fsf_5plus & pin %in% sfha_pins ~ ",SFHA & FSF Score 5+",
         pin %in% fsf_5plus & !pin %in% sfha_pins ~"FSF Score 5+ Only",
-        T ~ "Low Risk"
+        insfha_2018 == 0 & !pin %in%  fsf_5plus ~ "Low Risk",
+        T ~ "CHECK ME"
       )  #,
     #  flooded = case_when(
     # ...   ~ "Reported Damage",
@@ -559,6 +574,8 @@ pin_groups <- res_sales |>
   )
   
 table(pin_groups$risk_type, pin_groups$times_sold)
+table(pin_groups$risk_type, pin_groups$loma_difs)
+
 table(pin_groups$risk_type,  pin_groups$risk_change, pin_groups$times_sold)
 
 ```
