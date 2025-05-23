@@ -41,7 +41,7 @@ ind_assist <- read_csv("./data/raw/indiv_assistance_V2_CookCounty.csv") |>
   left_join(city_names)
 
 # all disasters in Cook County, IL
-cook_assist <- ind_assist %>% filter(county == "Cook (County)")
+cook_assist <- ind_assist %>% filter(county == "Cook (County)" & disasterNumber != "4819")
 
 # # Just Flood events in 2023
 # ind_assist <- ind_assist %>% 
@@ -233,7 +233,7 @@ cook_assist |>
 
 ```{r}
 #| label: tbl-missing-geoids
-#| tbl-cap: "Applications associated with missing censusGeoids. Applications do have damagedCity and damagedZipCode filled in. Just can't be included with census block group or tract level summaries. For 2023 disasters only."
+#| tbl-cap: "**Applications associated with missing censusGeoids.** Applications do have damagedCity and damagedZipCode filled in. Just can't be included with census block group or tract level summaries. For 2023 disasters only."
 
 cook_assist  |> 
    filter((disasterNumber == 4749 | disasterNumber == 4728)) |>
@@ -256,10 +256,11 @@ cook_assist  |>
 ```{r}
 #| label: fig-map-tract-applicants
 #| layout-ncol: 2
-#| fig-cap: "Applicants that were missing their `censusGeoid` were excluded from totals."
+#| fig-cap: "Geography is Census Tract. Applicants that were missing their `censusGeoid` were excluded from totals."
 
 cook_assist |> 
-  filter((disasterNumber == 4749 | disasterNumber == 4728) & censusGeoid != "NULL" ) |>
+  filter(#(disasterNumber == 4749 | disasterNumber == 4728) & 
+           censusGeoid != "NULL" ) |>
   group_by(joinyear, disasterNumber, tract) %>%
   filter(!is.na(tract)) |>
   summarize(claimcount = round(n()),
@@ -281,7 +282,8 @@ cook_assist |>
   facet_wrap(~disasterNumber)
 
 cook_assist |> 
-  filter((disasterNumber == 4749 | disasterNumber == 4728) & censusGeoid != "NULL" ) |>
+  filter(#(disasterNumber == 4749 | disasterNumber == 4728) & 
+           censusGeoid != "NULL" ) |>
   group_by(joinyear, disasterNumber, tract) %>%
   summarize(claimcount = round(n()),
             ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
@@ -649,6 +651,12 @@ ind_assist %>%
 #| label: tbl-treated-zipcodes
 #| tbl-cap: "Zip Codes that would be considered 'Treated' due to experiencing a flood event. Maybe need to create some kind of threshold for treatment intensity?"
 
+ind_assist |> 
+  filter(ihpAmount > 0) |>
+  group_by(year, disasterNumber, damagedZipCode) |>
+  summarize(claimcount = n(),
+           ) |> write_csv("./data/processed/treated_zipcodes.csv")
+
 
 ind_assist %>% 
   filter(ihpAmount > 0) |>
@@ -678,7 +686,7 @@ ind_assist %>%
   DT::datatable(rownames = FALSE)
 ```
 
-```{r mapzipcodes4728}
+```{r}
 #| label: fig-julydisaster
 #| fig-cap: "July Disaster Declaration. Number of applicants who were awarded funds and had flood damage."
 #| layout-ncol: 2
