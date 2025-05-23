@@ -1,0 +1,725 @@
+---
+title: "Cook County Parcel Sales"
+format: 
+  html:
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    toc: true
+    tbl-cap-location: top
+    fig-cap-location: top
+---
+
+
+# Data Prep
+
+Code from [CCAO](https://ccao-data.github.io/assessr/articles/example-ratio-study.html).
+
+Description of functions and [measurements](https://ccao-data.github.io/assessr/reference/index.html).
+
+Parcel shapefile used in ArcGIS Pro is downloaded from CCAO's Archived 2022 parcel dataset [here.](https://datacatalog.cookcountyil.gov/Property-Taxation/ccgisdata-Parcel-2021/77tz-riq7/about_data)
+
+```{r setup, warning=FALSE, message=FALSE}
+library(DescTools)
+library(sf)
+library(tidyverse)
+library(httr)
+library(jsonlite)
+library(glue)
+
+sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") %>% 
+  filter(year > 2005) %>%
+  
+  mutate(class_1dig = str_sub(class, 1, 1),
+         class = as.numeric(class)) |>
+  filter(class > 199 & class < 1000) |>
+  mutate(date = lubridate::mdy(sale_date)) |>
+  group_by(year, class_1dig)|>
+  mutate(sale_price = Winsorize(sale_price, quantile(sale_price, probs = c(0.03, 0.97), na.rm=FALSE) )) |>
+  ungroup() 
+
+
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+ccao_loa <- read_csv("./data/raw/ccao_loa.csv") %>%
+  mutate(loa = ifelse(loa == 0, NA, loa))
+ # mutate(class_code = as.character(class_code))
+
+
+# All PINs that are located in land blocks that have at least 1 SFHA pin
+landblock_pins <- read_csv("outputs/pins_in_Blocks_2006_2023_20241126.csv") |> 
+  left_join(ccao_loa, by = c("year","class" = "class_code")) %>%
+  mutate(class = as.character(class),
+         class_1dig = str_sub(class, 1, 1)) %>%
+   mutate(fmv_mailed = av_mailed/loa,
+          fmv_board = av_board/loa,
+          fmv_clerk = av_clerk/loa
+         ) |>
+  mutate(across(fmv_mailed:fmv_clerk, round, digits = 0))
+
+
+nbh_pins <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
+
+
+
+
+sfha_pins <- landblock_pins %>% 
+  filter(SFHA == 1) %>%
+  select(pin) |> 
+  distinct() |> 
+  pull()
+
+fsf_5plus <- nbh_pins %>% 
+  filter(env_flood_fs_factor >= 5) %>%
+  select(pin) |>
+  distinct() |> 
+  pull()
+
+fsf_4plus <- nbh_pins %>% 
+  filter(env_flood_fs_factor >= 4) %>%
+  select(pin) |>
+  distinct() |> 
+  pull()
+
+
+```
+
+
+
+# Sales Data
+
+1,762,627 sales for all property classes (1,869,796 after new download in January)
+
+1,070,348 sales for Class 2 Residential properties (1,655,745 after new download and identifying any pin that was residential at any point in time and including it)
+
+# Frequency of Sales
+
+## Sales in and Out of FEMA SFHAs
+
+```{r}
+
+sales |> 
+  filter(class >= 200 & class <= 299) |>
+  mutate(Location = ifelse(pin %in% sfha_pins, "In FP", "Outside FP" )) |> 
+  group_by(year, Location) |>
+  summarize(Sales = n()) |>
+  ungroup() |>
+  pivot_wider(names_from = "Location", values_from = "Sales") |>
+  mutate(
+    Year = as.character(year),
+    TotalSales = `In FP` + `Outside FP`,
+    `FP Share (%)` = `In FP` / TotalSales,
+   `FP Share (%)` =  scales::percent(`FP Share (%)`, accuracy = 0.01)) |>
+  select(-c(TotalSales, year)) |> 
+  mutate(Year = as.character(Year), .before = `In FP`) |> 
+  select(Year, `In FP`, `Outside FP`, `FP Share (%)`) |>
+  flextable::flextable()
+
+
+sales |> 
+  filter(class >= 200 & class <= 299) |>
+  mutate(Location = ifelse(pin %in% sfha_pins, "In FP", "Outside FP" )) |> 
+  group_by(year, Location) |>
+  summarize(Sales = n()) |>
+  # ungroup() |>
+   pivot_wider(names_from = "Location", values_from = "Sales") |>
+   mutate(
+     TotalSales = `In FP` + `Outside FP`,
+     `FP Share (%)` = `In FP` / TotalSales,
+     # `FP Share (%)` =  scales::percent(`FP Share (%)`, accuracy = 0.01)
+   ) |>
+  # select(-c(TotalSales, year)) |> 
+  # mutate(Year = as.character(Year), .before = `In FP`) |> 
+  # select(Year, `In FP`, `Outside FP`, `FP Share (%)`) |> 
+  ggplot() +
+  geom_line(aes(x=year, y= `FP Share (%)`)) + 
+  scale_y_continuous(limits = c(0, 0.015), labels = scales::percent, expand = c(0, 0)) +
+  scale_x_continuous(limits = c(2006, 2024), breaks = c(2006, 2010, 2015, 2020, 2024)) +
+  
+  theme_classic() +
+  labs(title = "Flood Plain Properties make up less than 1.5% of Sales",
+       x = element_blank(),
+       y = "Share of Sales")
+```
+
+```{r}
+sales |> 
+  filter(class >= 200 & class <= 299) |>
+  mutate(Location = ifelse(pin %in% sfha_pins, "In FP", "Outside FP" )) |> 
+  mutate(Sales = n(), .by = year) |>
+  group_by(year, Sales, Location) |>
+  summarize(Price = round(median(sale_price))) |>
+  ungroup() |>
+  pivot_wider(names_from = "Location", values_from = "Price") |>
+  mutate(Ratio = `In FP`/`Outside FP`,
+   Ratio =  scales::percent(Ratio, accuracy = 0.01),
+   Year = as.character(year)) |> 
+  select(Year, Sales, `In FP`, `Outside FP`, Ratio) |>
+  flextable::flextable()
+
+sales |> 
+  filter(class >= 200 & class <= 299) |>
+  mutate(Location = ifelse(pin %in% sfha_pins, "In FP", "Outside FP" )) |> 
+  mutate(Sales = n(), .by = year) |>
+  group_by(year, Sales, Location) |>
+  summarize(Price = round(median(sale_price))) |>
+  ungroup() |>
+  pivot_wider(names_from = "Location", values_from = "Price") |>
+  mutate(Ratio = `In FP`/`Outside FP`,
+  # Ratio =  scales::percent(Ratio, accuracy = 0.01)
+   ) |>
+  ggplot() +
+  geom_line(aes(x=year, y = Ratio)) +
+  scale_y_continuous(limits = c(0, 0.8), 
+                     labels = scales::percent, expand = c(0, 0)) +
+  scale_x_continuous(limits = c(2006, 2024), breaks = c(2006, 2010, 2015, 2020, 2024)) +
+  
+  theme_classic() +
+  labs(title = "Ratio of Median Value for Properties In and Out of Floodplain",
+       x = element_blank(),
+       y = "Ratio",
+       caption = "Ratio = Median Sale Price in FP / Median Price outside FP")
+```
+
+
+# Timing of Sales around variables of interest
+
+```{r, warning=FALSE, message=FALSE}
+
+res_sales <- sales |> 
+  mutate(class = as.numeric(class),
+         res_c2 = ifelse(class >= 200 & class <= 299, TRUE, FALSE),
+) |> 
+  group_by(pin) |>
+  filter(sum(res_c2==TRUE) >= 1) |>
+  mutate(
+    times_sold = n(),
+
+    sold_once = ifelse(times_sold == 1, TRUE, FALSE),
+    sold_multi = ifelse(times_sold > 1 , TRUE, FALSE),
+    ) |> 
+  ungroup() |>
+  mutate(
+    sold_pre2014 = ifelse(year <= 2013, TRUE, FALSE),
+    sold_post2013 = ifelse(year > 2013, TRUE, FALSE),
+    
+    sold_btwn_20132023 = ifelse(year > 2013 & year < 2024, TRUE, FALSE),
+    
+    sold_pre2024 = ifelse(year <= 2023, TRUE, FALSE),
+    sold_post2023 = ifelse(year > 2023, TRUE, FALSE),
+    )
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+res_sales |> 
+  group_by(sold_multi) |> 
+    summarize(n=n(),
+              distinct_pins = n_distinct(pin))
+
+res_sales |> 
+  group_by(times_sold) |> 
+    summarize(distinct_pins = n_distinct(pin))
+
+res_sales |>
+  group_by(sold_pre2014, sold_btwn_20132023, sold_post2023) |> 
+  summarize(n = n(), n_distinct = n_distinct(pin))
+```
+
+
+
+
+
+
+
+
+
+
+**Note that `sfha_pins` are PINs that have the SFHA indicator == 1 according to CCAO data and `fsf_5plus` are PINs that have a flood factor rating of 5 or higher**  
+
+_CCAO made FEMA indicator form Natioanl Flood Hazard Layer shapefiles. Unsure if it was a 1 time variable in 2019 or ever updated._
+
+```{r}
+#| label: sold-properties-infloodzones
+#| layout-ncol: 2
+
+res_sales <- res_sales |>
+  mutate(ccao_sfha = ifelse(pin %in% sfha_pins, 1, 0), # according to CCAO dataset, not FEMA shapefiles
+         in_ffs_4plus = ifelse(pin %in% fsf_4plus, 1, 0),
+         in_ffs_5plus = ifelse(pin %in% fsf_5plus, 1, 0)
+  )
+
+pin_groups <- res_sales |>
+  group_by(pin) |> 
+  arrange(year) |>
+  mutate(n = n(),
+         ) |>
+  filter(n() < 10) |>
+  summarize(times_sold = ifelse(n() > 1, "Multi", "Once"),
+           # years_sold = as.character(list(unique(year))),
+            sold_post2023 = ifelse(any(year > 2022), 1, 0),       
+           ccao_sfha = first(ccao_sfha),
+           first_price = first(sale_price),
+           min_price = min(sale_price),
+           avg_price = mean(sale_price, na.rm=TRUE),
+           max_price = max(sale_price),
+           last_price = last(sale_price)
+            ) |>
+  mutate(
+      risk_type = case_when(
+        pin %in% sfha_pins & !pin %in% fsf_5plus ~ "In CCAO SFHA Only",
+        pin %in% fsf_5plus & pin %in% sfha_pins ~ "SFHA & FSF Score 5+",
+        pin %in% fsf_5plus & !pin %in% sfha_pins ~"FSF Score 5+ Only",
+        T ~ "Low Risk"
+      ))
+  
+table(pin_groups$risk_type, pin_groups$times_sold)
+
+```
+
+```{r}
+pin_groups |>
+  group_by(times_sold, risk_type, risk_change,
+         #  sold_pre2014, sold_btwn_20132023, 
+        # sold_post2023, 
+          # insfha_2024, insfha_2018
+           ) |> 
+  summarize(
+            n_pins = n_distinct(pin))
+
+pin_groups |>
+  group_by(times_sold, risk_type,        
+           # sold_post2023, 
+           ) |> 
+  summarize(
+            n_pins = n_distinct(pin))
+```
+
+### Research Question 1 
+
+```{r}
+tbl_R1 <- res_sales |>
+  left_join(pin_groups, by = "pin") |>  
+  filter(risk_change == "Removed from SFHA") |>
+
+  #filter(risk_change == "Removed from SFHA") |>
+  group_by(pin) |>
+  mutate(sold_post2021 = ifelse(max(year) >= 2020 & min(year) < 2019, "SFHA Change btwn sales", "SFHA not btwn sales"))|>
+  group_by(year, sold_post2021) |> 
+  summarize( n = n_distinct(pin),
+             median_price = median(sale_price)) 
+tbl_R1
+
+tbl_R1 |> ggplot(aes(x=year, y=n, color = sold_post2021)) + geom_line()
+
+tbl_R1 |> ggplot(aes(x=year, y=median_price, color = sold_post2021)) + geom_line()
+
+
+res_sales |>
+  left_join(pin_groups, by = "pin") |>  
+  filter(risk_change == "Removed from SFHA" | risk_change == "Always in SFHA") |>
+  group_by(pin) |>
+  mutate(sold_post2021 = ifelse(max(year) >= 2021 & min(year) < 2021, "SFHA Change btwn sales", "SFHA Change not btwn sales"))|>
+  group_by(year, sold_post2021, risk_change ) |> 
+  summarize( n = n_distinct(pin), median_price = median(sale_price)) |>
+  ggplot()+
+  geom_line(aes(x=year, y = median_price/1000000, group = risk_change, color = risk_change)) + 
+  geom_text(aes(x = 2016, y = 0.2, label = c(sum(n))) )+
+  facet_wrap(~sold_post2021)
+
+control_tbl2_R1 <- res_sales |>
+  left_join(pin_groups, by = "pin") |>  
+  filter(risk_change == "Always in SFHA") |>
+  group_by(pin) |>
+  mutate(sold_post2021 = ifelse(max(year) >= 2021 & min(year) < 2021, "Sold b4&after 2021", "Not sold b4&after 2021"))|>
+  group_by(sold_post2021) |> 
+  summarize( n = n_distinct(pin),
+             median_price = median(sale_price))
+
+control_tbl2_R1
+
+
+control_tbl_R1 <- res_sales |>
+  left_join(pin_groups, by = "pin") |>  
+  filter(risk_type == "Low Risk") |>
+  group_by(pin) |>
+  mutate(sold_post2021 = ifelse(max(year) >= 2021 & min(year) < 2021, "Sold b4&after 2021", "Not sold b4&after 2021"))|>
+  group_by(sold_post2021) |> 
+  summarize( n = n_distinct(pin),
+             median_price = median(sale_price))
+
+control_tbl_R1
+
+
+```
+
+### Research Question 2
+
+```{r}
+tbl_R2 <- res_sales |>
+  left_join(pin_groups, by = "pin") |>  
+  filter(risk_type == "FSF Score 5+ Only" | risk_type == "SFHA & FSF Score 5+" | risk_type == "Low Risk") |>
+  group_by(pin) |>
+  mutate(sold_post2021 = ifelse(max(year) >= 2021 & min(year) < 2021, "FSF Change btwn sales", "FSF not btwn sales"))|>
+  group_by(risk_type, sold_post2021) |> 
+  summarize( n = n_distinct(pin),
+             median_price = median(sale_price)) 
+
+tbl_R2
+
+control_tbl_R2 <- res_sales |>
+  left_join(pin_groups, by = "pin") |>  
+  filter(risk_type == "In CCAO SFHA Only") |>
+  group_by(pin) |>
+  mutate(sold_post2021 = ifelse(max(year) >= 2021 & min(year) < 2021, "FSF Change btwn sales", "FSF not btwn sales"))|>
+  group_by(risk_type, sold_post2021) |> 
+  summarize( n = n_distinct(pin),
+             median_price = median(sale_price)) 
+control_tbl_R2
+
+
+control_tbl2_R2 <- res_sales |>
+  left_join(pin_groups, by = "pin") |>  
+  filter(risk_type == "Low Risk") |>
+  group_by(pin) |>
+  mutate(sold_post2021 = ifelse(max(year) >= 2021 & min(year) < 2021, "FSF Change btwn sales", "FSF not btwn sales"))|>
+  group_by(risk_type, sold_post2021) |> 
+  summarize( n = n_distinct(pin),
+             median_price = median(sale_price)) 
+control_tbl2_R2
+```
+
+### Research Question 3
+
+> Need indicator for if property flooded. Which I do not cleanly have.
+
+```{r}
+#| label: tbl-SFHAparcels
+#| tbl-cap-location: margin
+#| tbl-cap: "Parcels in SFHAs that have been sold."
+
+sfhasales <-  res_sales %>%
+  filter(ccao_sfha == 1) %>%
+  left_join(landblock_pins, by = c("year", "pin")) %>%
+  mutate(parcel = str_sub(pin, 1, 10))
+
+sfhasales %>% 
+  filter(sale_price >5000) |>
+  group_by(parcel, year, sale_document_num) %>%
+  summarize(pincount = n(),
+            sale_price = first(sale_price),
+            sale_price_sum = sum(sale_price)) %>% 
+  arrange(desc(parcel))
+
+duplicates <- sfhasales |> janitor::get_dupes(pin, parcel, year, sale_price)
+duplicates
+
+sfhasales |> 
+  filter(sale_price > 5000) |>
+  group_by(pin, parcel, year, sale_price) |> 
+  distinct(pin,year,sale_price, .keep_all = TRUE)
+```
+
+
+```{r}
+#| label: tbl-SFHAparcels-soldtimes
+#| tbl-cap-location: margin
+#| tbl-cap: "Multisales SFHA PIN Sales: Number of times sold and count of years properties were sold in. Filtered for pins that were sold more than once."
+
+sfhasales %>% 
+  filter(sale_price>5000) |>
+  group_by(pin) %>% 
+  summarize(timessold=n(),
+            distinct_years = n_distinct(year),
+            max_price= max(sale_price),
+            min_price = min(sale_price),
+            class = max(class_1dig)) %>% 
+  filter(timessold>1) %>% 
+  arrange(desc(timessold))
+```
+
+
+```{r}
+#| label: tbl-salesover5K
+#| tbl-cap-location: margin
+#| tbl-cap: "Sales of SFHA PINs over $5000 for properties in SFHA FEMA Zones. N = 18,157"
+
+sfhasales %>% 
+  filter(!is.na(sale_price) & sale_price > 5000) %>% 
+  arrange(desc(num_parcels_sale), sale_document_num, pin )
+```
+
+```{r}
+#| label: fig-pinsales-andAV
+#| fig-cap: "PIN Sale Price and Assessed Values over time."
+#| fig-subcap: 
+#| - pin == 09163040191019
+#| - pin == 05201210150000
+#| - pin == 05201210150000
+#| layout-ncol: 3
+
+
+sfhasales %>% 
+  filter(pin == "09163040191019") %>% 
+  ggplot() +
+  geom_line(aes(x=year, y = sale_price), lty = 1)+
+  geom_point(aes(x=year, y = sale_price)) +
+  geom_line(aes(x=year, y = av_clerk), lty = 3)+
+  geom_line(aes(x=year, y = fmv_clerk), lty=2)
+
+
+
+sfhasales %>% 
+  filter(pin == "05201210150000") %>% 
+  ggplot() +
+  geom_line(aes(x=year, y = sale_price), lty = 1)+
+  geom_point(aes(x=year, y = sale_price)) +
+  geom_line(aes(x=year, y = av_clerk), lty = 3)+
+  geom_line(aes(x=year, y = fmv_clerk), lty=2)
+
+
+
+sfhasales %>% 
+  filter(pin == "09281140060000") %>% 
+  ggplot() +
+  geom_line(aes(x=year, y = sale_price), lty = 1)+
+  geom_point(aes(x=year, y = sale_price)) +
+  geom_line(aes(x=year, y = av_clerk), lty = 3)+
+  geom_line(aes(x=year, y = fmv_clerk), lty=2)
+
+
+```
+
+```{r}
+#| label: tbl-floodfactor-parcels
+#| tbl-cap-location: margin
+#| tbl-cap: "Parcels with Flood Factor Risk Rating >= 5  that have been sold. 206,304 PINs have sales prices above $5K and flood factor ratings."
+
+floodsales <- sales %>% 
+  filter(pin %in% sfha_pins) %>%
+  left_join(landblock_pins, by = c("year", "pin", "class"))
+
+
+
+#floodsales %>% filter(!is.na(sale_price))
+floodsales %>% filter(#!is.na(sale_price) & 
+                        sale_price > 5000)
+# 206,304 sales for pins in flood factor high risk areas of 5 or higher
+```
+
+
+
+# SFHA PINs
+
+There were `{r} sales |> filter(sale_price> 5000) |> filter(pin %in% string_sfha_pins2018) |> n_distinct()` sale observations for the properties that were in the SFHA (FEMA 100-year floodzone) according to the 2018 NFHL. 
+
+
+## Average Sales Prices
+
+Uses the CCAO indicator for if it was in a floodplain. 
+
+```{r}
+#| label: fig-saleprices-bymajorclass
+#| fig-cap-location: margin
+#| fig-cap: "**Average Sale Prices per year by Major Property Class.** Some years have very few sales and can be skewed by whatever property happens to be sold that year."
+#| warning: false
+#| message: false
+
+sfhasales %>% 
+  group_by(year, major_class) %>%
+  summarize(sale_price = mean(sale_price, na.rm=TRUE)) %>%
+  ggplot() +
+  geom_line(aes(x=year, y = sale_price)) + 
+  theme_classic() + 
+  scale_y_continuous(name = "Avg Sale Price for Major Class", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006, 2015, 2024), name = ""  ) + 
+  facet_wrap(~major_class, scales = "free"             )
+```
+
+```{r}
+#| label: fig-saleprices-bySFHAtype
+#| fig-cap-location: margin
+#| fig-cap: "**Average Sale Prices per year by Major Property Class.**"
+#| warning: false
+#| message: false
+
+avg_sales_peryear = res_sales %>% 
+  mutate(ccao_sfha =as.character(ccao_sfha)) |>
+  group_by(year, ccao_sfha) %>%
+  summarize(sale_count = n()) |>
+  ungroup()|> 
+  group_by(ccao_sfha) |>
+  summarize(average_salecount = mean(sale_count))
+
+
+res_sales %>% 
+  mutate(ccao_sfha = as.factor(ccao_sfha)) |>
+  group_by(year, ccao_sfha) %>%
+  summarize(sale_price = mean(sale_price, na.rm=TRUE)) %>%
+  ggplot() +
+  geom_line(aes(x=year, y = sale_price, color = ccao_sfha)) + 
+  theme_classic() + 
+  labs(title = "Avg Sale Price for Class 2 Properties") +
+  scale_y_continuous(name = "$", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006, 2015, 2020, 2024), name = ""  )
+```
+
+ On average, there are around `{r} round(avg_sales_peryear$average_salecount[[1]])` sales for properties outside of an SFHA and around `{r} round(avg_sales_peryear$average_salecount[[2]])`
+ 
+```{r}
+#| label: tbl-SFHAsales-byclass
+#| tbl-cap: "Number of SFHA sales per year by major class."
+
+sfhasales %>% 
+  group_by(year, major_class) %>%
+  summarize(NumberSold=n()) %>%
+  pivot_wider(names_from = major_class, values_from = NumberSold)
+```
+
+
+## FMV and Sales
+
+```{r}
+#| label: fig-FMV-andsales
+#| fig-cap-location: margin
+#| fig-cap: "**Fair Market Value and Sales Price. Red dots are for average Sale Price. Note that some property types do not have many sales (e.g. major class 3, 4, 7, 9. Pretty much anything except major class 2)"
+#| warning: false
+#| message: false
+
+landblock_pins %>% 
+  left_join(sales %>% filter(sale_price > 5000) %>% select(-class), by = c("year", "pin")) %>%
+  mutate(ff_flag = as.factor(ifelse(pin %in% fsf_5plus, 1, 0))) %>%
+  mutate(major_class = str_sub(class, 1,1)) %>%
+  group_by(year, major_class) %>%
+  summarize(fmv_mailed = mean(fmv_mailed, na.rm=TRUE),
+            fmv_board = mean(fmv_board, na.rm=TRUE),
+            fmv_clerk = mean(fmv_clerk, na.rm=T),
+            sales = mean(sale_price, na.rm=T),
+            pincount = n()) %>%
+  filter(major_class != 0) %>%
+  ggplot() + 
+    geom_line(aes(x=year, y = fmv_clerk)) + 
+    geom_point(aes(x=year, y = fmv_clerk)) + 
+    geom_line(aes(x=year, y = sales, color="red")) + 
+    geom_point(aes(x=year, y = sales, color="red")) +
+  # geom_line(aes(x=year, y = fmv_mailed, color = ff_flag)) + 
+  #   geom_line(aes(x=year, y = fmv_board, color = ff_flag), linetype = 2 ) + 
+  #   geom_point(aes(x=year, y = fmv_board, color = ff_flag)) + 
+  theme_classic() + 
+  scale_y_continuous(name = "Dollars", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006, 2015, 2024), name = ""  ) + 
+  facet_wrap(~major_class, scales = "free" )
+```
+
+
+
+# Assessed Value
+
+## Flood Factor Score 5+ PINs and Assessed Value
+
+```{r}
+#| label: fig-FMV-bymajorclass-floodfactorcomparison
+#| fig-cap-location: margin
+#| fig-cap: "**Average  FMV by Major Property Class & Flood Factor Risk: For Properties with a rating of 5 or higher designating them as high risk**"
+#| warning: false
+#| message: false
+
+landblock_pins %>% 
+  mutate(ff_flag = as.factor(ifelse(pin %in% fsf_5plus, 1, 0))) %>%
+  mutate(major_class = str_sub(class, 1,1)) %>%
+  group_by(year, major_class, ff_flag) %>%
+  summarize(fmv_mailed = mean(fmv_mailed, na.rm=TRUE),
+            fmv_board = mean(fmv_board, na.rm=TRUE),
+            fmv_clerk = mean(fmv_clerk, na.rm=T),
+            pincount = n()) %>%
+  filter(#pincount > 60 & 
+           major_class != 0) %>%
+  ggplot() + 
+      geom_line(aes(x=year, y = fmv_clerk, color = ff_flag)) + 
+    geom_point(aes(x=year, y = fmv_clerk, color = ff_flag)) + 
+
+  # geom_line(aes(x=year, y = fmv_mailed, color = ff_flag)) + 
+  #   geom_line(aes(x=year, y = fmv_board, color = ff_flag), linetype = 2 ) + 
+  #   geom_point(aes(x=year, y = fmv_board, color = ff_flag)) + 
+  theme_classic() + 
+  scale_y_continuous(name = "Avg FMV by Major Class", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006, 2015, 2023), name = ""  ) + 
+  facet_wrap(~major_class, scales = "free" )
+```
+
+```{r}
+#| label: fig-AV-bymajorclass
+#| fig-cap-location: margin
+#| fig-cap: "**Average Assessed Value per year by Major Property Class for properties within FEMA SFHAs.** Some major classes have very few properties located in SFHAs so sudden changes in AV for one or two properties can skew the graphs very easily."
+#| warning: false
+#| message: false
+#| 
+landblock_pins %>% 
+  filter(pin %in% sfha_pins) %>%
+  mutate(major_class = str_sub(class, 1,1)) %>%
+  group_by(year, major_class) %>%
+  summarize(av_mailed = mean(av_mailed, na.rm=TRUE),
+            av_board = mean(av_board, na.rm=TRUE)) %>%
+  ggplot() +
+  geom_line(aes(x=year, y = av_mailed), linetype = 2 ) + 
+    geom_line(aes(x=year, y = av_board) ) + 
+    geom_point(aes(x=year, y = av_board)) + 
+    geom_line(aes(x=year, y = av_mailed), linetype = 2 ) + 
+  theme_classic() + 
+  scale_y_continuous(name = "Avg Assessed Value for Major Class", labels = scales::dollar ) +
+  scale_x_continuous(breaks = c(2006,  2015,  2023), name = ""  ) + 
+  facet_wrap(~major_class, scales = "free" )
+```
+
+
+# Lived Experience PINs
+
+## Flood Event 2023 - Disaster Declarations / Lived Experience
+
+Cicero and Berwyn had lots of damage during DR 4728. Cicero had 25,836 housing units in 2020 and over 6000 of them applied and were granted IHP funds. 
+
+
+Dolton and Calumet City were damaged during DR 4749.
+
+```{r}
+ptax245 <- readxl::read_xlsx("inputs/PTAX-245_data.xlsx")
+
+ptax245 <- ptax245 %>% 
+  mutate(
+    pin = str_remove_all(pin, "-"),
+    keypin = as.character(KeyPIN)) %>%
+  mutate(keypin_concat = as.character(keypin),
+         keypin_concat = str_remove_all(keypin_concat, "-"),
+         keypin_concat = str_pad(keypin_concat, 14, "left", pad = "0"),
+         major_class = str_sub(Class, 1, 1),
+         parcel = str_sub(pin, 1, 10),
+         block = str_sub(pin, 1, 7),
+         year = 2023,
+         appealed = 1 ) %>%
+  select(pin, keypin_concat, parcel, block, Class, major_class, everything()) %>% 
+  distinct() %>% 
+  arrange(pin)
+ptax_pins <- ptax245 |> select(pin) |> pull()
+
+res_sales <- res_sales |> mutate(flood2023 = ifelse(pin %in% ptax245, 1, 0))
+
+```
+
+245 PINs in Cicero and 45 PINs in Berwyn appealed their property tax (plus 2 in Oak Park, 2 in River Forest, and 1 in Riverside).
+
+```{r}
+
+res_sales %>% filter(pin %in% ptax245)
+
+```
+
+
+90,000 Post Disaster Individual Assistance Grants between the two disasters in 2023. 
+Only a few million in NFIP claims were paid out from these flood events but over $300 million in IHP fund were distributed. 
+
+- Part of this is because the areas hit hardest (Cicero and Berwyn have no SFHAs and no properties are required to have flood insurance. In general, not many properties in SFHAs in Cook County, especially where these flood events occurred. Makes it unlikely that residents have flood insurance and they can't file flood insurance claims if they don't have flood insurance. )
+
+Cook County also had disaster declarations in 1993, 1996, 1997, 2007, 2009, 2010, 2013, and 2023X2.
+
