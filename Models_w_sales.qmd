@@ -32,60 +32,69 @@ sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") %>%
   
   mutate(class_1dig = str_sub(class, 1, 1),
          class = as.numeric(class)) |>
-  filter(class > 199 & class < 1000) |>
-  mutate(date = lubridate::mdy(sale_date)) |>
-  group_by(year, class_1dig)|>
-  mutate(sale_price = Winsorize(sale_price, quantile(sale_price, probs = c(0.03, 0.97), na.rm=FALSE) )) |>
-  ungroup() 
+  # filter(class > 199 & class < 1000) |>
+  mutate(date = lubridate::mdy(sale_date)) # |>
+  #group_by(year, class_1dig)|>
+  #mutate(sale_price = Winsorize(sale_price, quantile(sale_price, probs = c(0.03, 0.97), na.rm=FALSE) )) |>
+ # ungroup() 
 
+firms <- read_csv("./data/processed/parcels_wFIRMS.csv")
 
-```
+# add flood variables to sales data
+sales <- sales |> 
+    mutate(pin10 = str_sub(pin, 1, 10)) |>
+  left_join(firms, by = "pin10")
 
+sales <- sales |>   
+  mutate(Location = ifelse(pin10 %in% firms$pin10, "In FP", "Outside FP" )) 
 
-```{r, warning=FALSE, message=FALSE}
-ccao_loa <- read_csv("./data/raw/ccao_loa.csv") %>%
-  mutate(loa = ifelse(loa == 0, NA, loa))
- # mutate(class_code = as.character(class_code))
+sfha_ind <- read_csv("./data/processed/sfha_indicator_pins.csv")
+sfha_ind <- sfha_ind |> select(pin, sfha2018:lomr2024)
 
+sales <- sales |> left_join(sfha_ind, by ="pin")
 
-# All PINs that are located in land blocks that have at least 1 SFHA pin
-landblock_pins <- read_csv("outputs/pins_in_Blocks_2006_2023_20241126.csv") |> 
-  left_join(ccao_loa, by = c("year","class" = "class_code")) %>%
+sales <- sales |>
   mutate(class = as.character(class),
-         class_1dig = str_sub(class, 1, 1)) %>%
-   mutate(fmv_mailed = av_mailed/loa,
-          fmv_board = av_board/loa,
-          fmv_clerk = av_clerk/loa
-         ) |>
-  mutate(across(fmv_mailed:fmv_clerk, round, digits = 0))
+         lomr2024 = as.character(lomr2024),
+         sfha2024 = as.character(sfha2024)) 
 
 
-nbh_pins <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
+lomrs <- read_csv("./data/processed/lomr_pins_2024.csv") |>
+  rename(lomr_eff = EFF_DAT,
+         lomr_dfirm_id = DFIRM_I) |>
+  mutate(lomr_eff = as_date(lomr_eff))
+
+sales <- sales |>
+  mutate(
+    prelim_date = ifelse(PRE_DATE == "9999-09-09" | is.na(PRE_DATE), "2005-01-01", PRE_DATE),
+    
+    ccao_sfha = ifelse(sfha2024 == 1 & year >= 2021, "SFHA", "Not SFHA"),
+    ccao_sfha = ifelse(is.na(ccao_sfha), "Not SFHA", ccao_sfha),
+    
+    # the flood zones that existed in the 2018 state NFHL were last updated in 2008. sfha2018 is the default SFHA status for the observations, then lomrs and future updates will be incorporated
+    in_eff_sfha = ifelse(sfha2018 == 1, "In SFHA", "Not in SFHA"),
+    
+    in_eff_sfha = ifelse(sfha2024 == 1 & year >= year(EFF_DATE), "In SFHA", 
+                         ifelse(year >= year(EFF_DATE) & sfha2024 == 0, "Not in SFHA", in_eff_sfha)),
+    
+    in_eff_sfha = ifelse((sfha2018 == 0 & sfha2024 == 0 ) | (is.na(sfha2018) & is.na(sfha2024)) , "Not in SFHA", in_eff_sfha))
+
+table(sales$year, sales$in_eff_sfha)
 
 
-
-
-sfha_pins <- landblock_pins %>% 
-  filter(SFHA == 1) %>%
-  select(pin) |> 
-  distinct() |> 
-  pull()
-
-fsf_5plus <- nbh_pins %>% 
-  filter(env_flood_fs_factor >= 5) %>%
-  select(pin) |>
-  distinct() |> 
-  pull()
-
-fsf_4plus <- nbh_pins %>% 
-  filter(env_flood_fs_factor >= 4) %>%
-  select(pin) |>
-  distinct() |> 
-  pull()
-
-
+sales <- sales |>
+  left_join(lomrs, by = c("pin")) |>
+  mutate(
+    in_lomr = ifelse(year >= year(lomr_eff) & !is.na(LOMR_ID), "In LOMR", "Not in LOMR") ,
+    in_prelim_sfha = ifelse(year >= as_date(prelim_date), "1", "0"),
+      ) |>
+  
+  # do I want this line of code? LOMRs don't remove you from the "risky" area, but they do indicate that property was either mitigated or on higher ground and results in removal of flood insurance requirement
+  # if in SFHA and in a LOMR, keep both variables as 1 instead of recoding in_eff_sfha to 0?
+  mutate(in_eff_sfha = ifelse(in_eff_sfha == 1 & in_lomr == 1, in_eff_sfha == 0, in_eff_sfha))
 ```
 
+> Coding note: sale_price can be winsorized by grouping the year & major class (technically the 1st digit of the class code). Check that this is how you want it to be winsorized. It is currenty commented out and NOT WINSORIZED.
 
 
 # Sales Data
@@ -93,6 +102,10 @@ fsf_4plus <- nbh_pins %>%
 1,762,627 sales for all property classes (1,869,796 after new download in January)
 
 1,070,348 sales for Class 2 Residential properties (1,655,745 after new download and identifying any pin that was residential at any point in time and including it)
+
+
+> TO DO: Use grepl() to identify properties bought by municipalities? list of Muni names and if they are similar to the buyer name? Useful for flagging buyouts?
+
 
 # Frequency of Sales
 
@@ -102,7 +115,7 @@ fsf_4plus <- nbh_pins %>%
 
 sales |> 
   filter(class >= 200 & class <= 299) |>
-  mutate(Location = ifelse(pin %in% sfha_pins, "In FP", "Outside FP" )) |> 
+  mutate(Location = ifelse(in_eff_sfha == "Not in SFHA", "Outside FP", "In FP" )) |> 
   group_by(year, Location) |>
   summarize(Sales = n()) |>
   ungroup() |>
@@ -120,7 +133,7 @@ sales |>
 
 sales |> 
   filter(class >= 200 & class <= 299) |>
-  mutate(Location = ifelse(pin %in% sfha_pins, "In FP", "Outside FP" )) |> 
+  mutate(Location = ifelse(in_eff_sfha == "Not in SFHA", "Outside FP", "In FP" )) |> 
   group_by(year, Location) |>
   summarize(Sales = n()) |>
   # ungroup() |>
@@ -135,7 +148,8 @@ sales |>
   # select(Year, `In FP`, `Outside FP`, `FP Share (%)`) |> 
   ggplot() +
   geom_line(aes(x=year, y= `FP Share (%)`)) + 
-  scale_y_continuous(limits = c(0, 0.015), labels = scales::percent, expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0, 0.02), 
+                     labels = scales::percent, expand = c(0, 0)) +
   scale_x_continuous(limits = c(2006, 2024), breaks = c(2006, 2010, 2015, 2020, 2024)) +
   
   theme_classic() +
@@ -147,7 +161,7 @@ sales |>
 ```{r}
 sales |> 
   filter(class >= 200 & class <= 299) |>
-  mutate(Location = ifelse(pin %in% sfha_pins, "In FP", "Outside FP" )) |> 
+  mutate(Location = ifelse(in_eff_sfha == "Not in SFHA", "Outside FP", "In FP" )) |> 
   mutate(Sales = n(), .by = year) |>
   group_by(year, Sales, Location) |>
   summarize(Price = round(median(sale_price))) |>
@@ -161,7 +175,7 @@ sales |>
 
 sales |> 
   filter(class >= 200 & class <= 299) |>
-  mutate(Location = ifelse(pin %in% sfha_pins, "In FP", "Outside FP" )) |> 
+  mutate(Location = ifelse(in_eff_sfha == "Not in SFHA", "Outside FP", "In FP" )) |> 
   mutate(Sales = n(), .by = year) |>
   group_by(year, Sales, Location) |>
   summarize(Price = round(median(sale_price))) |>
@@ -172,7 +186,7 @@ sales |>
    ) |>
   ggplot() +
   geom_line(aes(x=year, y = Ratio)) +
-  scale_y_continuous(limits = c(0, 0.8), 
+  scale_y_continuous(limits = c(0, 2), 
                      labels = scales::percent, expand = c(0, 0)) +
   scale_x_continuous(limits = c(2006, 2024), breaks = c(2006, 2010, 2015, 2020, 2024)) +
   
@@ -180,7 +194,7 @@ sales |>
   labs(title = "Ratio of Median Value for Properties In and Out of Floodplain",
        x = element_blank(),
        y = "Ratio",
-       caption = "Ratio = Median Sale Price in FP / Median Price outside FP")
+       caption = "Ratio = Median Sale Price in FP / Median Price outside FP") 
 ```
 
 
@@ -232,24 +246,10 @@ res_sales |>
 
 
 
-
-
-
-
-
-**Note that `sfha_pins` are PINs that have the SFHA indicator == 1 according to CCAO data and `fsf_5plus` are PINs that have a flood factor rating of 5 or higher**  
-
-_CCAO made FEMA indicator form Natioanl Flood Hazard Layer shapefiles. Unsure if it was a 1 time variable in 2019 or ever updated._
-
 ```{r}
 #| label: sold-properties-infloodzones
 #| layout-ncol: 2
 
-res_sales <- res_sales |>
-  mutate(ccao_sfha = ifelse(pin %in% sfha_pins, 1, 0), # according to CCAO dataset, not FEMA shapefiles
-         in_ffs_4plus = ifelse(pin %in% fsf_4plus, 1, 0),
-         in_ffs_5plus = ifelse(pin %in% fsf_5plus, 1, 0)
-  )
 
 pin_groups <- res_sales |>
   group_by(pin) |> 
@@ -281,7 +281,7 @@ table(pin_groups$risk_type, pin_groups$times_sold)
 
 ```{r}
 pin_groups |>
-  group_by(times_sold, risk_type, risk_change,
+  group_by(times_sold, risk_type#, risk_change,
          #  sold_pre2014, sold_btwn_20132023, 
         # sold_post2023, 
           # insfha_2024, insfha_2018
