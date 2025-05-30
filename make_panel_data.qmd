@@ -11,6 +11,10 @@ format:
   - has Assessed Values (Initial, Board of Review, Clerk/Final)
   - has PIN class
   
+  
+Additional variables created in the `descriptive_stats_singlefam.qmd` file with the "easy" PINs that were always residential.
+
+
 - FIRM Update Dates
   - [X] Join FIRM data to parcels      
     - `parcels_wFIRMS.csv` from `pull_parcel_sfs.R`. Uses XY coordinates for parcel centroids from ptaxsim.db and intersects with 2024 FIRM polygons.
@@ -22,14 +26,10 @@ format:
   - [ ] do same for effective date (when financial implications become active for mortgage holders)  
 
 
-- [ ] Left join flood factor score by PIN. It does not change with time.
+- [X] Left join flood factor score by PIN. It does not change with time.
   - Flood Factor Score from Assessor's parcel universe API
     - csv: `floodfactor_scores.csv`
 
-- [ ] Sale Date and Sale Price   
-  - Join by PIN and year
-  - csv: `./data/raw/Assessor_Parcel_Sales_20250105.csv`
-  
 - [ ] Indicator for location in an LOMR   
   - financial implications for if PIN is required to have insurance or not (for a federally backed mortgage) 
   - is pin in LOMR? if yes --> if year > effective LOMR date, in_LOMR == 1, otherwise 0   
@@ -84,6 +84,10 @@ rm(sales)
 
 [ ] TO DO: Change pre_date of 9999-09-08 to beginning of study period
 
+`parcels_wFIRMs.csv` has all pins with their latitude and longitude, start year and end year that the pin existed,the DFIRM and panel ID that they are located in, as well as preliminary and effective dates for the FIRM panel.
+
+FIRM variables are joined to residential PINs by the 10 digit parcel identification number.  
+
 ```{r FIRMdata, eval=FALSE}
 firms <- read_csv("./data/processed/parcels_wFIRMS.csv")
 
@@ -104,10 +108,13 @@ write_csv(treated, "./data/processed/treated.csv")
 ```
 
 
-treated = 0 or 1, from 
 
-sale_price = NA or sale_price, from Assessor Sales dataset
+`Flood_factor_scores.csv` has the First Street Flood Risk Rating, the Risk direction, assessor's nbhd_code, and SFHA indicator created by CCAO. Variables pulled from parcel universe.
 
+- ff_score = 1-10, from parcel universe (CCAO obtained in 2019)  
+
+
+`sfha_indicator_pins.csv` combines the PINs that intersected the floodplain shapefile in 2018 (and kept the FIRM_PAN.csv file data associated with the pin during the clip) from the 2018 NFHL database (archived by Miyuki) and the 2024 NFHL downloaded from the FEMA flood services data portal thing. 
 
 ```{r}
 fs_scores<- read_csv("./data/raw/floodfactor_scores.csv")
@@ -115,7 +122,6 @@ fs_scores<- read_csv("./data/raw/floodfactor_scores.csv")
 res_pins <- left_join(res_pins, fs_scores, by = "pin")
 ```
 
-ff_score = 1-10, from parcel universe (CCAO obtained in 2019)
 
 
 ```{r}
@@ -167,7 +173,7 @@ table(clean_pins$major_class_code[clean_pins$year==2023])
 ## Add in SFHA and LOMR indicators
 
 
-sfha_ind made from these files
+`sfha_ind` made from these files in the `shapefile_sfha_changes.R` script.
 
 - lomrs <- read_csv("./data/processed/LOMR_pins_2024.csv")  
 
@@ -219,8 +225,6 @@ Maybe classes: 288,290? (Home improvements)
 ```{r}
 names(clean_pins)
 
-clean_names <- clean_names |> 
-  mutate()
 ```
 
 ```{r}
