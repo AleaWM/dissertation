@@ -1,0 +1,466 @@
+---
+title: "File Overview"
+format: # html
+  html:
+    page-layout: full
+    code-fold: true
+    #toc: true
+    #toc-location: left
+---
+
+## Project: Flood Risk and Property Values
+
+```{r}
+library(tidyverse)
+library(glue)
+library(kableExtra)
+library(stringr)
+
+files <- readxl::read_xlsx("readme_file_information.xlsx")
+```
+
+```{r eval = FALSE, include = FALSE}
+files <- files %>% 
+  mutate(
+    # turn any literal newline into a comma
+    Inputs_clean  = str_replace_all(Inputs,  "\\s*\\n\\s*",  ", "),
+    Outputs_clean = str_replace_all(Outputs, "\\u00A0",   ""),           # drop NBSP
+    Outputs_clean = str_replace_all(Outputs_clean,  "\\s*\\n\\s*", ", ")
+  )
+
+```
+```{r eval=FALSE, results='asis', include = FALSE}
+files %>% 
+  mutate(
+    # split your comma-separated text into character vectors
+    Inputs_list  = str_split(Inputs,  ",\\s*"),
+    Outputs_list = str_split(Outputs, ",\\s*"),
+    
+    # build the markdown string for each row
+    markdown = pmap_chr(
+      list(
+        idx    = row_number(),
+        file   = File,
+        purpose= Purpose,
+        in_lst = Inputs_list,
+        out_lst= Outputs_list,
+        status = `Analysis Step`
+        ),
+      function(idx, file, purpose, in_lst, out_lst, status) {
+        glue("
+### {idx}. `{file}`  
+**Purpose:**  
+{purpose}
+
+**Inputs:**  
+
+- {paste(in_lst, collapse = '\n- ')}
+
+**Outputs:**  
+
+- {paste(out_lst, collapse = '\n- ')}
+
+**Analysis Step:** {status}
+")
+      }
+    )
+  ) %>% 
+  pull(markdown) %>% 
+  cat(sep = "\n\n")
+
+```
+
+```{r results='asis'}
+files |> 
+  select(File, Purpose, Inputs, Outputs, `Analysis Step`) |>
+  mutate(markdown = glue::glue("
+### {row_number()}. `{File}`  
+**Purpose:**  
+{Purpose}  
+
+**Inputs:**   
+
+- {str_replace_all(Inputs, ', ', '\n- ')}  
+
+**Outputs:**  
+
+- {str_replace_all(Outputs, ', ', '\n- ')}  
+")) |> 
+  pull(markdown) |> 
+  cat(sep = "\n\n")
+```
+
+```{r}
+#| label: tbl-kabletable
+#| tbl-colwidths: [15, 40, 10, 10, 10]
+
+
+#DT::datatable(files)
+
+
+files |> kable(booktabs = TRUE) |> #kable_paper(full_width = F) |>
+  column_spec(1, width = "1in") |>
+  column_spec(2, width = "3in") |>
+  column_spec(3, width = "1in") |>
+  column_spec(4, width = "1in") |>
+  column_spec(5, width = "1in")
+  
+```
+
+### Output Files
+
+
+| Output                                                             | Created By                                |
+|--------------------------------------------------------------------|-------------------------------------------|
+| `data/raw/parcels_2018.gpkg`                                       | `pull_parcel_sfs.R`                       |
+| `data/raw/parcels_2023.gpkg`                                       | `pull_parcel_sfs.R`                       | `data/processed/parcels_wFIRMs.csv`                                | `pull_parcel_sfs.R`                       | outputs/pins_in_Blocks_2006_2023_20241126.csv" | ?? |
+|
+| `data/raw/nfippolicies_CookCounty_all.csv`                         | `pull_NFIP_redactedclaims.R`              |
+| `data/raw/nfipclaims_CookCounty.csv`                               | `pull_NFIP_redactedclaims.R`              |
+| `data/raw/indiv_assistance_CookCounty.csv`                         | `pull_individual_assistance_applicants.R` |
+| `data/raw/residential_pins_ever.csv`                               | `pull_distinct_resPINs.R`                 |
+| `data/raw/pin_muni_key.csv`                                        | `pull_distinct_resPINs.R`                 |
+| `data/raw/muniname_taxcode_key.csv`                                | `pull_distinct_resPINs.R`                 |
+| `data/raw/pins_floodfactor_2019.csv`                               | `pull_floodfactor_pin_list.R`             |
+| processed/ treated.csv                                                        | `make_panel_data.qmd`                     |
+| raw/floodfactor_scores.csv | pull_floodfactor_pin_list.R |
+| outputs/nbh_pins_parceluniversepull2022.csv | ?? |
+| outputs/pins_in_Blocks_2006_2023_20241126.csv| ?? |
+
+```{r, include=FALSE, eval=FALSE}
+
+## Keeping just in case
+
+### Data Preparation Scripts
+
+
+
+| File | Purpose | Inputs | Outputs |
+|-------|-----------------|-----------------|---------------------|
+| `pull_distinct_resPINs.R` | Extract all parcels that were residential from 2006–2023 and pull assessed values | PTAXSIM database | `data/raw/residential_pins_ever.csv`, `pin_muni_key.csv`, `muniname_taxcode_key.csv` |
+| `pull_parcel_sfs.R` | Download and convert Cook County parcel shapefiles for 2018 and 2023 | ptaxsim parcel centroids | `S_FIRM_PAN.csv`, `parcels_wFIRMS.csv` |
+| `pull_floodfactor` `_pin_list.R` | Join Flood Factor risk scores (2019 snapshot) to Cook County parcel universe | Parcel universe with PINs, Flood Factor data | `data/raw/floodfactor_scores.csv` |
+| `shapefile_sfha_changes.R` | Compares CCAO flood variables to NFHL. Makes shapefiles and also CSV versions of PINs that are in each SFHA or LOMR | NFHL 2018 and NFHL 2024 (NFHL_17_20180129.gdb and Statewide_NFHL_17_20240628.gdb) | sfha_indicator_pins.csv, S_FIRM_PAN.csv, parcels_sfha_2018.csv(shp), parcels_lomrs_2018.csv(shp), sfha_pins_2024.csv, lomr_pins_2024.csv, |
+| `detect_flood_variable` `_change_in_CCAO` | Tries to identify if CCAO removed PINs that were in LOMRs from SFHA indicator or what year they stopped updating the LOMR data if removed | Open FEMA API | None |
+| `clean_damangedCity` `_names` | Takes damagedCity variable from Open FEMA individual assistance, exports city names which had tons of typos. This was put in chatGPT to match with clean names | Open FEMA API | `data/raw/ia.city_names.csv` which becomes `data/processed/City_Mapping_Names.csv` |
+
+------------------------------------------------------------------------
+
+### Other External Data Exploration
+
+| File | Purpose | Inputs | Outputs |
+|-----------------|---------------------|-----------------|-----------------|
+| `pull_NFIP_redactedclaims.R` | Pull NFIP policy and claims data for Cook County from FEMA API | NFIP Policies API, NFIP Claims API | `data/raw/nfippolicies_CookCounty_all.csv`, `data/raw/nfipclaims_CookCounty.csv` |
+| `pull_individual_assis` `tance_applicants.R` | Pull FEMA Individual Assistance (IA) application data for Cook County (accepted and denied) | FEMA IA API | `data/raw/indiv_assistance_CookCounty.csv`, `data/processed/treated_zipcodes.csv`|
+| `buyouts.R` | Identifies PINs that were bought out due to high flood risk | Illinois Buyout Database `BuyoutPoints_Statewide.xlsx` | none |
+
+------------------------------------------------------------------------
+
+### Exploratory & Descriptive Analysis
+
+| File | Purpose | Inputs | Outputs |
+|-----------------|----------------------|-----------------|-----------------|
+| `CC_Individual_FEMA` `_Assistance.qmd` | Analyzes FEMA IA aid at ZIP level during recent flood events; descriptive stats on applicants and aid granted | `data/raw/indiv_assistance_CookCounty.csv`, `data/processed/treated_zipcodes.csv` | census block, tract, zip code, and muni level post-disaster aid data |
+| `Cook_flood_policies` `_and_claims.qmd` | Summarizes NFIP claims and policies across geographies (ZIP, block, tract, muni) | `data/raw/nfipclaims_CookCounty.csv`, `data/raw/nfippolicies_CookCounty_all.csv` | Aggregated claim/policy stats. Not used except to show that there are not many claims or insurance policies in cook county. But there are a lot of post-disaster FEMA aid. |
+| `Cook_Sales_data.qmd` | Links sales data with flood risk indicators (SFHA, LOMR, Flood Factor); identifies multi-sale parcels and treatment status | `data/raw/assessor_parcel_sales.csv`, `parcels_sfha_2018.gpkg`, `parcels_sfha_2024.gpkg`, `parcels_lomrs.gpkg`, `data/raw/pins_floodfactor_2019.csv` | Counts of PINs by treatment status, sales trends |
+| `make_panel_data.qmd` | | | |
+| AssessedValues_ andFIRMS.qmd | | | | 
+| descriptive_stats _singlefam.qmd | | | | 
+| mcmillen_sales comparison.qmd | | | | 
+| `Flood_factor_pins.qmd` ARCHIVED | Filter for PINs with Flood Factor ≥ 5; analyze post-2023 PTAX-245 flood appeals; calculates AV changes in affected land blocks | Parcel universe API, PTAX-245 appeal forms | Summary tables and figures |
+| `Flood_Appeal_PINs.qmd` ARCHIVED | Identifies and summarizes AV appeal activity for PINs affected by 2023 flood; compares AV changes for appeal vs. neighbor parcels | PTAX-245 appeal forms, assessed values | Graphs of average AV changes, summary stats |
+| `AssessedValue_Explor` `atoryGraphs.rmd` ARCHIVED | Early exploration of AV trends in SFHA and flood-prone parcels using CCAO data | Parcel universe, AV data | Exploratory graphs and maps |
+| `CookCounty_ParcelMaps.qmd` ARCHIVED | Early mapping of parcels marked SFHA in CCAO data; not currently used | CCAO parcel universe | Static SFHA parcel maps |
+
+
+```
+
+------------------------------------------------------------------------
+
+### Data Cleaning Notes
+
+Do filtering steps last. Keep all property classes until creating the panel dataset for analysis.
+
+```{r eval=FALSE, include=FALSE}
+
+## File Overview
+
+
+
+
+------------------------------------------------------------------------
+
+### X. `Models.qmd.R`
+
+**Purpose:**\
+Based off of cook_sales_Data.qmd but removes a lot of the preliminary coding chunks
+
+**Output:**\
+
+
+**Status:** Active - update and use more
+
+------------------------------------------------------------------------
+
+### X. `descriptive_stats_singlefam.qmd`
+
+**Purpose:**\
+has checklist of variables/code that needs to be done
+
+**Output:**\
+
+
+**Status:** Active ? Use more!
+
+------------------------------------------------------------------------
+
+### 1. `pull_distinct_resPINs.R`
+
+**Purpose:**\
+Extracts PINs that were residential at any time (2006–2023) using PTAXSIM and pulls corresponding assessed values. Also generates PIN–municipality key.
+
+**Output:**\
+- `data/raw/residential_pins_ever.csv`\
+- `data/raw/pin_muni_key.csv`\
+- `data/raw/muniname_taxcode_key.csv`
+
+**Status:** Active
+
+------------------------------------------------------------------------
+
+### 2. `pull_parcel_sfs.R`
+
+**Purpose:**\
+Downloads parcel shapefiles for Cook County for two time points: 2018 and 2023. Converts shapefiles into spatial databases.
+
+**Output:**\
+- ~~`data/raw/parcels_2018.gpkg`~~\
+- ~~`data/raw/parcels_2023.gpkg`~~\
+- S_FIRM_PAN.csv\
+- parcels_wFIRMS.csv
+
+**Status:** Active
+
+------------------------------------------------------------------------
+
+### 5. `pull_floodfactor_pin_list.R`
+
+**Purpose:**\
+Pulls 2019 Flood Factor scores and SFHA indicator used by Assessor from parcel universe.
+
+**Output:**\
+- `data/raw/floodfactor_scores.csv` with variables `env_flood_factor_score`, `env_flood_factor_risk_direction`, `env_flood_fema_sfha`, and `nbhd_code` for the neighborhoods used by the Assessor during property valutation.
+
+**Status:** Active
+
+------------------------------------------------------------------------
+
+### 6. `Flood_factor_pins.qmd`
+
+**Purpose:**\
+Filters for PINs with Flood Factor ≥ 5; integrates PTAX-245 appeal data after the 2023 flood; calculates differences in AV before and after appeals in affected land blocks.
+
+**Output:**\
+- Summary tables and figures on AV changes from appeals
+
+**Status:** Archived
+
+------------------------------------------------------------------------
+
+### 7. `Flood_Appeal_PINs.qmd`
+
+**Purpose:**\
+Identifies PINs that submitted PTAX-245 forms after the 2023 flood and compares changes in AV due to appeals across affected and nearby properties.
+
+**Output:**\
+- Graphs and summary tables of AV differences
+
+**Status:** Archived
+
+------------------------------------------------------------------------
+
+### 8. `CC_Individual_FEMA_Assistance.qmd`
+
+**Purpose:**\
+Summarizes FEMA IA data by ZIP code. Focuses on descriptive statistics and trends for recent flood events and aid received.
+Identifies treated areas of Cook County that experienced flood damage using post-disaster aid data.
+
+**Input:**\
+- `data/raw/indiv_assistance_CookCounty.csv`
+
+**Output:**\
+- ZIP-level descriptive statistics\
+- Summary tables and visualizations by event  
+- `data/processed/treated_zipcodes.csv`  
+
+
+**Status:** Active
+
+------------------------------------------------------------------------
+
+### 9. `Cook_flood_policies_and_claims.qmd`
+
+**Purpose:**\
+Uses NFIP policy and claim data to summarize flood damage at various geographies (ZIP code, census block, census tract, municipality).
+
+**Input:**\
+- `data/raw/nfipclaims_CookCounty.csv`\
+- `data/raw/nfippolicies_CookCounty_all.csv`
+
+**Output:**\
+- Aggregated stats by spatial unit
+
+**Status:** Active
+
+------------------------------------------------------------------------
+
+### 10. `Cook_Sales_data.qmd`
+
+**Purpose:**\
+Integrates sales data with SFHA, LOMR, and Flood Factor overlays. Identifies PINs sold multiple times and tracks treatment exposure.
+Models.qmd is based off of this file.
+
+**Input:**\
+- `parcels_wFIRMs.csv`
+- `data/raw/assessor_parcel_sales.csv`\
+- `pin_muni_key.csv`\ 
+- `parcels_sfha_2018.shp`\
+- `parcels_sfha_2024.shp`\
+- `parcels_lomrs_2024.shp` becomes `lomr_pins_2024.csv`\
+- `data/raw/pins_floodfactor_2019.csv`\
+- nbh_pins_parceluniversepull2022.csv\
+- Parcels_in_PrelimFIRMSFHA_NWCook.xlsx\
+
+**Output:**\
+- Summary of sales by treatment group\
+- Stats on repeat sales and exposure
+
+**Status:** Active? Archived? 
+
+------------------------------------------------------------------------
+
+### 11. `AssessedValue_andFIRMs.qmd`
+
+**Purpose:**\
+Early exploration of AV trends for parcels inside and outside SFHAs using CCAO data. Includes preliminary figures and mapping.
+Codes PINs by if they have a building on the parcel or not. 
+
+**Input:**\
+- Parcel universe\
+- AV data
+
+**Output:**\
+- `outputs/pins_in_Blocks_2006_2023_20241126.csv`
+
+
+**Status:** New but not used?
+
+------------------------------------------------------------------------
+
+### 11. `AssessedValue_ExploratoryGraphs.rmd`
+
+**Purpose:**\
+Early exploration of AV trends for parcels inside and outside SFHAs using CCAO data. Includes preliminary figures and mapping.
+Codes PINs by if they have a building on the parcel or not. 
+
+**Input:**\
+- Parcel universe\
+- AV data
+
+**Output:**\
+- Exploratory maps and graphs of AV trends by risk status  
+- `outputs/pins_in_Blocks_2006_2023_20241126.csv`  
+
+**Status:** Archived
+
+------------------------------------------------------------------------
+
+### 12. `CookCounty_ParcelMaps.qmd`
+
+**Purpose:**\
+Initial mapping of parcels marked SFHA using CCAO parcel universe. Made for exploratory purposes and currently unused.
+
+**Input:**\
+- CCAO parcel universe
+
+**Output:**\
+- Parcel maps with SFHA indicators
+
+**Status:** Archived
+
+------------------------------------------------------------------------
+
+### 2. `pull_NFIP_redactedclaims.R`
+
+**Purpose:**\
+Pulls National Flood Insurance Program (NFIP) claims and policy data from FEMA’s open API, filtered to Cook County, IL.
+
+**Output:**\
+- `data/raw/nfippolicies_CookCounty_all.csv`\
+- `data/raw/nfipclaims_CookCounty.csv`
+
+**Status:** Active
+
+------------------------------------------------------------------------
+
+### 3. `pull_individual_assistance_applicants.R`
+
+**Purpose:**\
+Downloads FEMA Individual Assistance (IA) data from the OpenFEMA API for Cook County. Includes both approved and denied applications.
+
+**Output:**\
+- `data/raw/indiv_assistance_CookCounty.csv`
+
+**Status:** Active
+
+------------------------------------------------------------------------
+
+### X. `DAG_chart.qmd`
+
+**Purpose:**\
+had variable dag charts 
+
+**Output:**\
+
+**Status:** Not Used
+
+```
+
+------------------------------------------------------------------------
+
+
+Create a long-format dataset with:
+
+PIN \| year \| in_sfha \| flood_factor_score \| in_lomr \| av \| sale_price \| sold \| treatment \| post
+
+Key Variables:
+
+-   year: Matching the time of assessment or sale
+
+-   in_sfha: 0/1 for floodplain presence that year
+
+-   flood_factor_score: Ordinal flood risk score (e.g., 1–10)
+
+-   in_lomr: 0/1 if parcel is in a LOMR revision area that year
+
+-   av: Assessed value that year
+
+-   sale_price: Sale price (if sold that year)
+
+-   sold: 0/1 if there was a sale
+
+-   treatment: 1 if the PIN was ever added to (or removed from) the SFHA (i.e., eligible for treatment)
+
+-   post: 1 if observation is after the map change
+
+-   added_to_sfha = (in_sfha_2024 == 1 & in_sfha_2018 == 0) removed_from_sfha = (in_sfha_2024 == 0 & in_sfha_2018 == 1)
+
+-   treatment = 1 if added_to_sfha \| removed_from_sfha
+
+If you're using multiple years of sales and assessed values, define:
+
+-   post = 1 for all years after the map change
+
+-   pre = 1 for years before
+
+Optionally use event_time = year - treatment_year to do event study style DiD
