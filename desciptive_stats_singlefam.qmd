@@ -1,32 +1,31 @@
 ---
-title: "Make Panel Data"
+title: "The \"Easy\" PINs - Single-Family only"
 format: 
   html:
     toc: true
 ---
 
-> The single_fam csv is the "easy" PINs -- properties that were always residential and existed all years. 
+> **The single_fam csv is the "easy" PINs -- properties that were always residential and existed all years.** 
 
-It was created in `create_panel_data.qmd`. 
+This file uses `./data/processed/singlefamily_assessed_values.csv` which was created in `create_panel_data.qmd`. 
 
-[X] TO DO: Change pre_date of 9999-09-08 to beginning of study period
+- [X] TO DO: Change pre_date of 9999-09-08 to beginning of study period
 
 
-- Start with all PINs that were ever residential for at least 1 year
-  - `data/raw/residential_pins_ever.csv` from `pull_distinct_res_PINs.R`
-  - made from PTAXSIM database (from CCAO) 
-  - has Assessed Values (Initial, Board of Review, Clerk/Final)
-  - has PIN class
   
-- FIRM Update Dates
+- FIRM Update Variables
   - [X] Join FIRM data to parcels      
     - `parcels_wFIRMS.csv` from `pull_parcel_sfs.R`. Uses XY coordinates for parcel centroids from ptaxsim.db and intersects with 2024 FIRM polygons.
     - CSV version of 2024 FIRMs in `S_FIRM_PAN.csv`
   - [ ] **Need to manually add preliminary dates**  -- Partially done  
-  - [ ] Create variable for each pin-year: 
-    - [ ] if year < pre_date, then preliminary update == 0
-    - [ ] if year >= pre_date, then preliminary update == 1
-  - [ ] do same for effective date (when financial implications become active for mortgage holders)  
+  
+  - [X] do same for effective date (when financial implications become active for mortgage holders)
+    - `in_eff_sfha`
+    
+  - [X] LOMR effective dates
+    - `in_lomr` created from spatial join of LOMR polygons (2024 NFHL) and PIN centroids (ptaxsim parcel table) 
+    
+- [X] ccao_sfha variable for assessor variables. 0 during years 2006-2020 and becomes 1 in 2021 when flood variables began to be used in the model. _Note: SFHA was used in first couple of years and then the CCAO only used the flood factor score variable they had because it was a better predictor_
 
 
 - [ ] Left join flood factor score by PIN. It does not change with time.
@@ -68,16 +67,14 @@ table(pins$class[pins$year==2023])
 
 ## Add in SFHA and LOMR indicators
 
+`sfha_indicator_pins.csv` combines the PINs that intersected the floodplain shapefile in 2018 (and kept the FIRM_PAN.csv file data associated with the pin during the clip) from the 2018 NFHL database (archived by Miyuki) and the 2024 NFHL downloaded from the FEMA flood services data portal thing. `sfha_ind` made from these files below in the `shapefile_sfha_changes.R` script. **Only includes PINs that were IN AN SFHA at some point in time!** If you want FIRM information for ALL pins, then use `parcels_wFIRMs.csv`
 
-sfha_ind made from these files
 
-- lomrs <- read_csv("./data/processed/LOMR_pins_2024.csv")  
+- lomrs <- ./data/processed/LOMR_pins_2024.csv  
+- sfha_2018 <- ./data/processed/parcels_sfha_2018.csv    
+- sfha_2024 <- ./data/processed/parcels_sfha_2024.csv    
+- buyouts <- ./data/processed/BuyoutPoints_Statewide.xlsx   
 
-- sfha_2018 <- read_csv("./data/processed/parcels_sfha_2018.csv")  
-
-- sfha_2024 <- read_csv("./data/processed/parcels_sfha_2024.csv")  
-
-- buyouts <- read_csv("./data/processed/BuyoutPoints_Statewide.xlsx")  
 
 
 ```{r}
@@ -95,7 +92,7 @@ table(pins$class[pins$year==2023])
 
 
 
-
+`lomrs` has the effective date that a PIN was added to a LOMR.
 
 
 
@@ -109,7 +106,7 @@ firms <- read_csv("./data/processed/parcels_wFIRMS.csv")
 
 lomrs <- read_csv("./data/processed/lomr_pins_2024.csv") |>
   rename(lomr_eff = EFF_DAT,
-         lomr_dfirm_id = DFIRM_ID) |>
+         lomr_dfirm_id = DFIRM_I) |>
   mutate(lomr_eff = as_date(lomr_eff))
 
 pins <- pins |> 
@@ -118,6 +115,7 @@ pins <- pins |>
 
 ```
 
+## Create indicators for model 
 
 ```{r}
 pins <- pins |>
@@ -144,6 +142,9 @@ pins <- pins |>
     in_lomr = ifelse(year >= year(lomr_eff) & !is.na(LOMR_ID), "In LOMR", "Not in LOMR") ,
     in_prelim_sfha = ifelse(year >= as_date(prelim_date), "1", "0"),
       ) |>
+  
+  # do I want this line of code? LOMRs don't remove you from the "risky" area, but they do indicate that property was either mitigated or on higher ground and results in removal of flood insurance requirement
+  # if in SFHA and in a LOMR, keep both variables as 1 instead of recoding in_eff_sfha to 0?
   mutate(in_eff_sfha = ifelse(in_eff_sfha == 1 & in_lomr == 1, in_eff_sfha == 0, in_eff_sfha))
 
 rm(lomrs)
@@ -163,7 +164,7 @@ table(pins$year, pins$ccao_sfha)
 > Being in an effective SFHA shouldn't be super significant because it wasn't used by the assessor until 2021 or 2020 or something around that time. It should be a better predictor for the sales data. 
 
 
-> probably should add triad to model to deal with reassessment cycles or shift it to that the reassessment cycles line up? 
+> probably should add triad to model to deal with reassessment cycles or shift it so that the reassessment cycles line up? 
 
 
 ```{r}
