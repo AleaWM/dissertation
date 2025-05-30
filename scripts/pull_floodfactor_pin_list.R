@@ -23,7 +23,7 @@ base_url <- "https://datacatalog.cookcountyil.gov/resource/nj4t-kc8j.json"
 puni_pins <- GET(
   base_url,
   query = list(
-    `$select` = "DISTINCT pin, nbhd_code, env_flood_fs_factor, env_flood_fema_sfha, env_flood_fs_risk_direction",
+    `$select` = "DISTINCT pin, nbhd_code, zip_code, env_flood_fs_factor, env_flood_fema_sfha, env_flood_fs_risk_direction",
     `$where` = "env_flood_fs_factor IS NOT NULL AND env_flood_fema_sfha IS NOT NULL AND env_flood_fs_risk_direction IS NOT NULL",
     `$limit` = 5000000L
   )
