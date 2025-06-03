@@ -26,75 +26,81 @@ library(tidyverse)
 library(httr)
 library(jsonlite)
 library(glue)
-
-sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") %>% 
-  filter(year > 2005) %>%
-  
-  mutate(class_1dig = str_sub(class, 1, 1),
-         class = as.numeric(class)) |>
-  # filter(class > 199 & class < 1000) |>
-  mutate(date = lubridate::mdy(sale_date)) # |>
-  #group_by(year, class_1dig)|>
-  #mutate(sale_price = Winsorize(sale_price, quantile(sale_price, probs = c(0.03, 0.97), na.rm=FALSE) )) |>
- # ungroup() 
-
-firms <- read_csv("./data/processed/parcels_wFIRMS.csv")
-
-# add flood variables to sales data
-sales <- sales |> 
-    mutate(pin10 = str_sub(pin, 1, 10)) |>
-  left_join(firms, by = "pin10")
-
-sales <- sales |>   
-  mutate(Location = ifelse(pin10 %in% firms$pin10, "In FP", "Outside FP" )) 
-
-sfha_ind <- read_csv("./data/processed/sfha_indicator_pins.csv")
-sfha_ind <- sfha_ind |> select(pin, sfha2018:lomr2024)
-
-sales <- sales |> left_join(sfha_ind, by ="pin")
-
-sales <- sales |>
-  mutate(class = as.character(class),
-         lomr2024 = as.character(lomr2024),
-         sfha2024 = as.character(sfha2024)) 
+library(fixest)
+```
 
 
-lomrs <- read_csv("./data/processed/lomr_pins_2024.csv") |>
-  rename(lomr_eff = EFF_DAT,
-         lomr_dfirm_id = DFIRM_I) |>
-  mutate(lomr_eff = as_date(lomr_eff))
-
-sales <- sales |>
-  mutate(
-    prelim_date = ifelse(PRE_DATE == "9999-09-09" | is.na(PRE_DATE), "2005-01-01", PRE_DATE),
-    
-    ccao_sfha = ifelse(sfha2024 == 1 & year >= 2021, "SFHA", "Not SFHA"),
-    ccao_sfha = ifelse(is.na(ccao_sfha), "Not SFHA", ccao_sfha),
-    
-    # the flood zones that existed in the 2018 state NFHL were last updated in 2008. sfha2018 is the default SFHA status for the observations, then lomrs and future updates will be incorporated
-    in_eff_sfha = ifelse(sfha2018 == 1, "In SFHA", "Not in SFHA"),
-    
-    in_eff_sfha = ifelse(sfha2024 == 1 & year >= year(EFF_DATE), "In SFHA", 
-                         ifelse(year >= year(EFF_DATE) & sfha2024 == 0, "Not in SFHA", in_eff_sfha)),
-    
-    in_eff_sfha = ifelse((sfha2018 == 0 & sfha2024 == 0 ) | (is.na(sfha2018) & is.na(sfha2024)) , "Not in SFHA", in_eff_sfha))
-
-table(sales$year, sales$in_eff_sfha)
-
-
-sales <- sales |>
-  left_join(lomrs, by = c("pin")) |>
-  mutate(
-    in_lomr = ifelse(year >= year(lomr_eff) & !is.na(LOMR_ID), "In LOMR", "Not in LOMR") ,
-    in_prelim_sfha = ifelse(year >= as_date(prelim_date), "1", "0"),
-      ) |>
-  
-  # do I want this line of code? LOMRs don't remove you from the "risky" area, but they do indicate that property was either mitigated or on higher ground and results in removal of flood insurance requirement
-  # if in SFHA and in a LOMR, keep both variables as 1 instead of recoding in_eff_sfha to 0?
-  mutate(in_eff_sfha = ifelse(in_eff_sfha == 1 & in_lomr == 1, in_eff_sfha == 0, in_eff_sfha))
+```{r codein-data_prep-rscript}
+# sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") %>% 
+#   filter(year > 2005) %>%
+#   
+#   mutate(class_1dig = str_sub(class, 1, 1),
+#          class = as.numeric(class)) |>
+#   # filter(class > 199 & class < 1000) |>
+#   mutate(date = lubridate::mdy(sale_date)) # |>
+#   #group_by(year, class_1dig)|>
+#   #mutate(sale_price = Winsorize(sale_price, quantile(sale_price, probs = c(0.03, 0.97), na.rm=FALSE) )) |>
+#  # ungroup() 
+# 
+# firms <- read_csv("./data/processed/parcels_wFIRMS.csv")
+# 
+# # add flood variables to sales data
+# sales <- sales |> 
+#     mutate(pin10 = str_sub(pin, 1, 10)) |>
+#   left_join(firms, by = "pin10")
+# 
+# sales <- sales |>   
+#   mutate(Location = ifelse(pin10 %in% firms$pin10, "In FP", "Outside FP" )) 
+# 
+# sfha_ind <- read_csv("./data/processed/sfha_indicator_pins.csv")
+# sfha_ind <- sfha_ind |> select(pin, sfha2018:lomr2024)
+# 
+# sales <- sales |> left_join(sfha_ind, by ="pin")
+# 
+# sales <- sales |>
+#   mutate(class = as.character(class),
+#          lomr2024 = as.character(lomr2024),
+#          sfha2024 = as.character(sfha2024)) 
+# 
+# 
+# lomrs <- read_csv("./data/processed/lomr_pins_2024.csv") |>
+#   rename(lomr_eff = EFF_DAT,
+#          lomr_dfirm_id = DFIRM_I) |>
+#   mutate(lomr_eff = as_date(lomr_eff))
+# 
+# sales <- sales |>
+#   mutate(
+#     prelim_date = ifelse(PRE_DATE == "9999-09-09" | is.na(PRE_DATE), "2005-01-01", PRE_DATE),
+#     
+#     ccao_sfha = ifelse(sfha2024 == 1 & year >= 2021, "SFHA", "Not SFHA"),
+#     ccao_sfha = ifelse(is.na(ccao_sfha), "Not SFHA", ccao_sfha),
+#     
+#     # the flood zones that existed in the 2018 state NFHL were last updated in 2008. sfha2018 is the default SFHA status for the observations, then lomrs and future updates will be incorporated
+#     in_eff_sfha = ifelse(sfha2018 == 1, "In SFHA", "Not in SFHA"),
+#     
+#     in_eff_sfha = ifelse(sfha2024 == 1 & year >= year(EFF_DATE), "In SFHA", 
+#                          ifelse(year >= year(EFF_DATE) & sfha2024 == 0, "Not in SFHA", in_eff_sfha)),
+#     
+#     in_eff_sfha = ifelse((sfha2018 == 0 & sfha2024 == 0 ) | (is.na(sfha2018) & is.na(sfha2024)) , "Not in SFHA", in_eff_sfha))
+# 
+# table(sales$year, sales$in_eff_sfha)
+# 
+# 
+# sales <- sales |>
+#   left_join(lomrs, by = c("pin")) |>
+#   mutate(
+#     in_lomr = ifelse(year >= year(lomr_eff) & !is.na(LOMR_ID), "In LOMR", "Not in LOMR") ,
+#     in_prelim_sfha = ifelse(year >= as_date(prelim_date), "1", "0"),
+#       ) |>
+#   
+#   # do I want this line of code? LOMRs don't remove you from the "risky" area, but they do indicate that property was either mitigated or on higher ground and results in removal of flood insurance requirement
+#   # if in SFHA and in a LOMR, keep both variables as 1 instead of recoding in_eff_sfha to 0?
+#   mutate(in_eff_sfha = ifelse(in_eff_sfha == 1 & in_lomr == 1, in_eff_sfha == 0, in_eff_sfha))
 ```
 
 > Coding note: sale_price can be winsorized by grouping the year & major class (technically the 1st digit of the class code). Check that this is how you want it to be winsorized. It is currenty commented out and NOT WINSORIZED.
+
+> If property is in SFHA and LOMR, both variables will be coded as 1. I no longer "remove" the SFHA indicator if it is in a LOMR. 
 
 
 # Sales Data
@@ -109,13 +115,312 @@ sales <- sales |>
 
 # Frequency of Sales
 
+`res_sales` includes any pin that was residential at some point in time. 
+
+ 
+```{r}
+#sales      <- readRDS("./data/processed/sales_prepped.rds")
+res_sales  <- readRDS("./data/processed/res_sales.rds") 
+
+
+# sampled_data <- res_sales |> 
+#   sample_frac(0.05)
+# write_csv(sampled_data, 
+#           "data_sample.csv")
+
+firms <- readxl::read_xlsx("./data/raw/S_FIRM_PAN.xlsx")
+```
+
+# Random questions to check
+
+**Are there condos in floodplains?** -- Condos were filtered out at an earlier step (298 and 299).
+
+"297s are special residential improvements"
+
+```{r}
+res_sales |> 
+  filter(in_eff_sfha == "SFHA") |>
+  filter(class %in% c(297, 298, 299))
+```
+
+**Are there CoOps and other weird properties in floodplains?** -- NO, filter these property classes out and dont worry about them.
+
+```{r}
+table(res_sales$in_eff_sfha)
+
+```
+
+
+```{r}
+res_sales <- left_join(res_sales, firms, by = c("FIRM_PAN"))
+
+
+repeat_sales <- res_sales |> group_by(pin) |> 
+  mutate(times_sold = n()) |> 
+  filter(times_sold > 1) |> 
+  ungroup()
+  
+table(repeat_sales$times_sold)
+
+table(res_sales$PRE_DATE)
+
+table(res_sales$year, res_sales$in_eff_sfha)
+table(res_sales$year, res_sales$in_lomr)
+
+```
+
+```{r inspect-highmultisales}
+
+# price corrections randomly spotted
+res_sales <- res_sales |> 
+  mutate(sale_price = 
+         case_when(
+           pin == "15154220240000" ~ 180000,   # not 180 million
+         TRUE ~ sale_price
+         ))
+
+
+# problem pins for various reasons
+drop_pins <- c("05272000470000",  # co op
+               "17103180800000",  # became 325 W Wacker Drive, the building that looks like water waves, condo in loop
+               "14281050350000",  # is a condo building, whole building bought in 2006, Currently classed as land? probably due to remodeling permit? 
+               "10191030030000",     # land trust sale and then maybe split into other pins?
+               "17032220150000",   #  becomes 880 N LakeShore Drive and is a CoOp
+               "17032220180000",   # also part of 880 N LAkeshore Dr  and is  a CoOp
+               "17032220200000",    # ditto
+               "05272000010000"     # another CoOp
+               
+)
+
+res_sales |> filter(times_sold > 5) |> arrange(desc(sale_price))
+res_sales |> filter(times_sold > 5) |>  filter(pin %nin% drop_pins) |> arrange(desc(sale_price))
+
+
+
+res_sales |> filter(times_sold >15) |> 
+  ggplot() + 
+  geom_line(aes(x=sale_date, y = sale_price, group = pin))
+```
+
+```{r}
+
+# 1) Make sure sale_date is a Date (if not already)
+df_prep <- res_sales %>%
+  filter(times_sold < 15) |>
+  filter(pin %nin% drop_pin) |> 
+  
+  mutate(
+    sale_date2 = mdy(sale_date),         # parse "September 01 2018" → Date
+    sale_year  = year(sale_date2),       # or just use your existing `year` column
+  eff_date = ymd(eff_date),
+  pre_date = ymd(PRE_DATE)
+  ) %>%
+  # 2) Keep only the columns we need for repeat‐sales. You can drop geometry, etc.
+  select(pin, sale_date2, sale_year, sale_price, in_eff_sfha, eff_date, pre_date) %>%
+  # 3) Sort by pin and date
+  arrange(pin, sale_date2) %>%
+  # 4) Tag how many times each PIN sold
+  group_by(pin) %>%
+  mutate(times_sold = n()) %>%
+  ungroup() %>%
+  # 5) Keep only those with at least two sales
+  filter(times_sold >= 2)
+
+
+
+# 6) Now create the “paired” records: for each pin, pull next‐row info as “t2”
+df_pairs <- df_prep %>%
+  group_by(pin) %>%
+  arrange(sale_date2) %>%
+  # Lead‐lag step: each row’s “lag_” is the previous sale
+  mutate(
+    sale_price_t1   = lag(sale_price),
+    sale_date_t1    = lag(sale_date2),
+    sale_year_t1    = year(sale_date_t1),
+    in_sfha_t1      = lag(in_eff_sfha),
+
+    sale_price_t2   = sale_price,
+    sale_date_t2    = sale_date2,
+    sale_year_t2    = sale_year,
+    in_sfha_t2      = in_eff_sfha
+  ) %>%
+
+  ungroup()
+```
+
+
+```{r }
+df_pairs <- df_pairs %>%
+  mutate(
+        d_log_price = log(sale_price_t2) - log(sale_price_t1),  # same as log (sale2 / sale1)
+
+    removed_between = (in_sfha_t1 == "SFHA" & in_sfha_t2 == "Not SFHA"),
+    added_between = (in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "SFHA"),
+    stayed_sfha = (in_sfha_t1 == "SFHA" & in_sfha_t2 == "SFHA"),
+    neither_sfha = (in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "Not SFHA"),
+    
+    change_type = case_when(
+      in_sfha_t1 == "SFHA" & in_sfha_t2 == "Not SFHA" ~ "Removed",
+      in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "SFHA" ~ "Added",
+      in_sfha_t1 == "SFHA" & in_sfha_t2 == "SFHA" ~ "Both In SFHA",
+      in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "Not SFHA" ~ "Both Out of SFHA",
+      TRUE ~ "OTHER"
+      
+    )
+    )
+```
+
+```{r code-for-preliminaryFIRMdate}
+df_pairs <- df_pairs |> 
+  mutate(t1_months = round(time_length(sale_date_t1 - pre_date, "months") ), # first sale to FIRM update, in months
+         t2_months = round(time_length(sale_date_t2 - pre_date, "months")),
+         
+         t1_years = round(time_length(sale_date_t2 - pre_date, "years") ),    # first sale to FIRM update, in years
+         t2_years = round(time_length(sale_date_t2 - pre_date, "years")),     # time since FIRM update, in years
+
+         # time between sales
+         months_btwn = round(time_length(sale_date_t2 - sale_date_t1, "months")), 
+         years_btwn = round(time_length(sale_date_t2 - sale_date_t1, "years")),
+
+
+  )|>
+      # Only keep rows where lag exists (i.e. drop the very first sale for each PIN)
+  filter(!is.na(sale_price_t1))
+```
+
+
+```{r code-for-effectiveFIRM, eval=FALSE, include=FALSE}
+df_pairs <- df_pairs |> 
+  mutate(t1_months = round(time_length(sale_date_t1 - eff_date, "months") ), # first sale to FIRM update, in months
+         t2_months = round(time_length(sale_date_t2 - eff_date, "months")),
+         
+         t1_years = round(time_length(sale_date_t2 - eff_date, "years") ),    # first sale to FIRM update, in years
+         t2_years = round(time_length(sale_date_t2 - eff_date, "years")),     # time since FIRM update, in years
+
+         # time between sales
+         months_btwn = round(time_length(sale_date_t2 - sale_date_t1, "months")), 
+         years_btwn = round(time_length(sale_date_t2 - sale_date_t1, "years")),
+
+
+  )|>
+      # Only keep rows where lag exists (i.e. drop the very first sale for each PIN)
+  filter(!is.na(sale_price_t1)) #%>%
+  
+  # keep obs where sales happened around FIRM effective date
+ # filter(sale_date_t1 < eff_date & sale_date_t2 > eff_date)
+```
+
+
+```{r}
+table(df_pairs$t2_years, df_pairs$change_type)
+table(df_pairs$t1_years, df_pairs$removed_between)
+table(df_pairs$t1_years, df_pairs$added_between)
+
+table(df_pairs$years_btwn, df_pairs$change_type)
+
+
+```
+
+
+```{r}
+df_pairs <- df_pairs %>%
+  mutate(years_btw_sales = sale_year_t2 - sale_year_t1,
+         time_btw_sales = lubridate::as.difftime(sale_date_t2 - sale_date_t1)
+  )
+
+df_pairs <- df_pairs |> 
+  select(pin, 
+         sale_year_t1, sale_price_t1, in_sfha_t1, t1_months, t1_years,
+         sale_year_t2, sale_price_t2, in_sfha_t2, t1_months, t1_years,
+         years_btw_sales, removed_between, added_between, change_type
+  )
+```
+
+
+```{r}
+
+
+
+# 2) Run the repeat‐sales regression
+rs_model <- feols(
+  d_log_price ~ removed_between + years_btw_sales,
+  # no extra fixed‐effects needed (year dummies are explicit)
+  data = df_pairs#|>filter(!is.na(EFF_DATE))
+)
+summary(rs_model)
+
+
+rs_model <- feols(
+  d_log_price ~ removed_between
+  + i(year_t2_f, ref = "0")     # “ref” is any omitted baseline year; pick one that makes sense
+  | 0,                             # no extra fixed‐effects needed (year dummies are explicit)
+  data = df_pairs
+)
+summary(rs_model)
+
+
+rs_model <- feols(
+  d_log_price ~ added_between + removed_between
+#  + i(year_t2_f, ref = "2018")     # “ref” is any omitted baseline year; pick one that makes sense
+  | 0,                             # no extra fixed‐effects needed (year dummies are explicit)
+  data = df_pairs
+)
+summary(rs_model)
+
+rs_model <- feols(
+  d_log_price ~ added_between + removed_between
+ # + i(year_t2_f, ref = "2018")     # “ref” is any omitted baseline year; pick one that makes sense
+  
+  + years_btw_sales
+  | 0,                             # no extra fixed‐effects needed (year dummies are explicit)
+  data = df_pairs
+)
+summary(rs_model)
+```
+
+
+```{r}
+df_pairs <- df_pairs %>%
+  mutate(
+    log_years_btw = log(year_t2_t1_diff)  # where year_t2_t1_diff = sale_year_t2 - sale_year_t1
+  )
+
+rs_model2 <- feols(
+  d_log_price ~ removed_between 
+             + i(year_t2_f, ref = "2018")
+             + log_years_btw
+  | 0,
+  data = df_pairs,
+  cluster = ~pin
+)
+summary(rs_model2)
+
+```
+
+```{r}
+res_sales <- res_sales |>
+  mutate(time_to_update = year - year(eff_date),
+         post = ifelse(year > year(EFF_DATE),"1", "0"))
+
+fixest::feols(
+  log(sale_price) ~ i(time_to_update, in_eff_sfha, ref = -1) | pin + year,
+  data = res_sales
+) |> etable()
+
+fixest::feols(
+  log(sale_price) ~ in_eff_sfha * post | pin + year,
+  data = res_sales
+    ) |> etable()
+```
+
+
 ## Sales in and Out of FEMA SFHAs
 
 ```{r}
 
-sales |> 
+res_sales |> 
   filter(class >= 200 & class <= 299) |>
-  mutate(Location = ifelse(in_eff_sfha == "Not in SFHA", "Outside FP", "In FP" )) |> 
+  mutate(Location = ifelse(in_eff_sfha == "Not SFHA", "Outside FP", "In FP" )) |> 
   group_by(year, Location) |>
   summarize(Sales = n()) |>
   ungroup() |>
@@ -133,7 +438,7 @@ sales |>
 
 sales |> 
   filter(class >= 200 & class <= 299) |>
-  mutate(Location = ifelse(in_eff_sfha == "Not in SFHA", "Outside FP", "In FP" )) |> 
+  mutate(Location = ifelse(in_eff_sfha == "Not SFHA", "Outside FP", "In FP" )) |> 
   group_by(year, Location) |>
   summarize(Sales = n()) |>
   # ungroup() |>
@@ -161,7 +466,7 @@ sales |>
 ```{r}
 sales |> 
   filter(class >= 200 & class <= 299) |>
-  mutate(Location = ifelse(in_eff_sfha == "Not in SFHA", "Outside FP", "In FP" )) |> 
+  mutate(Location = ifelse(in_eff_sfha == "Not SFHA", "Outside FP", "In FP" )) |> 
   mutate(Sales = n(), .by = year) |>
   group_by(year, Sales, Location) |>
   summarize(Price = round(median(sale_price))) |>
@@ -175,7 +480,7 @@ sales |>
 
 sales |> 
   filter(class >= 200 & class <= 299) |>
-  mutate(Location = ifelse(in_eff_sfha == "Not in SFHA", "Outside FP", "In FP" )) |> 
+  mutate(Location = ifelse(in_eff_sfha == "Not SFHA", "Outside FP", "In FP" )) |> 
   mutate(Sales = n(), .by = year) |>
   group_by(year, Sales, Location) |>
   summarize(Price = round(median(sale_price))) |>
@@ -186,7 +491,7 @@ sales |>
    ) |>
   ggplot() +
   geom_line(aes(x=year, y = Ratio)) +
-  scale_y_continuous(limits = c(0, 2), 
+  scale_y_continuous(limits = c(0, 1), 
                      labels = scales::percent, expand = c(0, 0)) +
   scale_x_continuous(limits = c(2006, 2024), breaks = c(2006, 2010, 2015, 2020, 2024)) +
   
@@ -201,29 +506,38 @@ sales |>
 # Timing of Sales around variables of interest
 
 ```{r, warning=FALSE, message=FALSE}
+# 
+# res_sales <- sales |> 
+#     filter(sale_price > 200) |>
+# 
+#   mutate(class = as.numeric(class),
+#          res_c2 = as.factor(ifelse(class >= 200 & class <= 297, TRUE, FALSE)),
+# ) |> 
+#   group_by(pin) |>
+#   arrange(year) |>
+#   filter(sum(res_c2==TRUE) >= 1) |>
+#   mutate(
+#     times_sold = n(),
+#     years_btw_sales = year - lag(year),
+# 
+#     sold_once = ifelse(times_sold == 1, TRUE, FALSE),
+#     sold_multi = ifelse(times_sold > 1 , TRUE, FALSE),
+#     ) |> 
+#   ungroup() |>
+#   mutate(
+#     sold_pre2014 = ifelse(year <= 2013, TRUE, FALSE),
+#     sold_post2013 = ifelse(year > 2013, TRUE, FALSE),
+#     
+#     sold_btwn_20132023 = ifelse(year > 2013 & year < 2024, TRUE, FALSE),
+#     
+#     sold_pre2024 = ifelse(year <= 2023, TRUE, FALSE),
+#     sold_post2023 = ifelse(year > 2023, TRUE, FALSE),
+#     )
+```
 
-res_sales <- sales |> 
-  mutate(class = as.numeric(class),
-         res_c2 = ifelse(class >= 200 & class <= 299, TRUE, FALSE),
-) |> 
-  group_by(pin) |>
-  filter(sum(res_c2==TRUE) >= 1) |>
-  mutate(
-    times_sold = n(),
 
-    sold_once = ifelse(times_sold == 1, TRUE, FALSE),
-    sold_multi = ifelse(times_sold > 1 , TRUE, FALSE),
-    ) |> 
-  ungroup() |>
-  mutate(
-    sold_pre2014 = ifelse(year <= 2013, TRUE, FALSE),
-    sold_post2013 = ifelse(year > 2013, TRUE, FALSE),
-    
-    sold_btwn_20132023 = ifelse(year > 2013 & year < 2024, TRUE, FALSE),
-    
-    sold_pre2024 = ifelse(year <= 2023, TRUE, FALSE),
-    sold_post2023 = ifelse(year > 2023, TRUE, FALSE),
-    )
+```{r, warning=FALSE, message=FALSE}
+res_sales |> group_by(pin) |> arrange(pin) |> filter(any(years_btw_sales > 0))
 ```
 
 
@@ -243,61 +557,63 @@ res_sales |>
 ```
 
 
-
-
-
 ```{r}
-#| label: sold-properties-infloodzones
-#| layout-ncol: 2
-
-
-pin_groups <- res_sales |>
-  group_by(pin) |> 
-  arrange(year) |>
-  mutate(n = n(),
-         ) |>
-  filter(n() < 10) |>
-  summarize(times_sold = ifelse(n() > 1, "Multi", "Once"),
-           # years_sold = as.character(list(unique(year))),
-            sold_post2023 = ifelse(any(year > 2022), 1, 0),       
-           ccao_sfha = first(ccao_sfha),
-           first_price = first(sale_price),
-           min_price = min(sale_price),
-           avg_price = mean(sale_price, na.rm=TRUE),
-           max_price = max(sale_price),
-           last_price = last(sale_price)
-            ) |>
-  mutate(
-      risk_type = case_when(
-        pin %in% sfha_pins & !pin %in% fsf_5plus ~ "In CCAO SFHA Only",
-        pin %in% fsf_5plus & pin %in% sfha_pins ~ "SFHA & FSF Score 5+",
-        pin %in% fsf_5plus & !pin %in% sfha_pins ~"FSF Score 5+ Only",
-        T ~ "Low Risk"
-      ))
-  
-table(pin_groups$risk_type, pin_groups$times_sold)
-
-```
-
-```{r}
-pin_groups |>
-  group_by(times_sold, risk_type#, risk_change,
-         #  sold_pre2014, sold_btwn_20132023, 
-        # sold_post2023, 
-          # insfha_2024, insfha_2018
-           ) |> 
-  summarize(
-            n_pins = n_distinct(pin))
 
 pin_groups |>
-  group_by(times_sold, risk_type,        
-           # sold_post2023, 
+  group_by(times_sold, sold_post2023, 
            ) |> 
   summarize(
             n_pins = n_distinct(pin))
 ```
+
+# Missing Value Check
+
+```{r}
+```
+
+
+# Research Questions
+
 
 ### Research Question 1 
+
+
+**Does the value of real estate parcels increase when they are removed from an SFHA?** 
+
+H1: A property removed from a SFHA will increase in value, compared to properties with otherwise shared characteristics.
+
+firm update = year 0
+
+
+```{r}
+library(fixest)
+
+
+paper_models <- list(
+
+    "I" = 
+    
+    feols(sale_price ~ in_eff_sfha + in_lomr
+                           | pin + year,
+                           panel.id = c("pin", "year"),
+                           data = res_sales |> filter(class_1dig == 2 & class %nin% c( 218, 219, 298, 299)))
+    
+    )
+paper_models |> etable()
+
+paper_models <- list(
+
+    "I" = 
+    
+    feols(sale_price ~ in_eff_sfha*in_lomr
+                           | pin + year,
+                           panel.id = c("pin", "year"),
+                           data = res_sales |> filter(class_1dig == 2 & class %nin% c( 218, 219, 298, 299)))
+    
+    )
+paper_models |> etable()
+
+```
 
 ```{r}
 tbl_R1 <- res_sales |>
@@ -510,170 +826,6 @@ floodsales %>% filter(#!is.na(sale_price) &
 ```
 
 
-
-# SFHA PINs
-
-There were `{r} sales |> filter(sale_price> 5000) |> filter(pin %in% string_sfha_pins2018) |> n_distinct()` sale observations for the properties that were in the SFHA (FEMA 100-year floodzone) according to the 2018 NFHL. 
-
-
-## Average Sales Prices
-
-Uses the CCAO indicator for if it was in a floodplain. 
-
-```{r}
-#| label: fig-saleprices-bymajorclass
-#| fig-cap-location: margin
-#| fig-cap: "**Average Sale Prices per year by Major Property Class.** Some years have very few sales and can be skewed by whatever property happens to be sold that year."
-#| warning: false
-#| message: false
-
-sfhasales %>% 
-  group_by(year, major_class) %>%
-  summarize(sale_price = mean(sale_price, na.rm=TRUE)) %>%
-  ggplot() +
-  geom_line(aes(x=year, y = sale_price)) + 
-  theme_classic() + 
-  scale_y_continuous(name = "Avg Sale Price for Major Class", labels = scales::dollar ) +
-  scale_x_continuous(breaks = c(2006, 2015, 2024), name = ""  ) + 
-  facet_wrap(~major_class, scales = "free"             )
-```
-
-```{r}
-#| label: fig-saleprices-bySFHAtype
-#| fig-cap-location: margin
-#| fig-cap: "**Average Sale Prices per year by Major Property Class.**"
-#| warning: false
-#| message: false
-
-avg_sales_peryear = res_sales %>% 
-  mutate(ccao_sfha =as.character(ccao_sfha)) |>
-  group_by(year, ccao_sfha) %>%
-  summarize(sale_count = n()) |>
-  ungroup()|> 
-  group_by(ccao_sfha) |>
-  summarize(average_salecount = mean(sale_count))
-
-
-res_sales %>% 
-  mutate(ccao_sfha = as.factor(ccao_sfha)) |>
-  group_by(year, ccao_sfha) %>%
-  summarize(sale_price = mean(sale_price, na.rm=TRUE)) %>%
-  ggplot() +
-  geom_line(aes(x=year, y = sale_price, color = ccao_sfha)) + 
-  theme_classic() + 
-  labs(title = "Avg Sale Price for Class 2 Properties") +
-  scale_y_continuous(name = "$", labels = scales::dollar ) +
-  scale_x_continuous(breaks = c(2006, 2015, 2020, 2024), name = ""  )
-```
-
- On average, there are around `{r} round(avg_sales_peryear$average_salecount[[1]])` sales for properties outside of an SFHA and around `{r} round(avg_sales_peryear$average_salecount[[2]])`
- 
-```{r}
-#| label: tbl-SFHAsales-byclass
-#| tbl-cap: "Number of SFHA sales per year by major class."
-
-sfhasales %>% 
-  group_by(year, major_class) %>%
-  summarize(NumberSold=n()) %>%
-  pivot_wider(names_from = major_class, values_from = NumberSold)
-```
-
-
-## FMV and Sales
-
-```{r}
-#| label: fig-FMV-andsales
-#| fig-cap-location: margin
-#| fig-cap: "**Fair Market Value and Sales Price. Red dots are for average Sale Price. Note that some property types do not have many sales (e.g. major class 3, 4, 7, 9. Pretty much anything except major class 2)"
-#| warning: false
-#| message: false
-
-landblock_pins %>% 
-  left_join(sales %>% filter(sale_price > 5000) %>% select(-class), by = c("year", "pin")) %>%
-  mutate(ff_flag = as.factor(ifelse(pin %in% fsf_5plus, 1, 0))) %>%
-  mutate(major_class = str_sub(class, 1,1)) %>%
-  group_by(year, major_class) %>%
-  summarize(fmv_mailed = mean(fmv_mailed, na.rm=TRUE),
-            fmv_board = mean(fmv_board, na.rm=TRUE),
-            fmv_clerk = mean(fmv_clerk, na.rm=T),
-            sales = mean(sale_price, na.rm=T),
-            pincount = n()) %>%
-  filter(major_class != 0) %>%
-  ggplot() + 
-    geom_line(aes(x=year, y = fmv_clerk)) + 
-    geom_point(aes(x=year, y = fmv_clerk)) + 
-    geom_line(aes(x=year, y = sales, color="red")) + 
-    geom_point(aes(x=year, y = sales, color="red")) +
-  # geom_line(aes(x=year, y = fmv_mailed, color = ff_flag)) + 
-  #   geom_line(aes(x=year, y = fmv_board, color = ff_flag), linetype = 2 ) + 
-  #   geom_point(aes(x=year, y = fmv_board, color = ff_flag)) + 
-  theme_classic() + 
-  scale_y_continuous(name = "Dollars", labels = scales::dollar ) +
-  scale_x_continuous(breaks = c(2006, 2015, 2024), name = ""  ) + 
-  facet_wrap(~major_class, scales = "free" )
-```
-
-
-
-# Assessed Value
-
-## Flood Factor Score 5+ PINs and Assessed Value
-
-```{r}
-#| label: fig-FMV-bymajorclass-floodfactorcomparison
-#| fig-cap-location: margin
-#| fig-cap: "**Average  FMV by Major Property Class & Flood Factor Risk: For Properties with a rating of 5 or higher designating them as high risk**"
-#| warning: false
-#| message: false
-
-landblock_pins %>% 
-  mutate(ff_flag = as.factor(ifelse(pin %in% fsf_5plus, 1, 0))) %>%
-  mutate(major_class = str_sub(class, 1,1)) %>%
-  group_by(year, major_class, ff_flag) %>%
-  summarize(fmv_mailed = mean(fmv_mailed, na.rm=TRUE),
-            fmv_board = mean(fmv_board, na.rm=TRUE),
-            fmv_clerk = mean(fmv_clerk, na.rm=T),
-            pincount = n()) %>%
-  filter(#pincount > 60 & 
-           major_class != 0) %>%
-  ggplot() + 
-      geom_line(aes(x=year, y = fmv_clerk, color = ff_flag)) + 
-    geom_point(aes(x=year, y = fmv_clerk, color = ff_flag)) + 
-
-  # geom_line(aes(x=year, y = fmv_mailed, color = ff_flag)) + 
-  #   geom_line(aes(x=year, y = fmv_board, color = ff_flag), linetype = 2 ) + 
-  #   geom_point(aes(x=year, y = fmv_board, color = ff_flag)) + 
-  theme_classic() + 
-  scale_y_continuous(name = "Avg FMV by Major Class", labels = scales::dollar ) +
-  scale_x_continuous(breaks = c(2006, 2015, 2023), name = ""  ) + 
-  facet_wrap(~major_class, scales = "free" )
-```
-
-```{r}
-#| label: fig-AV-bymajorclass
-#| fig-cap-location: margin
-#| fig-cap: "**Average Assessed Value per year by Major Property Class for properties within FEMA SFHAs.** Some major classes have very few properties located in SFHAs so sudden changes in AV for one or two properties can skew the graphs very easily."
-#| warning: false
-#| message: false
-#| 
-landblock_pins %>% 
-  filter(pin %in% sfha_pins) %>%
-  mutate(major_class = str_sub(class, 1,1)) %>%
-  group_by(year, major_class) %>%
-  summarize(av_mailed = mean(av_mailed, na.rm=TRUE),
-            av_board = mean(av_board, na.rm=TRUE)) %>%
-  ggplot() +
-  geom_line(aes(x=year, y = av_mailed), linetype = 2 ) + 
-    geom_line(aes(x=year, y = av_board) ) + 
-    geom_point(aes(x=year, y = av_board)) + 
-    geom_line(aes(x=year, y = av_mailed), linetype = 2 ) + 
-  theme_classic() + 
-  scale_y_continuous(name = "Avg Assessed Value for Major Class", labels = scales::dollar ) +
-  scale_x_continuous(breaks = c(2006,  2015,  2023), name = ""  ) + 
-  facet_wrap(~major_class, scales = "free" )
-```
-
-
 # Lived Experience PINs
 
 ## Flood Event 2023 - Disaster Declarations / Lived Experience
@@ -685,6 +837,7 @@ Dolton and Calumet City were damaged during DR 4749.
 
 ```{r}
 ptax245 <- readxl::read_xlsx("inputs/PTAX-245_data.xlsx")
+tr_zips <- read_csv("./data/processed/treated_zipcodes.csv")
 
 ptax245 <- ptax245 %>% 
   mutate(
