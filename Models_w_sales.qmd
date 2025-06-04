@@ -203,6 +203,43 @@ res_sales |> filter(times_sold > 15) |>
   geom_line(aes(x=sale_date, y = sale_price, group = pin))
 ```
 
+
+```{r}
+#| label: fig-pinsales
+#| fig-cap: "PIN Sale Price and Assessed Values over time."
+#| fig-subcap: 
+#| - pin == 09163040191019
+#| - pin == 05201210150000
+#| - pin == 05201210150000
+#| layout-ncol: 3
+
+
+res_sales %>% 
+  filter(pin == "09163040191019") %>% 
+  ggplot() +
+  geom_line(aes(x=year, y = sale_price), lty = 1)+
+  geom_point(aes(x=year, y = sale_price))
+
+
+
+res_sales %>% 
+  filter(pin == "05201210150000") %>% 
+  ggplot() +
+  geom_line(aes(x=year, y = sale_price), lty = 1)+
+  geom_point(aes(x=year, y = sale_price))
+
+
+
+res_sales %>% 
+  filter(pin == "09281140060000") %>% 
+  ggplot() +
+  geom_line(aes(x=year, y = sale_price), lty = 1)+
+  geom_point(aes(x=year, y = sale_price)) 
+
+
+```
+
+
 ```{r}
 
 # 1) Make sure sale_date is a Date (if not already)
@@ -634,36 +671,6 @@ sales |>
 ```
 
 
-# Timing of Sales around variables of interest
-
-
-
-```{r, warning=FALSE, message=FALSE}
-res_sales |> group_by(pin) |> arrange(pin) |> filter(any(years_btw_sales > 0))
-```
-
-
-```{r, warning=FALSE, message=FALSE}
-res_sales |> 
-  group_by(sold_multi) |> 
-    summarize(n=n(),
-              distinct_pins = n_distinct(pin))
-
-res_sales |> 
-  group_by(times_sold) |> 
-    summarize(distinct_pins = n_distinct(pin))
-
-```
-
-
-```{r}
-
-pin_groups |>
-  group_by(times_sold, sold_post2023, 
-           ) |> 
-  summarize(
-            n_pins = n_distinct(pin))
-```
 
 
 # Research Questions
@@ -690,9 +697,9 @@ paper_models <- list(
     feols(sale_price ~ in_eff_sfha + in_lomr
                            | pin + year,
                            panel.id = c("pin", "year"),
-                           data = res_sales |> filter(class_1dig == 2 & class %nin% c( 218, 219, 298, 299)))
+                           data = res_sales))
     
-    )
+    
 paper_models |> etable()
 
 paper_models <- list(
@@ -702,7 +709,7 @@ paper_models <- list(
     feols(sale_price ~ in_eff_sfha*in_lomr
                            | pin + year,
                            panel.id = c("pin", "year"),
-                           data = res_sales |> filter(class_1dig == 2 & class %nin% c( 218, 219, 298, 299)))
+                           data = res_sales )
     
     )
 paper_models |> etable()
@@ -767,6 +774,11 @@ control_tbl_R1
 
 ### Research Question 2
 
+**Does information on flood risk available to the buyer get capitalized into the property value? If so, to what extent? Is this effect moderated by pre-existing information unavailable to the buyer?**
+
+H3: A High risk rating score available to the buyer from First Street will be associated with a larger decrease in the value of the properties outside of an SFHA than properties in an SFHA.
+
+
 ```{r}
 tbl_R2 <- res_sales |>
   left_join(pin_groups, by = "pin") |>  
@@ -803,121 +815,16 @@ control_tbl2_R2
 
 ### Research Question 3
 
+**Is lived experience capitalized into sales prices? is this effect (if any) moderated by other existing sources of increased flood risk?**
+
+H4: Experiencing a flood event conveys new risk information. Properties damaged by a flood event that were not in an SFHA expereince a decrease in value larger than damaged properties taht were in an SFHA. 
+
 > Need indicator for if property flooded. Which I do not cleanly have.
 
-```{r}
-#| label: tbl-SFHAparcels
-#| tbl-cap-location: margin
-#| tbl-cap: "Parcels in SFHAs that have been sold."
-
-sfhasales <-  res_sales %>%
-  filter(ccao_sfha == 1) %>%
-  left_join(landblock_pins, by = c("year", "pin")) %>%
-  mutate(parcel = str_sub(pin, 1, 10))
-
-sfhasales %>% 
-  filter(sale_price >5000) |>
-  group_by(parcel, year, sale_document_num) %>%
-  summarize(pincount = n(),
-            sale_price = first(sale_price),
-            sale_price_sum = sum(sale_price)) %>% 
-  arrange(desc(parcel))
-
-duplicates <- sfhasales |> janitor::get_dupes(pin, parcel, year, sale_price)
-duplicates
-
-sfhasales |> 
-  filter(sale_price > 5000) |>
-  group_by(pin, parcel, year, sale_price) |> 
-  distinct(pin,year,sale_price, .keep_all = TRUE)
-```
-
-
-```{r}
-#| label: tbl-SFHAparcels-soldtimes
-#| tbl-cap-location: margin
-#| tbl-cap: "Multisales SFHA PIN Sales: Number of times sold and count of years properties were sold in. Filtered for pins that were sold more than once."
-
-sfhasales %>% 
-  filter(sale_price>5000) |>
-  group_by(pin) %>% 
-  summarize(timessold=n(),
-            distinct_years = n_distinct(year),
-            max_price= max(sale_price),
-            min_price = min(sale_price),
-            class = max(class_1dig)) %>% 
-  filter(timessold>1) %>% 
-  arrange(desc(timessold))
-```
-
-
-```{r}
-#| label: tbl-salesover5K
-#| tbl-cap-location: margin
-#| tbl-cap: "Sales of SFHA PINs over $5000 for properties in SFHA FEMA Zones. N = 18,157"
-
-sfhasales %>% 
-  filter(!is.na(sale_price) & sale_price > 5000) %>% 
-  arrange(desc(num_parcels_sale), sale_document_num, pin )
-```
-
-```{r}
-#| label: fig-pinsales-andAV
-#| fig-cap: "PIN Sale Price and Assessed Values over time."
-#| fig-subcap: 
-#| - pin == 09163040191019
-#| - pin == 05201210150000
-#| - pin == 05201210150000
-#| layout-ncol: 3
-
-
-sfhasales %>% 
-  filter(pin == "09163040191019") %>% 
-  ggplot() +
-  geom_line(aes(x=year, y = sale_price), lty = 1)+
-  geom_point(aes(x=year, y = sale_price)) +
-  geom_line(aes(x=year, y = av_clerk), lty = 3)+
-  geom_line(aes(x=year, y = fmv_clerk), lty=2)
+> treated zipcodes file! or treated census blocks? from Individual Assistance version updated by FEMA.
 
 
 
-sfhasales %>% 
-  filter(pin == "05201210150000") %>% 
-  ggplot() +
-  geom_line(aes(x=year, y = sale_price), lty = 1)+
-  geom_point(aes(x=year, y = sale_price)) +
-  geom_line(aes(x=year, y = av_clerk), lty = 3)+
-  geom_line(aes(x=year, y = fmv_clerk), lty=2)
-
-
-
-sfhasales %>% 
-  filter(pin == "09281140060000") %>% 
-  ggplot() +
-  geom_line(aes(x=year, y = sale_price), lty = 1)+
-  geom_point(aes(x=year, y = sale_price)) +
-  geom_line(aes(x=year, y = av_clerk), lty = 3)+
-  geom_line(aes(x=year, y = fmv_clerk), lty=2)
-
-
-```
-
-```{r}
-#| label: tbl-floodfactor-parcels
-#| tbl-cap-location: margin
-#| tbl-cap: "Parcels with Flood Factor Risk Rating >= 5  that have been sold. 206,304 PINs have sales prices above $5K and flood factor ratings."
-
-floodsales <- sales %>% 
-  filter(pin %in% sfha_pins) %>%
-  left_join(landblock_pins, by = c("year", "pin", "class"))
-
-
-
-#floodsales %>% filter(!is.na(sale_price))
-floodsales %>% filter(#!is.na(sale_price) & 
-                        sale_price > 5000)
-# 206,304 sales for pins in flood factor high risk areas of 5 or higher
-```
 
 
 # Lived Experience PINs
