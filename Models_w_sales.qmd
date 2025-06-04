@@ -195,9 +195,10 @@ drop_pins <- c("05272000470000",  # co op
 res_sales |> filter(times_sold > 5) |> arrange(desc(sale_price))
 res_sales |> filter(times_sold > 5) |>  filter(pin %nin% drop_pins) |> arrange(desc(sale_price))
 
+res_sales |> filter(num_parcels_sale > 10) |> arrange(pin, desc(num_parcels_sale)) |>
+  select(pin, year, num_parcels_sale, sale_price, in_eff_sfha, class, everything())
 
-
-res_sales |> filter(times_sold >15) |> 
+res_sales |> filter(times_sold > 15) |> 
   ggplot() + 
   geom_line(aes(x=sale_date, y = sale_price, group = pin))
 ```
@@ -207,18 +208,18 @@ res_sales |> filter(times_sold >15) |>
 # 1) Make sure sale_date is a Date (if not already)
 df_prep <- res_sales %>%
   filter(times_sold < 15) |>
-  filter(pin %nin% drop_pin) |> 
+  filter(pin %nin% drop_pins) |> 
   
   mutate(
-    sale_date2 = mdy(sale_date),         # parse "September 01 2018" → Date
-    sale_year  = year(sale_date2),       # or just use your existing `year` column
+  #  sale_date2 = mdy(sale_date),         # parse "September 01 2018" → Date
+    sale_year  = year(sale_date),       # or just use your existing `year` column
   eff_date = ymd(eff_date),
   pre_date = ymd(PRE_DATE)
   ) %>%
   # 2) Keep only the columns we need for repeat‐sales. You can drop geometry, etc.
-  select(pin, sale_date2, sale_year, sale_price, in_eff_sfha, eff_date, pre_date) %>%
+  select(pin, sale_date, sale_year, sale_price, in_eff_sfha, eff_date, pre_date) %>%
   # 3) Sort by pin and date
-  arrange(pin, sale_date2) %>%
+  arrange(pin, sale_date) %>%
   # 4) Tag how many times each PIN sold
   group_by(pin) %>%
   mutate(times_sold = n()) %>%
@@ -231,16 +232,16 @@ df_prep <- res_sales %>%
 # 6) Now create the “paired” records: for each pin, pull next‐row info as “t2”
 df_pairs <- df_prep %>%
   group_by(pin) %>%
-  arrange(sale_date2) %>%
+  arrange(sale_date) %>%
   # Lead‐lag step: each row’s “lag_” is the previous sale
   mutate(
     sale_price_t1   = lag(sale_price),
-    sale_date_t1    = lag(sale_date2),
+    sale_date_t1    = lag(sale_date),
     sale_year_t1    = year(sale_date_t1),
     in_sfha_t1      = lag(in_eff_sfha),
 
     sale_price_t2   = sale_price,
-    sale_date_t2    = sale_date2,
+    sale_date_t2    = sale_date,
     sale_year_t2    = sale_year,
     in_sfha_t2      = in_eff_sfha
   ) %>%
@@ -272,10 +273,10 @@ df_pairs <- df_pairs %>%
 
 ```{r code-for-preliminaryFIRMdate}
 df_pairs <- df_pairs |> 
-  mutate(t1_months = round(time_length(sale_date_t1 - pre_date, "months") ), # first sale to FIRM update, in months
+  mutate(t1_months = round(time_length(pre_date - sale_date_t1, "months") ), # first sale to FIRM update, in months
          t2_months = round(time_length(sale_date_t2 - pre_date, "months")),
          
-         t1_years = round(time_length(sale_date_t2 - pre_date, "years") ),    # first sale to FIRM update, in years
+         t1_years = round(time_length(pre_date - sale_date_t1, "years") ),    # first sale to FIRM update, in years
          t2_years = round(time_length(sale_date_t2 - pre_date, "years")),     # time since FIRM update, in years
 
          # time between sales
@@ -286,6 +287,8 @@ df_pairs <- df_pairs |>
   )|>
       # Only keep rows where lag exists (i.e. drop the very first sale for each PIN)
   filter(!is.na(sale_price_t1))
+
+table(df_pairs$years_btwn, df_pairs$change_type)
 ```
 
 
@@ -311,14 +314,15 @@ df_pairs <- df_pairs |>
 ```
 
 
+
 ```{r}
-table(df_pairs$t2_years, df_pairs$change_type)
-table(df_pairs$t1_years, df_pairs$removed_between)
-table(df_pairs$t1_years, df_pairs$added_between)
-
-table(df_pairs$years_btwn, df_pairs$change_type)
-
-
+df_pin_summary <- df_pairs %>%
+  group_by(pin) %>%
+  summarize(
+    n_pairs    = n(),
+    avg_dlog   = mean(d_log_price),
+    ever_removed = as.integer(any(removed_between == 1))
+  )
 ```
 
 
@@ -329,51 +333,47 @@ df_pairs <- df_pairs %>%
   )
 
 df_pairs <- df_pairs |> 
-  select(pin, 
+  select(pin, d_log_price,
          sale_year_t1, sale_price_t1, in_sfha_t1, t1_months, t1_years,
          sale_year_t2, sale_price_t2, in_sfha_t2, t1_months, t1_years,
-         years_btw_sales, removed_between, added_between, change_type
+         years_btw_sales, removed_between, added_between, change_type, everything()
   )
 ```
 
 
 ```{r}
-
-
-
 # 2) Run the repeat‐sales regression
 rs_model <- feols(
   d_log_price ~ removed_between + years_btw_sales,
-  # no extra fixed‐effects needed (year dummies are explicit)
-  data = df_pairs#|>filter(!is.na(EFF_DATE))
+  data = df_pairs,
+    cluster = ~pin
+
 )
+
 summary(rs_model)
+```
 
 
-rs_model <- feols(
-  d_log_price ~ removed_between
-  + i(year_t2_f, ref = "0")     # “ref” is any omitted baseline year; pick one that makes sense
-  | 0,                             # no extra fixed‐effects needed (year dummies are explicit)
-  data = df_pairs
-)
-summary(rs_model)
 
-
+```{r}
 rs_model <- feols(
   d_log_price ~ added_between + removed_between
-#  + i(year_t2_f, ref = "2018")     # “ref” is any omitted baseline year; pick one that makes sense
-  | 0,                             # no extra fixed‐effects needed (year dummies are explicit)
-  data = df_pairs
+  | 0,       
+  data = df_pairs,
+  cluster = ~pin
+
 )
 summary(rs_model)
+```
 
+
+```{r}
 rs_model <- feols(
-  d_log_price ~ added_between + removed_between
- # + i(year_t2_f, ref = "2018")     # “ref” is any omitted baseline year; pick one that makes sense
-  
-  + years_btw_sales
-  | 0,                             # no extra fixed‐effects needed (year dummies are explicit)
-  data = df_pairs
+  d_log_price ~ added_between + removed_between + years_btw_sales
+  | 0,
+  data = df_pairs,
+   cluster = ~pin
+
 )
 summary(rs_model)
 ```
@@ -382,12 +382,11 @@ summary(rs_model)
 ```{r}
 df_pairs <- df_pairs %>%
   mutate(
-    log_years_btw = log(year_t2_t1_diff)  # where year_t2_t1_diff = sale_year_t2 - sale_year_t1
+    log_years_btw = log(years_btw_sales)  # where year_t2_t1_diff = sale_year_t2 - sale_year_t1
   )
 
 rs_model2 <- feols(
   d_log_price ~ removed_between 
-             + i(year_t2_f, ref = "2018")
              + log_years_btw
   | 0,
   data = df_pairs,
@@ -397,10 +396,58 @@ summary(rs_model2)
 
 ```
 
+
+
+### Event Pairs
+
+```{r}
+df_event_pairs <- df_prep %>%
+  group_by(pin) %>%
+  # Identify the sale dates when the parcel transitions out of SFHA
+  mutate(
+    ever_removed = any(in_eff_sfha == "SFHA" & lead(in_eff_sfha) == "Not SFHA", na.rm = TRUE)
+  ) %>%
+  filter(ever_removed) %>%             # keep only pins that *ever* transition out
+  # Now each PIN that ever_removed == TRUE needs exactly one pair.
+  do({
+    pin_data <- .
+    # 1a) find the row‐number of the *last* sale where in_eff_sfha == TRUE
+    idx_pre  <- which(pin_data$in_eff_sfha == "SFHA") |> max()
+
+    # 1b) find the row‐number of the next sale after idx_pre
+    idx_post <- idx_pre + 1
+
+    # 2) slice out just those two rows:
+    pin_data[c(idx_pre, idx_post), ]
+  }) %>%
+  ungroup()
+
+
+df_before_after <- df_event_pairs %>%
+  group_by(pin) %>%
+  arrange(sale_date) %>%
+  slice(1:2) %>%   # 1st row is “pre” (t1), 2nd is “post” (t2)
+  summarise(
+    # Grab everything from row 1 as “_t1”:
+    sale_price_t1      = sale_price[1],
+    sale_date_t1       = sale_date[1],
+    year_t1            = year(sale_date[1]),
+    in_sfha_t1         = in_eff_sfha[1],
+
+    # Grab everything from row 2 as “_t2”:
+    sale_price_t2      = sale_price[2],
+    sale_date_t2       = sale_date[2],
+    year_t2            = year(sale_date[2]),
+    in_sfha_t2         = in_eff_sfha[2]
+  ) %>%
+  ungroup()
+
+```
+
 ```{r}
 res_sales <- res_sales |>
   mutate(time_to_update = year - year(eff_date),
-         post = ifelse(year > year(EFF_DATE),"1", "0"))
+         post_update = ifelse(year > year(eff_date),"Post", "Before"))
 
 fixest::feols(
   log(sale_price) ~ i(time_to_update, in_eff_sfha, ref = -1) | pin + year,
@@ -408,9 +455,93 @@ fixest::feols(
 ) |> etable()
 
 fixest::feols(
-  log(sale_price) ~ in_eff_sfha * post | pin + year,
+  log(sale_price) ~ time_to_update * post_update | pin,
   data = res_sales
     ) |> etable()
+```
+
+## The Counterfactual! 
+
+```{r}
+# 1b) For each PIN, find the "last sale before firm_date"
+df_before <- df_prep %>%
+  filter(sale_date < eff_date) %>%
+  group_by(pin) %>%
+  slice_max(sale_date, with_ties = FALSE) %>%  # keep exactly 1 row per pin
+  ungroup() |>
+    rename(
+    sale_date_t1    = sale_date,
+    sale_price_t1 = sale_price,
+    in_sfha_t1    = in_eff_sfha
+  )
+
+# 1c) For each PIN, find the "first sale after or on firm_date"
+df_after <- df_prep %>%
+  filter(sale_date >= eff_date) %>%
+  group_by(pin) %>%
+  slice_min(sale_date, with_ties = FALSE) %>%  # keep exactly 1 row per pin
+  ungroup() %>%
+  rename(
+    sale_date_t2    = sale_date,
+    sale_price_t2 = sale_price,
+    in_sfha_t2    = in_eff_sfha
+  )
+
+
+df_pairs_joined <- df_before %>%
+  inner_join(df_after, by = "pin") %>%
+  # compute some auxiliaries
+  mutate(
+    year_t1    = year(sale_date_t1),
+    year_t2    = year(sale_date_t2),
+
+    # change in log price (the repeat‐sales DV)
+    d_log_price = log(sale_price_t2) - log(sale_price_t1),
+
+    # how many days/months between the sale before and the sale after?
+    days_between = as.integer(sale_date_t2 - sale_date_t1),
+    months_between = interval(sale_date_t1, sale_date_t2) %/% months(1)
+  )
+
+
+df_pairs_joined <- df_pairs_joined %>%
+  mutate(
+    change_type = case_when(
+      in_sfha_t1 == "SFHA" & in_sfha_t2 == "Not SFHA" ~ "Removed",
+      in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "SFHA" ~ "Added",
+      in_sfha_t1 == "SFHA" & in_sfha_t2 == "SFHA" ~ "AlwaysIn",
+      in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "Not SFHA" ~ "AlwaysOut",
+      TRUE ~ "OTHER"),
+    
+    # turn it into a factor with a clear baseline
+    change_type_f = factor(
+      change_type,
+      levels = c("AlwaysOut", "AlwaysIn", "Added", "Removed")
+    ),
+    
+    removed_between = (in_sfha_t1 == "SFHA" & in_sfha_t2 == "Not SFHA"),
+    added_between = (in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "SFHA"),
+    stayed_sfha = (in_sfha_t1 == "SFHA" & in_sfha_t2 == "SFHA"),
+    neither_sfha = (in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "Not SFHA"),
+  
+  )
+
+
+# 1) Turn year_t2 into a factor (if not already)
+df_pairs_joined <- df_pairs_joined %>%
+  mutate(year2_f = factor(year_t2))
+
+# 2) Run the regression
+mod <- feols(
+  d_log_price ~ change_type_f  + months_between
+             + i(year2_f, ref = "2024") 
+  | 0,
+  data    = df_pairs_joined,
+  cluster = ~pin       # one row per pin, but safe to cluster anyway
+)
+
+summary(mod)
+
 ```
 
 
@@ -505,35 +636,6 @@ sales |>
 
 # Timing of Sales around variables of interest
 
-```{r, warning=FALSE, message=FALSE}
-# 
-# res_sales <- sales |> 
-#     filter(sale_price > 200) |>
-# 
-#   mutate(class = as.numeric(class),
-#          res_c2 = as.factor(ifelse(class >= 200 & class <= 297, TRUE, FALSE)),
-# ) |> 
-#   group_by(pin) |>
-#   arrange(year) |>
-#   filter(sum(res_c2==TRUE) >= 1) |>
-#   mutate(
-#     times_sold = n(),
-#     years_btw_sales = year - lag(year),
-# 
-#     sold_once = ifelse(times_sold == 1, TRUE, FALSE),
-#     sold_multi = ifelse(times_sold > 1 , TRUE, FALSE),
-#     ) |> 
-#   ungroup() |>
-#   mutate(
-#     sold_pre2014 = ifelse(year <= 2013, TRUE, FALSE),
-#     sold_post2013 = ifelse(year > 2013, TRUE, FALSE),
-#     
-#     sold_btwn_20132023 = ifelse(year > 2013 & year < 2024, TRUE, FALSE),
-#     
-#     sold_pre2024 = ifelse(year <= 2023, TRUE, FALSE),
-#     sold_post2023 = ifelse(year > 2023, TRUE, FALSE),
-#     )
-```
 
 
 ```{r, warning=FALSE, message=FALSE}
@@ -551,9 +653,6 @@ res_sales |>
   group_by(times_sold) |> 
     summarize(distinct_pins = n_distinct(pin))
 
-res_sales |>
-  group_by(sold_pre2014, sold_btwn_20132023, sold_post2023) |> 
-  summarize(n = n(), n_distinct = n_distinct(pin))
 ```
 
 
@@ -564,11 +663,6 @@ pin_groups |>
            ) |> 
   summarize(
             n_pins = n_distinct(pin))
-```
-
-# Missing Value Check
-
-```{r}
 ```
 
 
