@@ -128,14 +128,10 @@ res_sales  <- readRDS("./data/processed/res_sales.rds")
 # write_csv(sampled_data, 
 #           "data_sample.csv")
 
-firms <- readxl::read_xlsx("./data/raw/S_FIRM_PAN.xlsx")
 ```
 
-# Random questions to check
 
-**Are there condos in floodplains?** -- Condos were filtered out at an earlier step (298 and 299).
-
-"297s are special residential improvements"
+**Are there condos in floodplains?** -- Yes. and "297s are special residential improvements" 
 
 ```{r}
 res_sales |> 
@@ -143,7 +139,7 @@ res_sales |>
   filter(class %in% c(297, 298, 299))
 ```
 
-**Are there CoOps and other weird properties in floodplains?** -- NO, filter these property classes out and dont worry about them.
+**Are there CoOps and other weird properties in floodplains?** -- NO, filter these property classes out and don't worry about them.
 
 ```{r}
 table(res_sales$in_eff_sfha)
@@ -152,8 +148,6 @@ table(res_sales$in_eff_sfha)
 
 
 ```{r}
-res_sales <- left_join(res_sales, firms, by = c("FIRM_PAN"))
-
 
 repeat_sales <- res_sales |> group_by(pin) |> 
   mutate(times_sold = n()) |> 
@@ -167,6 +161,7 @@ table(res_sales$PRE_DATE)
 table(res_sales$year, res_sales$in_eff_sfha)
 table(res_sales$year, res_sales$in_lomr)
 
+#res_sales |> group_by(pin, sale_date) |> n_distinct()
 ```
 
 ```{r inspect-highmultisales}
@@ -193,12 +188,13 @@ drop_pins <- c("05272000470000",  # co op
 )
 
 res_sales |> filter(times_sold > 5) |> arrange(desc(sale_price))
+
 res_sales |> filter(times_sold > 5) |>  filter(pin %nin% drop_pins) |> arrange(desc(sale_price))
 
 res_sales |> filter(num_parcels_sale > 10) |> arrange(pin, desc(num_parcels_sale)) |>
   select(pin, year, num_parcels_sale, sale_price, in_eff_sfha, class, everything())
 
-res_sales |> filter(times_sold > 15) |> 
+res_sales |> filter(times_sold > 5) |> 
   ggplot() + 
   geom_line(aes(x=sale_date, y = sale_price, group = pin))
 ```
@@ -206,11 +202,11 @@ res_sales |> filter(times_sold > 15) |>
 
 ```{r}
 #| label: fig-pinsales
-#| fig-cap: "PIN Sale Price and Assessed Values over time."
+#| fig-cap: "PIN Sale Price Over time."
 #| fig-subcap: 
-#| - pin == 09163040191019
+#| - pin == 09163040191019. Building Flood Factor of 6. 1675 E Mills St. Des Plaines IL. Condo building.
 #| - pin == 05201210150000
-#| - pin == 05201210150000
+#| - pin == 09281140060000
 #| layout-ncol: 3
 
 
@@ -240,21 +236,118 @@ res_sales %>%
 ```
 
 
+## Sales in and Out of FEMA SFHAs
+
+```{r}
+
+res_sales |> 
+  filter(class >= 200 & class <= 299) |>
+  mutate(Location = ifelse(in_eff_sfha == "Not SFHA", "Outside FP", "In FP" )) |> 
+  group_by(year, Location) |>
+  summarize(Sales = n()) |>
+  ungroup() |>
+  pivot_wider(names_from = "Location", values_from = "Sales") |>
+  mutate(
+    Year = as.character(year),
+    TotalSales = `In FP` + `Outside FP`,
+    `FP Share (%)` = `In FP` / TotalSales,
+   `FP Share (%)` =  scales::percent(`FP Share (%)`, accuracy = 0.01)) |>
+  select(-c(TotalSales, year)) |> 
+  mutate(Year = as.character(Year), .before = `In FP`) |> 
+  select(Year, `In FP`, `Outside FP`, `FP Share (%)`) |>
+  flextable::flextable()
+
+
+res_sales |> 
+  filter(class >= 200 & class <= 299) |>
+  mutate(Location = ifelse(in_eff_sfha == "Not SFHA", "Outside FP", "In FP" )) |> 
+  group_by(year, Location) |>
+  summarize(Sales = n()) |>
+  # ungroup() |>
+   pivot_wider(names_from = "Location", values_from = "Sales") |>
+   mutate(
+     TotalSales = `In FP` + `Outside FP`,
+     `FP Share (%)` = `In FP` / TotalSales,
+     # `FP Share (%)` =  scales::percent(`FP Share (%)`, accuracy = 0.01)
+   ) |>
+  # select(-c(TotalSales, year)) |> 
+  # mutate(Year = as.character(Year), .before = `In FP`) |> 
+  # select(Year, `In FP`, `Outside FP`, `FP Share (%)`) |> 
+  ggplot() +
+  geom_line(aes(x=year, y= `FP Share (%)`)) + 
+  scale_y_continuous(limits = c(0, 0.02), 
+                     labels = scales::percent, expand = c(0, 0)) +
+  scale_x_continuous(limits = c(2006, 2024), breaks = c(2006, 2010, 2015, 2020, 2024)) +
+  
+  theme_classic() +
+  labs(title = "Flood Plain Properties make up less than 1.5% of Sales",
+       x = element_blank(),
+       y = "Share of Sales")
+```
+
+```{r}
+res_sales |> 
+  filter(class >= 200 & class <= 299) |>
+  mutate(Location = ifelse(in_eff_sfha == "Not SFHA", "Outside FP", "In FP" )) |> 
+  mutate(Sales = n(), .by = year) |>
+  group_by(year, Sales, Location) |>
+  summarize(Price = round(median(sale_price))) |>
+  ungroup() |>
+  pivot_wider(names_from = "Location", values_from = "Price") |>
+  mutate(Ratio = `In FP`/`Outside FP`,
+   Ratio =  scales::percent(Ratio, accuracy = 0.01),
+   Year = as.character(year)) |> 
+  select(Year, Sales, `In FP`, `Outside FP`, Ratio) |>
+  flextable::flextable()
+
+res_sales |> 
+  filter(class >= 200 & class <= 299) |>
+  mutate(Location = ifelse(in_eff_sfha == "Not SFHA", "Outside FP", "In FP" )) |> 
+  mutate(Sales = n(), .by = year) |>
+  group_by(year, Sales, Location) |>
+  summarize(Price = round(median(sale_price))) |>
+  ungroup() |>
+  pivot_wider(names_from = "Location", values_from = "Price") |>
+  mutate(Ratio = `In FP`/`Outside FP`,
+  # Ratio =  scales::percent(Ratio, accuracy = 0.01)
+   ) |>
+  ggplot() +
+  geom_line(aes(x=year, y = Ratio)) +
+  scale_y_continuous(limits = c(0, 1), 
+                     labels = scales::percent, expand = c(0, 0)) +
+  scale_x_continuous(limits = c(2006, 2024), breaks = c(2006, 2010, 2015, 2020, 2024)) +
+  
+  theme_classic() +
+  labs(title = "Ratio of Median Value for Properties In and Out of Floodplain",
+       x = element_blank(),
+       y = "Ratio",
+       caption = "Ratio = Median Sale Price in FP / Median Price outside FP") 
+```
+
+
+
+# Research Question 1 
+
+**Does the value of real estate parcels increase when they are removed from an SFHA?** 
+
+H1: A property removed from a SFHA will increase in value, compared to properties with otherwise shared characteristics.
+
+## Repeat Sales
+
 ```{r}
 
 # 1) Make sure sale_date is a Date (if not already)
 df_prep <- res_sales %>%
-  filter(times_sold < 15) |>
   filter(pin %nin% drop_pins) |> 
   
   mutate(
   #  sale_date2 = mdy(sale_date),         # parse "September 01 2018" → Date
     sale_year  = year(sale_date),       # or just use your existing `year` column
-  eff_date = ymd(eff_date),
+  eff_date = ymd(EFF_DATE),
   pre_date = ymd(PRE_DATE)
   ) %>%
   # 2) Keep only the columns we need for repeat‐sales. You can drop geometry, etc.
-  select(pin, sale_date, sale_year, sale_price, in_eff_sfha, eff_date, pre_date) %>%
+  select(pin, sale_date, sale_year, sale_price, in_eff_sfha, eff_date, pre_date, in_lomr) %>%
   # 3) Sort by pin and date
   arrange(pin, sale_date) %>%
   # 4) Tag how many times each PIN sold
@@ -325,6 +418,7 @@ df_pairs <- df_pairs |>
       # Only keep rows where lag exists (i.e. drop the very first sale for each PIN)
   filter(!is.na(sale_price_t1))
 
+df_pairs <- df_pairs |> filter(change_type != "OTHER")
 table(df_pairs$years_btwn, df_pairs$change_type)
 ```
 
@@ -352,7 +446,7 @@ df_pairs <- df_pairs |>
 
 
 
-```{r}
+```{r eval=FALSE, include = FALSE}
 df_pin_summary <- df_pairs %>%
   group_by(pin) %>%
   summarize(
@@ -375,13 +469,21 @@ df_pairs <- df_pairs |>
          sale_year_t2, sale_price_t2, in_sfha_t2, t1_months, t1_years,
          years_btw_sales, removed_between, added_between, change_type, everything()
   )
+
+df_pairs <- df_pairs |> 
+  mutate(change_type = factor(change_type, levels = c("Both Out of SFHA", "Both In SFHA", "Added", "Removed")))
+df_pairs
+
+
 ```
 
 
 ```{r}
 # 2) Run the repeat‐sales regression
 rs_model <- feols(
-  d_log_price ~ removed_between + years_btw_sales,
+  d_log_price ~ log(years_btw_sales) + change_type,
+  #  d_log_price ~ years_btw_sales + removed_between,
+
   data = df_pairs,
     cluster = ~pin
 
@@ -394,7 +496,17 @@ summary(rs_model)
 
 ```{r}
 rs_model <- feols(
-  d_log_price ~ added_between + removed_between
+  d_log_price ~ change_type
+  | 0,       
+  data = df_pairs,
+  cluster = ~pin
+
+)
+summary(rs_model)
+```
+```{r}
+rs_model <- feols(
+  d_log_price ~ change_type*in_lomr
   | 0,       
   data = df_pairs,
   cluster = ~pin
@@ -435,7 +547,7 @@ summary(rs_model2)
 
 
 
-### Event Pairs
+## Event Study Sales Pairs
 
 ```{r}
 df_event_pairs <- df_prep %>%
@@ -483,21 +595,21 @@ df_before_after <- df_event_pairs %>%
 
 ```{r}
 res_sales <- res_sales |>
-  mutate(time_to_update = year - year(eff_date),
-         post_update = ifelse(year > year(eff_date),"Post", "Before"))
+  mutate(time_to_update = year - year(EFF_DATE),
+         post_update = ifelse(year > year(EFF_DATE),"Post", "Before"))
 
 fixest::feols(
   log(sale_price) ~ i(time_to_update, in_eff_sfha, ref = -1) | pin + year,
-  data = res_sales
+  data = res_sales |> filter(time_to_update >-10 & time_to_update < 10)
 ) |> etable()
 
 fixest::feols(
   log(sale_price) ~ time_to_update * post_update | pin,
-  data = res_sales
+  data = res_sales |> filter(time_to_update >-10 & time_to_update < 10)
     ) |> etable()
 ```
 
-## The Counterfactual! 
+### Coding the Counterfactual 
 
 ```{r}
 # 1b) For each PIN, find the "last sale before firm_date"
@@ -582,106 +694,14 @@ summary(mod)
 ```
 
 
-## Sales in and Out of FEMA SFHAs
-
-```{r}
-
-res_sales |> 
-  filter(class >= 200 & class <= 299) |>
-  mutate(Location = ifelse(in_eff_sfha == "Not SFHA", "Outside FP", "In FP" )) |> 
-  group_by(year, Location) |>
-  summarize(Sales = n()) |>
-  ungroup() |>
-  pivot_wider(names_from = "Location", values_from = "Sales") |>
-  mutate(
-    Year = as.character(year),
-    TotalSales = `In FP` + `Outside FP`,
-    `FP Share (%)` = `In FP` / TotalSales,
-   `FP Share (%)` =  scales::percent(`FP Share (%)`, accuracy = 0.01)) |>
-  select(-c(TotalSales, year)) |> 
-  mutate(Year = as.character(Year), .before = `In FP`) |> 
-  select(Year, `In FP`, `Outside FP`, `FP Share (%)`) |>
-  flextable::flextable()
-
-
-sales |> 
-  filter(class >= 200 & class <= 299) |>
-  mutate(Location = ifelse(in_eff_sfha == "Not SFHA", "Outside FP", "In FP" )) |> 
-  group_by(year, Location) |>
-  summarize(Sales = n()) |>
-  # ungroup() |>
-   pivot_wider(names_from = "Location", values_from = "Sales") |>
-   mutate(
-     TotalSales = `In FP` + `Outside FP`,
-     `FP Share (%)` = `In FP` / TotalSales,
-     # `FP Share (%)` =  scales::percent(`FP Share (%)`, accuracy = 0.01)
-   ) |>
-  # select(-c(TotalSales, year)) |> 
-  # mutate(Year = as.character(Year), .before = `In FP`) |> 
-  # select(Year, `In FP`, `Outside FP`, `FP Share (%)`) |> 
-  ggplot() +
-  geom_line(aes(x=year, y= `FP Share (%)`)) + 
-  scale_y_continuous(limits = c(0, 0.02), 
-                     labels = scales::percent, expand = c(0, 0)) +
-  scale_x_continuous(limits = c(2006, 2024), breaks = c(2006, 2010, 2015, 2020, 2024)) +
-  
-  theme_classic() +
-  labs(title = "Flood Plain Properties make up less than 1.5% of Sales",
-       x = element_blank(),
-       y = "Share of Sales")
-```
-
-```{r}
-sales |> 
-  filter(class >= 200 & class <= 299) |>
-  mutate(Location = ifelse(in_eff_sfha == "Not SFHA", "Outside FP", "In FP" )) |> 
-  mutate(Sales = n(), .by = year) |>
-  group_by(year, Sales, Location) |>
-  summarize(Price = round(median(sale_price))) |>
-  ungroup() |>
-  pivot_wider(names_from = "Location", values_from = "Price") |>
-  mutate(Ratio = `In FP`/`Outside FP`,
-   Ratio =  scales::percent(Ratio, accuracy = 0.01),
-   Year = as.character(year)) |> 
-  select(Year, Sales, `In FP`, `Outside FP`, Ratio) |>
-  flextable::flextable()
-
-sales |> 
-  filter(class >= 200 & class <= 299) |>
-  mutate(Location = ifelse(in_eff_sfha == "Not SFHA", "Outside FP", "In FP" )) |> 
-  mutate(Sales = n(), .by = year) |>
-  group_by(year, Sales, Location) |>
-  summarize(Price = round(median(sale_price))) |>
-  ungroup() |>
-  pivot_wider(names_from = "Location", values_from = "Price") |>
-  mutate(Ratio = `In FP`/`Outside FP`,
-  # Ratio =  scales::percent(Ratio, accuracy = 0.01)
-   ) |>
-  ggplot() +
-  geom_line(aes(x=year, y = Ratio)) +
-  scale_y_continuous(limits = c(0, 1), 
-                     labels = scales::percent, expand = c(0, 0)) +
-  scale_x_continuous(limits = c(2006, 2024), breaks = c(2006, 2010, 2015, 2020, 2024)) +
-  
-  theme_classic() +
-  labs(title = "Ratio of Median Value for Properties In and Out of Floodplain",
-       x = element_blank(),
-       y = "Ratio",
-       caption = "Ratio = Median Sale Price in FP / Median Price outside FP") 
-```
 
 
 
 
-# Research Questions
 
 
-### Research Question 1 
 
 
-**Does the value of real estate parcels increase when they are removed from an SFHA?** 
-
-H1: A property removed from a SFHA will increase in value, compared to properties with otherwise shared characteristics.
 
 firm update = year 0
 
@@ -716,104 +736,16 @@ paper_models |> etable()
 
 ```
 
-```{r}
-tbl_R1 <- res_sales |>
-  left_join(pin_groups, by = "pin") |>  
-  filter(risk_change == "Removed from SFHA") |>
 
-  #filter(risk_change == "Removed from SFHA") |>
-  group_by(pin) |>
-  mutate(sold_post2021 = ifelse(max(year) >= 2020 & min(year) < 2019, "SFHA Change btwn sales", "SFHA not btwn sales"))|>
-  group_by(year, sold_post2021) |> 
-  summarize( n = n_distinct(pin),
-             median_price = median(sale_price)) 
-tbl_R1
-
-tbl_R1 |> ggplot(aes(x=year, y=n, color = sold_post2021)) + geom_line()
-
-tbl_R1 |> ggplot(aes(x=year, y=median_price, color = sold_post2021)) + geom_line()
-
-
-res_sales |>
-  left_join(pin_groups, by = "pin") |>  
-  filter(risk_change == "Removed from SFHA" | risk_change == "Always in SFHA") |>
-  group_by(pin) |>
-  mutate(sold_post2021 = ifelse(max(year) >= 2021 & min(year) < 2021, "SFHA Change btwn sales", "SFHA Change not btwn sales"))|>
-  group_by(year, sold_post2021, risk_change ) |> 
-  summarize( n = n_distinct(pin), median_price = median(sale_price)) |>
-  ggplot()+
-  geom_line(aes(x=year, y = median_price/1000000, group = risk_change, color = risk_change)) + 
-  geom_text(aes(x = 2016, y = 0.2, label = c(sum(n))) )+
-  facet_wrap(~sold_post2021)
-
-control_tbl2_R1 <- res_sales |>
-  left_join(pin_groups, by = "pin") |>  
-  filter(risk_change == "Always in SFHA") |>
-  group_by(pin) |>
-  mutate(sold_post2021 = ifelse(max(year) >= 2021 & min(year) < 2021, "Sold b4&after 2021", "Not sold b4&after 2021"))|>
-  group_by(sold_post2021) |> 
-  summarize( n = n_distinct(pin),
-             median_price = median(sale_price))
-
-control_tbl2_R1
-
-
-control_tbl_R1 <- res_sales |>
-  left_join(pin_groups, by = "pin") |>  
-  filter(risk_type == "Low Risk") |>
-  group_by(pin) |>
-  mutate(sold_post2021 = ifelse(max(year) >= 2021 & min(year) < 2021, "Sold b4&after 2021", "Not sold b4&after 2021"))|>
-  group_by(sold_post2021) |> 
-  summarize( n = n_distinct(pin),
-             median_price = median(sale_price))
-
-control_tbl_R1
-
-
-```
-
-### Research Question 2
+# Research Question 2
 
 **Does information on flood risk available to the buyer get capitalized into the property value? If so, to what extent? Is this effect moderated by pre-existing information unavailable to the buyer?**
 
 H3: A High risk rating score available to the buyer from First Street will be associated with a larger decrease in the value of the properties outside of an SFHA than properties in an SFHA.
 
 
-```{r}
-tbl_R2 <- res_sales |>
-  left_join(pin_groups, by = "pin") |>  
-  filter(risk_type == "FSF Score 5+ Only" | risk_type == "SFHA & FSF Score 5+" | risk_type == "Low Risk") |>
-  group_by(pin) |>
-  mutate(sold_post2021 = ifelse(max(year) >= 2021 & min(year) < 2021, "FSF Change btwn sales", "FSF not btwn sales"))|>
-  group_by(risk_type, sold_post2021) |> 
-  summarize( n = n_distinct(pin),
-             median_price = median(sale_price)) 
 
-tbl_R2
-
-control_tbl_R2 <- res_sales |>
-  left_join(pin_groups, by = "pin") |>  
-  filter(risk_type == "In CCAO SFHA Only") |>
-  group_by(pin) |>
-  mutate(sold_post2021 = ifelse(max(year) >= 2021 & min(year) < 2021, "FSF Change btwn sales", "FSF not btwn sales"))|>
-  group_by(risk_type, sold_post2021) |> 
-  summarize( n = n_distinct(pin),
-             median_price = median(sale_price)) 
-control_tbl_R2
-
-
-control_tbl2_R2 <- res_sales |>
-  left_join(pin_groups, by = "pin") |>  
-  filter(risk_type == "Low Risk") |>
-  group_by(pin) |>
-  mutate(sold_post2021 = ifelse(max(year) >= 2021 & min(year) < 2021, "FSF Change btwn sales", "FSF not btwn sales"))|>
-  group_by(risk_type, sold_post2021) |> 
-  summarize( n = n_distinct(pin),
-             median_price = median(sale_price)) 
-control_tbl2_R2
-```
-
-### Research Question 3
+# Research Question 3
 
 **Is lived experience capitalized into sales prices? is this effect (if any) moderated by other existing sources of increased flood risk?**
 
