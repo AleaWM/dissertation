@@ -45,6 +45,9 @@ firm_2018 <- st_read("inputs/Mapping_FIRMs/NFHL_17_20180129.gdb/NFHL_17_20180129
   filter(DFIRM_ID=="17031C")
   #st_intersection(border)
 
+write_csv(firm_2018, "data/raw/S_FIRM_PAN_2018.csv")
+
+
 lomrs2018 <- st_read("inputs/Mapping_FIRMs/NFHL_17_20180129.gdb/NFHL_17_20180129.gdb", 
                      layer = "S_LOMR") |>
   st_transform("EPSG:6454") |>
@@ -299,6 +302,9 @@ prelim_sfha <- parcels_2024_prelimchanges |> as.data.frame() |>
 
  write_sf(prelim_sfha, "./data/processed/parcels_preliminary_sfha.csv" )
 
+ 
+### Join PIN lists together 
+ 
 prelim_sfha |>filter(pin %in% lomrs_2024$pin)
  
  prelim_sfha |> filter(pin %in% sfha_2024$pin)
@@ -320,6 +326,41 @@ pin_indicators <-pin_indicators|>
     lomr2024 = ifelse(!is.na(LOMR_ID2024), 1, 0)
          )
 pin_indicators |> write_csv("./data/processed/sfha_indicator_pins.csv")
+
+
+### REDO THE JOIN, dont' use DFIRM ID and use pin10 instead of pin!!!
+
+sfha2018 <- read_csv("data/processed/parcels_sfha_2018.csv") |> 
+  mutate(pin10 = str_sub(pin, 1, 10)) |>
+  select(-c(pin, DFIRM_ID) ) |> distinct()
+
+sfha2024 <- read_csv("data/processed/sfha_pins_2024.csv") |>
+  mutate(pin10 = str_sub(pin, 1, 10))|>
+  select(-c(pin, DFIRM_ID) ) |> distinct()
+
+prelim_sfha <- read_csv("./data/processed/parcels_preliminary_sfha.csv") |>
+  mutate(pin10 = str_sub(pin, 1, 10)) |>
+  select(-c(pin) ) |> distinct()
+
+
+lomrs2018 <- read_csv("./data/processed/parcels_lomrs_2018.csv") |>
+  mutate(pin10 = str_sub(pin, 1, 10))|>
+  select(-c(pin, DFIRM_ID) ) |> distinct()
+
+lomrs2024 <- read_csv("data/processed/lomr_pins_2024.csv") |>
+  mutate(pin10 = str_sub(pin, 1, 10))|>
+  select(-c(pin, DFIRM_I) ) |> distinct()
+
+pin_indicators <- sfha2018 |> full_join(sfha2024, by = c("pin10"), suffix = c("2018", "2024"))
+pin_indicators <- pin_indicators|> full_join(prelim_sfha, by = "pin10")
+lomr_join <- lomrs2018 |> full_join(lomrs2024, by = c("pin10"), suffix = c("2018", "2024"))
+
+pin_indicators <- pin_indicators|>full_join(lomr_join)
+
+pin_indicators |> write_csv("./data/processed/sfha_indicator_parcels.csv")
+
+
+
 
 
 
