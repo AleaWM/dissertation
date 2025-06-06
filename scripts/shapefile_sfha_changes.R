@@ -86,7 +86,7 @@ attributes(parcels_2024)
 fld_haz_ar_2018 <- st_cast(fld_haz_ar_2018, "MULTIPOLYGON")
 common_crs <- st_crs(parcels_2018)
 parcels_2018 <- st_transform(parcels_2018, common_crs)
-
+parcels_2024 <- st_transform(parcels_2024, common_crs)
 fld_haz_ar_2018 <- st_transform(fld_haz_ar_2018, common_crs)
 sf_use_s2(TRUE)
 
@@ -276,26 +276,36 @@ lomrs_2024 |>  write_csv("data/processed/lomr_pins_2024.csv")
 
 
 # Preliminary Changes for Northern Cook County # ----------------------------------
-prelim_sfha <-read_sf("inputs/Mapping_Firms/Prelim_DL20230702/Prelim_CSLF.shp")  |> 
+#prelim_sfha <-read_sf("inputs/Mapping_Firms/Prelim_DL20230702/Prelim_CSLF.shp")  |> 
+  prelim_sfha <-read_sf("inputs/FIRMDB_11182022_Cook-County_Illinois/S_Fld_Haz_Ar.shp")  |> 
+  filter(SFHA_TF == "T") |>
   st_transform("EPSG:6454") |>
   st_intersection(border)
  
+parcels_2024 
 prelim_sfha <- st_cast(prelim_sfha, "MULTIPOLYGON")
 prelim_sfha <- st_transform(prelim_sfha, common_crs)
 
-prelim_sfha <- prelim_sfha |> filter(!is.na(NEW_ZONE))
-
 tic()
-beep_on_error(parcels_2024_prelimchanges <- st_join(parcels_2024, prelim_sfha, join = st_intersects), sound = "wilhelm" )# kept all 1.44 million parcels_2024
-parcels_2024_prelimchanges <- parcels_2024_prelimchanges |> filter(!is.na(NEW_ZONE))
-write_sf(parcels_2024_prelimchanges, "./data/processed/parcels_2024_prelimchange.shp" )
+beep_on_error(parcels_2024_prelimdatabase <- st_join(parcels_2024, prelim_sfha, join = st_intersects), sound = "wilhelm" )# kept all 1.44 million parcels_2024
+write_sf(parcels_2024_prelimdatabase, "./data/processed/parcels_2024_prelimdatabase.shp" ) |> filter(!is.na(DFIRM_ID))
 beep("coin")
 toc()
 
+# prelim_sfha <- parcels_2024_prelimdatabase |> as.data.frame() |>
+#   select(pin = name,
+#         SFHACHG) |>
+#   group_by(pin) |>
+#   slice(1) |>
+#   ungroup()
 
-prelim_sfha <- parcels_2024_prelimchanges |> as.data.frame() |>
-  select(pin = name,
-        SFHACHG) |>
+#write_sf(prelim_sfha, "./data/processed/parcels_preliminary_sfha.csv" )
+
+
+prelim_sfha <- parcels_2024_prelimdatabase |> as.data.frame() |>
+#  select(-c(GFID:geometry)) |>
+  select(pin = name, 
+         DFIRM_ID, FLD_ZONE, ZONE_SUBTY, FLD_AR_ID) |>
   group_by(pin) |>
   slice(1) |>
   ungroup()
@@ -328,7 +338,7 @@ pin_indicators <-pin_indicators|>
 pin_indicators |> write_csv("./data/processed/sfha_indicator_pins.csv")
 
 
-### REDO THE JOIN, dont' use DFIRM ID and use pin10 instead of pin!!!
+### REDO THE JOIN, create and pin10 instead of pin!!!
 
 sfha2018 <- read_csv("data/processed/parcels_sfha_2018.csv") |> 
   mutate(pin10 = str_sub(pin, 1, 10)) |>
@@ -351,16 +361,29 @@ lomrs2024 <- read_csv("data/processed/lomr_pins_2024.csv") |>
   mutate(pin10 = str_sub(pin, 1, 10))|>
   select(-c(pin, DFIRM_I) ) |> distinct()
 
-pin_indicators <- sfha2018 |> full_join(sfha2024, by = c("pin10"), suffix = c("2018", "2024"))
-pin_indicators <- pin_indicators|> full_join(prelim_sfha, by = "pin10")
+pin_indicators <- sfha2024 |> full_join(prelim_sfha, by = "pin10")
+
+pin_indicators <- pin_indicators |> full_join(sfha2018, by = c("pin10"), suffix = c("2018", "2024"))
+
+
+
 lomr_join <- lomrs2018 |> full_join(lomrs2024, by = c("pin10"), suffix = c("2018", "2024"))
 
 pin_indicators <- pin_indicators|>full_join(lomr_join)
 
+
+
+
+pin_indicators <- pin_indicators|>
+  mutate(
+    sfha2018 = ifelse(!is.na(FLD_ZON2018), 1, 0),
+    sfha2024 = ifelse(!is.na(FLD_ZON2024), 1, 0),
+    prelimsfha = ifelse(!is.na(SFHACHG), 1, 0),
+    lomr2018 =  ifelse(!is.na(LOMR_ID2018), 1, 0),
+    lomr2024 = ifelse(!is.na(LOMR_ID2024), 1, 0)
+  )
+
 pin_indicators |> write_csv("./data/processed/sfha_indicator_parcels.csv")
-
-
-
 
 
 
