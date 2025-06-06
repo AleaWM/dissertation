@@ -288,7 +288,8 @@ prelim_sfha <- st_transform(prelim_sfha, common_crs)
 
 tic()
 beep_on_error(parcels_2024_prelimdatabase <- st_join(parcels_2024, prelim_sfha, join = st_intersects), sound = "wilhelm" )# kept all 1.44 million parcels_2024
-write_sf(parcels_2024_prelimdatabase, "./data/processed/parcels_2024_prelimdatabase.shp" ) |> filter(!is.na(DFIRM_ID))
+parcels_2024_prelimdatabase <- parcels_2024_prelimdatabase |> filter(!is.na(DFIRM_ID))
+write_sf(parcels_2024_prelimdatabase, "./data/processed/parcels_2024_prelimdatabase.shp" ) 
 beep("coin")
 toc()
 
@@ -310,7 +311,7 @@ prelim_sfha <- parcels_2024_prelimdatabase |> as.data.frame() |>
   slice(1) |>
   ungroup()
 
- write_sf(prelim_sfha, "./data/processed/parcels_preliminary_sfha.csv" )
+write_sf(prelim_sfha, "./data/processed/parcels_preliminary_sfha_20250605.csv" )
 
  
 ### Join PIN lists together 
@@ -321,9 +322,9 @@ prelim_sfha |>filter(pin %in% lomrs_2024$pin)
  
 pin_indicators <- sfha_2018 |> full_join(sfha_2024, by = c("pin", "DFIRM_ID"), suffix = c("2018", "2024"))
  
-pin_indicators <- pin_indicators|>full_join(prelim_sfha, by = "pin")
+pin_indicators <- pin_indicators |> full_join(prelim_sfha, by = "pin")
 lomr_join <- lomrs_2018 |> full_join(lomrs_2024, by = c("pin", "DFIRM_ID"), suffix = c("2018", "2024"))
-pin_indicators <- pin_indicators|>full_join(lomr_join)
+pin_indicators <- pin_indicators |> full_join(lomr_join)
 
 n_distinct(pin_indicators$pin) # 58,363 unique PINs
 
@@ -338,19 +339,25 @@ pin_indicators <-pin_indicators|>
 pin_indicators |> write_csv("./data/processed/sfha_indicator_pins.csv")
 
 
+
+
+
 ### REDO THE JOIN, create and pin10 instead of pin!!!
 
 sfha2018 <- read_csv("data/processed/parcels_sfha_2018.csv") |> 
   mutate(pin10 = str_sub(pin, 1, 10)) |>
-  select(-c(pin, DFIRM_ID) ) |> distinct()
+  select(pin10, FLD_ZONE = FLD_ZON, FLD_AR_ID = FLD_AR_, ZONE_SUBTY = ZONE_SU) |>
+  distinct()
 
 sfha2024 <- read_csv("data/processed/sfha_pins_2024.csv") |>
   mutate(pin10 = str_sub(pin, 1, 10))|>
-  select(-c(pin, DFIRM_ID) ) |> distinct()
+  select(pin10, FLD_ZONE = FLD_ZON, FLD_AR_ID = FLD_AR_, ZONE_SUBTY = ZONE_SU) |>
+  distinct()
 
-prelim_sfha <- read_csv("./data/processed/parcels_preliminary_sfha.csv") |>
+prelim_sfha_parcels <- read_csv("./data/processed/parcels_preliminary_sfha_20250605.csv") |>
   mutate(pin10 = str_sub(pin, 1, 10)) |>
-  select(-c(pin) ) |> distinct()
+  select(pin10, FLD_ZONE, FLD_AR_ID, ZONE_SUBTY) |>
+  distinct()
 
 
 lomrs2018 <- read_csv("./data/processed/parcels_lomrs_2018.csv") |>
@@ -361,26 +368,26 @@ lomrs2024 <- read_csv("data/processed/lomr_pins_2024.csv") |>
   mutate(pin10 = str_sub(pin, 1, 10))|>
   select(-c(pin, DFIRM_I) ) |> distinct()
 
-pin_indicators <- sfha2024 |> full_join(prelim_sfha, by = "pin10")
+pin_indicators <- sfha2024 |> full_join(prelim_sfha_parcels, by = "pin10", suffix = c("2024", "prelim"))
 
-pin_indicators <- pin_indicators |> full_join(sfha2018, by = c("pin10"), suffix = c("2018", "2024"))
+pin_indicators <- pin_indicators |> full_join(sfha2018, by = c("pin10"), suffix = c("", "2018"))
 
 
 
-lomr_join <- lomrs2018 |> full_join(lomrs2024, by = c("pin10"), suffix = c("2018", "2024"))
+lomr_join <- lomrs2018 |> full_join(lomrs2024, by = c("pin10"), suffix = c("lomr2018", "lomr2024"))
 
 pin_indicators <- pin_indicators|>full_join(lomr_join)
 
 
-
+# FINISH THIS, START HERE
 
 pin_indicators <- pin_indicators|>
   mutate(
-    sfha2018 = ifelse(!is.na(FLD_ZON2018), 1, 0),
-    sfha2024 = ifelse(!is.na(FLD_ZON2024), 1, 0),
-    prelimsfha = ifelse(!is.na(SFHACHG), 1, 0),
-    lomr2018 =  ifelse(!is.na(LOMR_ID2018), 1, 0),
-    lomr2024 = ifelse(!is.na(LOMR_ID2024), 1, 0)
+    sfha2018 = ifelse(!is.na(FLD_ZONE), 1, 0),
+    sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
+    prelimsfha = ifelse(!is.na(FLD_ZONEprelim), 1, sfha2024),
+    lomr2018 =  ifelse(!is.na(LOMR_IDlomr2018), 1, 0),
+    lomr2024 = ifelse(!is.na(LOMR_IDlomr2024), 1, 0)
   )
 
 pin_indicators |> write_csv("./data/processed/sfha_indicator_parcels.csv")
