@@ -164,7 +164,7 @@ table(res_sales$year, res_sales$in_lomr)
 #res_sales |> group_by(pin, sale_date) |> n_distinct()
 ```
 
-```{r inspect-highmultisales}
+```{r inspect-highmultisales, include=FALSE}
 
 # price corrections randomly spotted
 res_sales <- res_sales |> 
@@ -204,10 +204,11 @@ res_sales |> filter(times_sold > 5) |>
 #| label: fig-pinsales
 #| fig-cap: "PIN Sale Price Over time."
 #| fig-subcap: 
-#| - pin == 09163040191019. Building Flood Factor of 6. 1675 E Mills St. Des Plaines IL. Condo building.
-#| - pin == 05201210150000
-#| - pin == 09281140060000
+#| - pin == 09163040191019. Flood Factor 6/10 & in SFHA. 1675 E Mills St. Des Plaines IL. Condo building.
+#| - pin == 05201210150000. Flood Factor 6/10 & in SFHA. 1103 Willow Rd Winnetka. (Side note, this is in New Trier Township, if worried about Assessor's timing of using the flood zone variables in assessment models). Class 207 for first sale and then class 205 for later sales.
+#| - pin == 09281140060000. Flood Factor 5/10 and in SFHA.  1918 Kennicott Ct Des Plaines. Class 205.
 #| layout-ncol: 3
+#| include: false
 
 
 res_sales %>% 
@@ -275,7 +276,7 @@ res_sales |>
   # select(Year, `In FP`, `Outside FP`, `FP Share (%)`) |> 
   ggplot() +
   geom_line(aes(x=year, y= `FP Share (%)`)) + 
-  scale_y_continuous(limits = c(0, 0.02), 
+  scale_y_continuous(limits = c(0, 0.06), 
                      labels = scales::percent, expand = c(0, 0)) +
   scale_x_continuous(limits = c(2006, 2024), breaks = c(2006, 2010, 2015, 2020, 2024)) +
   
@@ -333,6 +334,38 @@ res_sales |>
 H1: A property removed from a SFHA will increase in value, compared to properties with otherwise shared characteristics.
 
 ## Repeat Sales
+
+To investigate whether the value of real estate parcels increases when they are removed from a Special Flood Hazard Area (SFHA), I used a repeat-sales analysis. This approach compares the change in sales price of the same property over time, allowing me to control for fixed, unobservable characteristics of each parcel.
+
+The dataset was first prepared by filtering out irrelevant parcels and ensuring that each property had at least two recorded sales. For each parcel, I paired consecutive sales and calculated the log change in price between sales (i.e., d_log_price), which serves as the dependent variable in the regression models. I also recorded whether the parcel was in or out of an SFHA at each sale, identifying cases where the floodplain status changed.
+
+Additional variables were constructed to measure the timing of sales relative to the date a new Flood Insurance Rate Map (FIRM) took effect, allowing me to distinguish between sales occurring before and after floodplain reclassification. The time between sales was measured in both months and years.
+
+Several regression models were estimated using the feols() function from the fixest package. 
+
+These models tested whether being removed from the SFHA is associated with a statistically significant increase in log sale price, controlling for time between sales. I also explored interaction terms with LOMR status (since people can appeal their flood zone designation and have the map altered. This results in them no longer having mandatory flood insurance if their appeal is accepted) and included alternative specifications, such as directly including binary indicators for whether a parcel was added or removed from an SFHA. All models clustered standard errors at the parcel (PIN) level to account for repeated observations of the same property.
+
+This repeat-sales framework is well-suited to estimating the capitalization effect of flood risk removal, since it isolates within-parcel price changes and reduces bias from time-invariant confounding factors.
+
+
+Notes:
+
+1. Removal from the SFHA is due to the FEMA flood insurance rate maps being updated. Properties are either in or out of the "1-in-100" year flood plain. They can be located in the SFHA and also have a LOMR that "removes" them from the floodplain. This information is represented in multiple variables (`in_eff_sfha` and `in_lomr`). If an observation is coded as `Removed` from an SFHA, it indicates that the floodplain shapefile itself changed that was created by FEMA. If a FIRM is updated and the property previously had a LOMR and FEMA finds that the LOMR still is good. 
+
+- If a property was in an SFHA in a FIRM and had an approved LOMR and then the FIRM is updated years later and the LOMR was still viewed as accurate and valid, then the PIN will appear as "removed from the SFHA" becauese the updated FIRM will incorporate the old LOMR into the updated floodplain.   
+
+2. Treatment window timing: In theory, EFF_DATE would be associated with a change in price due to the capitalization of mandatory flood insurance requirement for homes that have mortgages in floodplains. The knowledge of the risk and the potential loss due to future floods may decrease the amount that buyers are willing to pay for a property that they know see as more risky even if the financial ties to required flood insurance are not effective yet. PRE_DATE is used due to a buyers anticipation of a policy's impact. 
+
+Concerns: 
+
+- Who's included or excluded? Are the properties that are in floodplains different in ways that impact the sales? Are people less willing to buy risky properties in general, resulting in fewer sales? 
+
+ - Inflation? Market trends? Year or regional fixed effects?   
+ 
+ - If parcels were removed from the FEMA flood zone but still at risk, does that say more about information asymmetry or regulatory trust than flood safety?
+ 
+ 
+ - Areas that have received new flood maps are mostly wealthier parts of Cook County. The 800+ pins added to flood plains in the preliminary FIRM are all in Northern Cook County. The FIRMs updated in 2018 and 2021 are along the lake front and include Glencoe/Wilmette areas. Could really influence price trends.
 
 ```{r}
 
@@ -504,6 +537,7 @@ rs_model <- feols(
 )
 summary(rs_model)
 ```
+
 ```{r}
 rs_model <- feols(
   d_log_price ~ change_type*in_lomr
@@ -694,15 +728,6 @@ summary(mod)
 ```
 
 
-
-
-
-
-
-
-
-
-
 firm update = year 0
 
 
@@ -769,6 +794,8 @@ Cicero and Berwyn had lots of damage during DR 4728. Cicero had 25,836 housing u
 Dolton and Calumet City were damaged during DR 4749.
 
 ```{r}
+#| include: false
+#| 
 ptax245 <- readxl::read_xlsx("inputs/PTAX-245_data.xlsx")
 tr_zips <- read_csv("./data/processed/treated_zipcodes.csv")
 
@@ -796,6 +823,7 @@ res_sales <- res_sales |> mutate(flood2023 = ifelse(pin %in% ptax245, 1, 0))
 245 PINs in Cicero and 45 PINs in Berwyn appealed their property tax (plus 2 in Oak Park, 2 in River Forest, and 1 in Riverside).
 
 ```{r}
+#| include: false
 
 res_sales %>% filter(pin %in% ptax245)
 
