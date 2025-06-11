@@ -27,19 +27,16 @@ sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") |>
   )
 
 # 2. Read flood‐related lookup tables
-firms    <- read_csv("./data/processed/parcels_wFIRMS.csv") |>
-  # preliminary SFHA date
-  mutate(
-    prelim_date = ifelse(PRE_DATE > "2026-01-01"  | is.na(PRE_DATE), "2005-01-01", PRE_DATE),
-  
-     ) |>  
-  select(-c(PANEL_TYP, SCALE, PNP_REASON, BASE_TYP, geometry, PRE_DATE)) 
+# includes the PIN and the FIRM_ID/FIRM_Panel that the PIN was in according to the effective NFHL from 2022
+pin10_firms  <- read_csv("./data/processed/parcels_wFIRMS_20250604.csv")   |> 
+  select(-c(PRE_DATE, EFF_DATE))
+
 
 
 
 # only includes PINs that were in FEMA flood plain.
-sfha_ind <- read_csv("./data/processed/sfha_indicator_pins.csv") |> 
-  select(pin, sfha2018:lomr2024)
+sfha_ind <- read_csv("./data/processed/sfha_indicator_parcels.csv") |> 
+  select(pin10, sfha2018:lomr2024) 
 
 
 lomrs    <- read_csv("./data/processed/lomr_pins_2024.csv") |>
@@ -53,9 +50,9 @@ lomrs    <- read_csv("./data/processed/lomr_pins_2024.csv") |>
 
 # 3. Merge firms & SFHA indicators into sales
 sales <- sales |>
-  left_join(firms,    by = "pin10") |>
-  mutate(Location = if_else(pin %in% sfha_ind$pin, "In FP", "Outside FP")) |>
-  left_join(sfha_ind, by = "pin") |>
+  left_join(pin10_firms,    by = "pin10") |>
+ # mutate(Location = if_else(pin %in% sfha_ind$pin, "In FP", "Outside FP")) |>
+  left_join(sfha_ind, by = "pin10") |>
   mutate(
     class    = as.character(class),
     lomr2018 = as.character(lomr2018),
@@ -64,8 +61,19 @@ sales <- sales |>
     sfha2024 = as.character(sfha2024)
   )
 
+
+firm_dates <- readxl::read_xlsx("./data/raw/S_FIRM_PAN.xlsx") |>
+  mutate(PRE_DATE = as_date(PRE_DATE),
+         EFF_DATE = as_date(EFF_DATE)) |>
+  select(FIRM_PAN, old_panel, PRE_DATE, EFF_DATE)
+#firm_dates <- readxl::read_xlsx("./data/raw/S_FIRM_PAN_2018and2024 NFHL Layers.xlsx") 
+
 # 4. Join LOMR table and create SFHA/LOMR flags
 sales <- sales |>
+  left_join(firm_dates, by = "FIRM_PAN") |>
+  mutate(PRE_DATE = ifelse(old_panel %in% c(15, 20, 155) & year >= 2021, as_date("2021-09-22"), as_date(PRE_DATE)),
+         PRE_DATE = as_date(PRE_DATE),
+  ) |>
   left_join(lomrs, by = c("pin","pin10") ) |>
   mutate(
  
@@ -75,15 +83,7 @@ sales <- sales |>
     #   TRUE                            ~ "Not SFHA"
     # ),
     
-    # baseline SFHA (from 2018) and updates via EFF_DATE
-    # in_eff_sfha = case_when(
-    #   
-    #   sfha2018 == "1"                              ~ "SFHA",
-    #   sfha2024 == "1" & year >= year(EFF_DATE)     ~ "SFHA",
-    #   sfha2024 == "0" & year >= year(EFF_DATE)     ~ "Not SFHA",
-    #   TRUE                                       ~ "Not SFHA"
-    # ),
-    
+ 
 
    # the flood zones that existed in the 2018 state NFHL were last updated in 2008. sfha2018 is the default SFHA status for the observations, then lomrs and future updates will be incorporated
         in_eff_sfha = ifelse(sfha2018 == 1, "SFHA", "Not SFHA"),
@@ -93,6 +93,16 @@ sales <- sales |>
 
         in_eff_sfha = ifelse((sfha2018 == 0 & sfha2024 == 0 ) | (is.na(sfha2018) & is.na(sfha2024)) , "Not SFHA", in_eff_sfha),
 
+        
+    # create similar variable but for the preliminary date: model must deal with anticipation to change
+    
+    in_prelim_sfha = ifelse(sfha2018 == 1 & year >= year(PRE_DATE), "SFHA", "Not SFHA"),
+    
+    in_prelim_sfha = ifelse(sfha2024 == 1 & year >= year(PRE_DATE), "SFHA",
+                         ifelse(year >= year(PRE_DATE) & sfha2024 == 0, "Not SFHA", in_prelim_sfha)),
+    
+    in_prelim_sfha = ifelse((sfha2018 == 0 & sfha2024 == 0 ) | (is.na(sfha2018) & is.na(sfha2024)) , "Not SFHA", in_prelim_sfha),
+        
     # LOMR indicator
     in_lomr       = if_else(year >= year(lomr_eff) & !is.na(LOMR_ID),
                             "Received LOMR", "Not in LOMR"),
@@ -103,10 +113,12 @@ sales <- sales |>
 
 # 5. Build res_sales with timing‐of‐sale variables
 res_sales <- sales |>
+  filter(class %nin% c(213, 218, 219)) |>
+  filter(num_parcels_sale < 6) |>        # drop sales that involved a lot of parcels. Usually involves a CoOp, Condo, or landarea being bought for construction, not a normal residential sale.
   filter(sale_price > 1000) |>
   mutate(
     class = as.numeric(class),
-    res_c2 = class > 200 & class < 298
+    res_c2 = class > 200 & class < 300
   ) |>
   group_by(pin) |>
   arrange(year) |>
@@ -127,7 +139,7 @@ res_sales <- sales |>
     #   sold_pre2024 = ifelse(year <= 2023, TRUE, FALSE),
     #   sold_post2023 = ifelse(year > 2023, TRUE, FALSE),
     #   )
-
+res_sales <- res_sales |> filter(times_sold < 15)
 
 # # 6. Summarize into pin_groups
 # pin_groups <- res_sales |>
