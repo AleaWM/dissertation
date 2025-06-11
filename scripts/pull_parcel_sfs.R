@@ -91,16 +91,16 @@ st_clip_firms_2024 <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_N
                               layer = "S_FIRM_PAN") |>  
   st_transform(common_crs) |>
   st_intersection(border) |>  
-  st_transform(common_crs) |>
-
-  mutate(
-    pre_date = paste0(year(PRE_DATE), "-",
-                      str_pad(month(PRE_DATE), width = 2, side = "left", pad = "0"), "-",
-                      str_pad(day(PRE_DATE), width=2, side = "left", pad = "0")),
-    eff_date = paste0(year(EFF_DATE), "-",
-                      str_pad(month(EFF_DATE), width = 2, side = "left", pad = "0"), "-",
-                      str_pad(day(PRE_DATE), width=2, side = "left", pad = "0"))
-  )
+  st_transform(common_crs) #|>
+# 
+#   mutate(
+#     pre_date = paste0(year(PRE_DATE), "-",
+#                       str_pad(month(PRE_DATE), width = 2, side = "left", pad = "0"), "-",
+#                       str_pad(day(PRE_DATE), width=2, side = "left", pad = "0")),
+#     eff_date = paste0(year(EFF_DATE), "-",
+#                       str_pad(month(EFF_DATE), width = 2, side = "left", pad = "0"), "-",
+#                       str_pad(day(PRE_DATE), width=2, side = "left", pad = "0"))
+#   )
 
 st_bbox(st_clip_firms_2024) 
 
@@ -113,11 +113,12 @@ st_geometry(st_clip_firms_2024) <- "SHAPE"
 # FIRMS as of 2024 from State NFHL
 ggplot() +
   geom_sf(data = st_clip_firms_2024, 
-          linewidth = 0.3, aes(fill = eff_date)) +
+          linewidth = 0.3, aes(fill = EFF_DATE ) ) +
   geom_sf(data = border, fill = NA, color = "black", lwd=1)+
   theme_void() +
-  scale_fill_ordinal() +
-  labs( title = "FIRM Effective Date" , fill = "", )
+ #scale_fill_date() +
+  labs( title = "FIRM Effective Date" , fill = "" )
+
 
 
 # 1,457,163  distinct pin10 obs
@@ -141,10 +142,16 @@ dups_notcook <- dups |>
 
 pin_centroids_clean <- anti_join(as.data.frame(pin_centroids), as.data.frame(dups_notcook))
 
-pin_centroids_clean <- pin_centroids_clean |> as.data.frame() |> select(-c(PCOMM,PANEL, SUFFIX, ST_FIPS, GFID:SHAPE_Area.1))
+pin_centroids_clean <- pin_centroids_clean |> as.data.frame() |> select(-c(PCOMM, PANEL, SUFFIX, ST_FIPS, GFID:SHAPE_Area.1))
+
+pin_centroids_clean <- pin_centroids_clean |> select(-c(SCALE, PANEL_TYP, PNP_REASON, BASE_TYP,  geometry) )
+
+write_csv(pin_centroids_clean, "data/processed/parcels_wFIRMs_20250604.csv")
 
 
-write_csv(pin_centroids_clean, "data/processed/parcels_wFIRMs.csv")
+
+
+
 
 ####### The rest is not currently used ##############
 tic()
