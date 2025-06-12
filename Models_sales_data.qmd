@@ -6,7 +6,8 @@ format:
     code-tools: true
     df-print: paged
     toc: true
-    tbl-cap-location: top
+    tbl-cap-location: margin
+  #  tbl-cap-location: top
     fig-cap-location: top
 ---
 
@@ -803,13 +804,17 @@ all_models_formatted
 
 # Research Question 2
 
+On June 29th, 2020, First Street Foundation released their flood risk data and the Flood Factor. Provided flood risk data for inland areas that were typically overlooked in FEMA flood maps.
+
 **Does information on flood risk available to the buyer get capitalized into the property value? If so, to what extent? Is this effect moderated by pre-existing information unavailable to the buyer?**
 
 H3: A High risk rating score available to the buyer from First Street will be associated with a larger decrease in the value of the properties outside of an SFHA than properties in an SFHA.
 
 
+
+
 ```{r}
-ff_scores <- read_csv("data/raw/floodfactor_scores.csv")
+#ff_scores <- read_csv("data/raw/floodfactor_scores.csv")
 
 puni_pins <- read_csv("./data/raw/parcel_universe_currentyear.csv")
 
@@ -817,6 +822,88 @@ puni_pins <- read_csv("./data/raw/parcel_universe_currentyear.csv")
 df_pairs <- left_join(df_pairs, puni_pins)
 
 df_pairs <- df_pairs |> mutate(ff_factor = factor(env_flood_fs_factor))
+
+
+## Create event indicators
+
+## if the first sale was before the release and the next sale was after the release, then coded as TRUE, otherwise, FALSE
+ff_pairs <- df_pairs |>  mutate(
+    ff_released = ifelse(sale_date_t1 < as_date("2020-06-29") & sale_date_t2 >= as_date("2020-06-29"), TRUE, FALSE),
+    high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE),
+    # high_ff_score = factor(high_ff_score, levels = c("Low", "High") )
+  ) 
+
+
+
+ff_pairs |> filter(ff_released ==TRUE)
+
+ff_pairs |> filter(ff_released ==TRUE
+                   & env_flood_fema_sfha == TRUE)
+
+ff_pairs |> filter(ff_released ==TRUE &
+                  high_ff_score == TRUE)
+
+ff_pairs |> filter(ff_released ==TRUE
+                   & change_type %in% c("Added", "Removed"))
+
+
+table(ff_pairs$high_ff_score, ff_pairs$ff_released)
+```
+
+> Add building characteristics and time between sales into model??
+
+
+```{r}
+#| column: page
+#| label: tbl-proposal-models-ffscores
+#| tbl-cap: "Model in proposal"
+
+
+  all_models <- list(
+    
+    "High or Low" = list(
+      
+      "I" = feols(d_log_price ~ change_type + ff_released*high_ff_score,       
+                  data = ff_pairs,
+                  cluster = ~pin
+      ),
+      
+      "II" = feols(d_log_price ~ change_type,       
+                   data = ff_pairs,
+                   cluster = ~pin
+                   
+      ),
+      "III" = feols(d_log_price ~ high_ff_score*ff_released,
+                    data = ff_pairs,
+                    cluster = ~pin
+                    
+      )
+    ),
+        "Ordinal" = list(
+      
+      "I" = feols(d_log_price ~ change_type+ ff_factor*ff_released,       
+                  data = ff_pairs,
+                  cluster = ~pin
+      ),
+      
+      "II" = feols(d_log_price ~ ff_factor*ff_released,       
+                   data = ff_pairs,
+                   cluster = ~pin
+                    
+      )
+    )
+    )
+  
+all_models_formatted <- modelsummary::modelsummary(all_models,
+             shape = "cbind",    
+               output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+all_models_formatted
+
+
+
 ```
 
 
@@ -876,8 +963,6 @@ all_models_formatted <- modelsummary::modelsummary(all_models,
              shape = "cbind",    
                output = "flextable",
              fmt = function(x) round(x, 2),
-           #  gof_omit = "AIC|BIC",
-             #RMSE|Std.Errors|FE",
              stars = TRUE)
 
 all_models_formatted
@@ -953,4 +1038,12 @@ Only a few million in NFIP claims were paid out from these flood events but over
 - Part of this is because the areas hit hardest (Cicero and Berwyn have no SFHAs and no properties are required to have flood insurance. In general, not many properties in SFHAs in Cook County, especially where these flood events occurred. Makes it unlikely that residents have flood insurance and they can't file flood insurance claims if they don't have flood insurance. )
 
 Cook County also had disaster declarations in 1993, 1996, 1997, 2007, 2009, 2010, 2013, and 2023X2.
+
+
+
+```{r}
+flooded_pairs <- df_pairs |>  mutate(
+    flooded = ifelse(sale_date_t1 < as_date(2023-07-01) & sale_date_t2 >= as_date(2023-07-01), TRUE, FALSE),
+  ) 
+```
 
