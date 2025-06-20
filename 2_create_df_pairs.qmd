@@ -174,7 +174,7 @@ drop_pins <- c("05272000470000",  # co op
 ```
 
 
-```{r inspect-highmultisales, include=FALSE}
+```{r inspect-highmultisales}
 repeat_sales |> filter(times_sold > 5) |> arrange(desc(sale_price))
 
 repeat_sales |> filter(times_sold > 5) |>  filter(pin %nin% drop_pins) |> arrange(desc(sale_price))
@@ -338,7 +338,6 @@ repeat_sales |>
 #| - Grouped by municipality
 
 
-table(repeat_sales$in_lomr)
 repeat_sales |> 
   left_join(pin_muni_key) |> 
   filter(!is.na(lomr_date)) |>
@@ -366,18 +365,25 @@ repeat_sales |>
   distinct(pin, sale_date, sale_price, lomr_date, lomr2018, lomr2024) |>
   arrange(lomr_date, pin) |>
   group_by(lomr2018, lomr2024) |> summarize(n = n())
-  
+
+```
 
 
+
+```{r}
+
+# 1) Make sure sale_date is a Date (if not already)
 df_prep <- repeat_sales %>%
   filter(pin %nin% drop_pins) |> 
   
   mutate(
-  eff_date = ymd(EFF_DATE),  # for FIRMs
-  pre_date = ymd(PRE_DATE)   # for FIRMs
+  #  sale_date2 = mdy(sale_date),         # parse "September 01 2018" → Date
+    sale_year  = year(sale_date),       # or just use your existing `year` column
+  eff_date = ymd(EFF_DATE),
+  pre_date = ymd(PRE_DATE)
   ) %>%
   # 2) Keep only the columns we need for repeat‐sales. You can drop geometry, etc.
-  select(pin, sale_date, sale_price, in_eff_sfha, eff_date, pre_date, in_lomr, lomr_date) %>%
+  select(pin, sale_date, sale_year, sale_price, in_eff_sfha, eff_date, pre_date, in_lomr) %>%
   # 3) Sort by pin and date
   arrange(pin, sale_date) %>%
   # 4) Tag how many times each PIN sold
@@ -386,5 +392,247 @@ df_prep <- repeat_sales %>%
   ungroup() %>%
   # 5) Keep only those with at least two sales
   filter(times_sold >= 2)
+
+
+
+# 6) Now create the “paired” records: for each pin, pull next‐row info as “t2”
+df_pairs <- df_prep %>%
+  group_by(pin) %>%
+  arrange(sale_date) %>%
+  # Lead‐lag step: each row’s “lag_” is the previous sale
+  mutate(
+    sale_price_t1   = lag(sale_price),
+    sale_date_t1    = lag(sale_date),
+    sale_year_t1    = year(sale_date_t1),
+    in_sfha_t1      = lag(in_eff_sfha),
+    in_sfha_t1      = ifelse(is.na(in_sfha_t1), "Not SFHA", in_sfha_t1),
+
+    sale_price_t2   = sale_price,
+    sale_date_t2    = sale_date,
+    sale_year_t2    = sale_year,
+    in_sfha_t2      = in_eff_sfha
+  ) %>%
+
+  ungroup() |> 
+  select(-c(sale_price, sale_date, sale_year, in_eff_sfha))
 ```
+
+
+```{r }
+df_pairs <- df_pairs %>%
+  mutate(
+        d_log_price = log(sale_price_t2) - log(sale_price_t1),  # same as log (sale2 / sale1)        
+        # time between sales
+         months_btwn = round(time_length(sale_date_t2 - sale_date_t1, "months")),  # between sales
+         years_btwn = round(time_length(sale_date_t2 - sale_date_t1, "years")),    # between sales
+        years_btwn = ifelse(years_btwn < 1, 1, years_btwn),
+        ann_d_log_price = d_log_price / years_btwn,
+        
+        # binary variable options
+    removed_between = (in_sfha_t1 == "SFHA" & in_sfha_t2 == "Not SFHA"),
+    added_between = (in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "SFHA"),
+    stayed_sfha = (in_sfha_t1 == "SFHA" & in_sfha_t2 == "SFHA"),
+    neither_sfha = (in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "Not SFHA"),
+    
+    # SFHA change as a factor variable
+    change_type = case_when(
+      in_sfha_t1 == "SFHA" & in_sfha_t2 == "Not SFHA" ~ "Removed",
+      in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "SFHA" ~ "Added",
+      in_sfha_t1 == "SFHA" & in_sfha_t2 == "SFHA" ~ "Both In SFHA",
+      in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "Not SFHA" ~ "Both Out of SFHA",
+      TRUE ~ "OTHER"
+      
+    )
+  ) |>
+  
+  # add additional location variables (Triad, township, municipality, etc)
+  left_join(pin_muni_key)
+
+df_pairs <- df_pairs |> filter(change_type != "OTHER")
+
+```
+
+
+### Effective Dates
+
+Models only use preliminary dates as of June 8th.
+
+Models only use effective dates as of June 9th.
+
+```{r code-for-effectiveFIRM}
+df_pairs <- df_pairs |> 
+  mutate(
+    # years_btwn = sale_year_t2 - sale_year_t1,
+    time_btw_sales = lubridate::as.difftime(sale_date_t2 - sale_date_t1),
+    
+    
+    t1_months = round(time_length(sale_date_t1 - eff_date, "months") ), # first sale to FIRM update, in months
+    t2_months = round(time_length(sale_date_t2 - eff_date, "months")),
+    
+    t1_years = round(time_length(sale_date_t1 - eff_date, "years") ),    # first sale to FIRM update, in years
+    t2_years = round(time_length(sale_date_t2 - eff_date, "years")),     # time since FIRM update, in years
+        
+    t1_months_prelim = round(time_length(sale_date_t1 - pre_date, "months") ), # first sale to FIRM update, in months
+    t2_months_prelim = round(time_length(sale_date_t2 - pre_date, "months")),
+    
+    t1_years_prelim = round(time_length(sale_date_t1 - pre_date, "years") ),    # first sale to FIRM update, in years
+    t2_years_prelim = round(time_length(sale_date_t2 - pre_date, "years")),     # time since FIRM update, in years
+    
+  )|>
+  # Only keep rows where lag exists (i.e. drop the very first sale for each PIN)
+  filter(!is.na(sale_price_t1)) 
+
+
+table(df_pairs$years_btwn, df_pairs$change_type)
+
+table(df_pairs$sale_year_t2, df_pairs$change_type)
+```
+
+
+```{r}
+df_pairs <- df_pairs |> 
+  select(pin, 
+         ann_d_log_price, d_log_price,
+         sale_year_t1, sale_price_t1, in_sfha_t1, t1_months, t1_years,
+         sale_year_t2, sale_price_t2, in_sfha_t2, t2_months, t2_years,
+         years_btwn, removed_between, added_between, change_type, everything()
+  )
+
+df_pairs <- df_pairs |> 
+  mutate(change_type = factor(change_type, levels = c("Both Out of SFHA", "Both In SFHA", "Added", "Removed")))  
+
+# df_pairs <- df_pairs |>
+#   filter(t1_years < -6 & t2_years > 6)
+
+
+```
+
+
+```{r exportdata}
+# sampled_data <- df_pairs |>
+#   sample_frac(0.1)
+# write_csv(sampled_data,
+#           "repeatsales_sample.csv")
+
+
+saveRDS(df_pairs, file = "./data/processed/df_pairs.RDS")
+
+table(df_pairs$years_btwn, df_pairs$change_type)
+
+```
+
+
+
+
+### PIN pair Descriptive Stats
+
+```{r eval=FALSE, include = FALSE}
+df_pin_summary <- df_pairs %>%
+  group_by(pin) %>%
+  summarize(
+    n_pairs    = n(),
+    avg_dlog   = mean(d_log_price),
+    ever_removed = as.integer(any(removed_between == 1))
+  )
+```
+
+## Add Location Variables to all PINs
+
+```{r}
+#| eval: false
+
+
+
+pin_muni_key <- read_csv("./data/raw/pin_muni_key.csv")
+
+nicknames <- readxl::read_xlsx("../Merriman RA/ptax/Necessary_Files/muni_shortnames.xlsx")
+
+pin_muni_key <- pin_muni_key |> left_join(nicknames)
+
+
+puni_pins <- read_csv("./data/raw/parcel_universe_currentyear.csv") |> 
+  mutate(pin7 = str_sub(pin, 1, 7))
+
+pin_muni_key <- left_join(pin_muni_key, puni_pins)
+skim(pin_muni_key)
+
+
+# List of columns to fill
+fill_cols <- c("clean_name", "Triad", "Township",
+               "nbhd_code", "zip_code")
+
+
+
+parcels_first <- pin_muni_key  |> 
+  mutate(pin10 = str_sub(pin, 1,10)) |>
+  group_by(pin10) |>
+  summarize(clean_name = first(clean_name, na_rm=TRUE),
+            Triad = first(Triad, na_rm=TRUE),
+            Township = first(Township, na_rm=TRUE),
+            nbhd_code = first(nbhd_code, na_rm=TRUE),
+            zip_code = first(zip_code, na_rm=TRUE))
+
+parcels_first <- parcels_first |> 
+  fill(clean_name, .direction = "down") |>
+  fill(Township, .direction = "down") |>
+  fill(Triad, .direction = "down") |>
+  fill(nbhd_code, .direction = "down") |>
+  fill(zip_code, .direction = "down")
+
+
+# landblocks_first <- pin_muni_key  |> 
+#   mutate(pin7 = str_sub(pin, 1,7)) |>
+#   group_by(pin7) |>
+#   summarize(clean_name = first(clean_name),
+#             Triad = first(Triad),
+#             Township = first(Township),
+#             nbhd_code = first(nbhd_code),
+#             zip_code = first(zip_code))
+
+parcels_first <- pin_muni_key  |> 
+  mutate(pin10 = str_sub(pin, 1,10)) |>
+  group_by(pin10) |>
+  summarize(clean_name = first(clean_name, na_rm=TRUE),
+            Triad = first(Triad, na_rm=TRUE),
+            Township = first(Township, na_rm=TRUE),
+            nbhd_code = first(nbhd_code, na_rm=TRUE),
+            zip_code = first(zip_code, na_rm=TRUE))
+
+landblocks_first <- parcels_first  |> 
+  mutate(pin7 = str_sub(pin10, 1,7)) |>
+  group_by(pin7) |>
+  summarize(clean_name = first(clean_name, na_rm = TRUE),
+            Triad = first(Triad, na_rm = TRUE),
+            Township = first(Township, na_rm = TRUE),
+            nbhd_code = first(nbhd_code, na_rm = TRUE),
+            zip_code = first(zip_code, na_rm = TRUE)) |>
+    ungroup() |> 
+  group_by(nbhd_code, zip_code) |>
+  fill(clean_name, .direction = "downup") |>
+  fill(Triad, .direction =  "downup") |>
+  fill(Township, .direction = "downup") |> ungroup()
+
+landblocks_last <- parcels_first  |> 
+  mutate(pin7 = str_sub(pin10, 1,7)) |>
+  group_by(pin7) |>
+  summarize(clean_name = last(clean_name, na_rm = TRUE),
+            Triad = last(Triad, na_rm = TRUE),
+            Township = last(Township, na_rm = TRUE),
+            nbhd_code = last(nbhd_code, na_rm = TRUE),
+            zip_code = last(zip_code, na_rm = TRUE)) |>
+  ungroup() |> 
+  group_by(nbhd_code, zip_code) |>
+  fill(clean_name, .direction = "downup") |>
+  fill(Triad, .direction =  "downup") |>
+  fill(Township, .direction = "downup") |> ungroup()
+
+anti_join(landblocks_first, landblocks_last) |> arrange(pin7)
+
+inner_join(landblocks_first, landblocks_last) |> arrange(pin7)
+
+pin_muni_key <- left_join(pin_muni_key, landblocks_first) 
+skim(pin_muni_key)
+
+```
+
 
