@@ -1,0 +1,308 @@
+---
+title: "Cook County Parcel Sales"
+format: 
+  html:
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    toc: true
+    toc-location: left
+    tbl-cap-location: margin
+    fig-cap-location: top
+---
+
+
+```{r setup, warning=FALSE, message=FALSE}
+library(DescTools)
+library(sf)
+library(tidyverse)
+library(httr)
+library(jsonlite)
+library(glue)
+library(fixest)
+library(skimr)
+library(cobalt)
+
+```
+
+
+```{r}
+
+df_pairs <- readRDS("./data/processed/df_pairs.RDS")
+
+# df_pairs |>
+#   select(-c(short_name, agency_number, agency_name, stayed_sfha, neither_sfha, shpfile_name, added_between, removed_between)) |>
+#   write_csv("./data/processed/df_pairs.csv")
+
+```
+
+## Assumptions for Models
+
+| Variable          | Description                                     |
+| ----------------- | ----------------------------------------------- |
+| `ann_d_log_price` | Annualized log price change (your main DV)      |
+| `d_log_price`     | Raw log price change                            |
+| `sale_year_t1`    | Year of first sale                              |
+| `sale_year_t2`    | Year of second sale                             |
+| `years_btwn`      | Years between sales                             |
+| `change_type`     | SFHA transition category (e.g., Added, Removed) |
+| `eff_date`        | Flood map effective date (treatment timing)     |
+| `clean_name`      | Municipality                                    |
+| `Triad`           | Subregional identifier (potential FE subgroup)  |
+
+
+```{r}
+#| eval: false
+## temporarily keeping ONLY observations that sell before and after treatment
+
+df_pairs_treated <- df_pairs |> filter(sale_date_t1 <= eff_date & sale_date_t2 > eff_date)
+
+df_pairs <- df_pairs_treated
+```
+
+
+```{r}
+
+df_pairs |> filter(sale_date_t1 < eff_date) |>
+  group_by(change_type, sale_year_t1) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  ggplot(aes(x = sale_year_t1 , y = mean_growth, color = change_type)) +
+  geom_line() +
+  geom_point() + 
+  labs(title = "Pre-Treatment Trends by SFHA Change Type")
+
+df_pre <- df_pairs |> filter(sale_date_t2 < eff_date)
+
+df_pairs |> filter(sale_date_t2 > eff_date) |>
+  group_by(change_type, sale_year_t2) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  ggplot(aes(x = sale_year_t2 , y = mean_growth, color = change_type)) +
+  geom_line() +
+  geom_point() + 
+  labs(title = "Post-Treatment Trends by SFHA Change Type")
+
+df_pairs |> filter(sale_date_t2 > eff_date & sale_date_t1 < eff_date) |>
+  group_by(change_type, sale_year_t2) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  ggplot(aes(x = sale_year_t2 , y = mean_growth, color = change_type)) +
+  geom_line() +
+  geom_point() + 
+  labs(title = "Pre and Post-Treatment Trends by SFHA Change Type")
+
+eff_dates <- df_pairs |> distinct(eff_date)
+prelim_dates <- df_pairs |> distinct(pre_date)
+
+df_pairs |> filter(sale_date_t2 > eff_date & sale_date_t1 < eff_date) |>
+  group_by(change_type, sale_year_t1) |>
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |>
+  ggplot(aes(x = sale_year_t1, y = mean_growth, color = change_type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Pre and Post-Treatment Trends by SFHA Change Type") +
+  geom_vline(data = eff_dates, aes(xintercept = year(eff_date) ) ) 
+
+df_pairs |> filter(sale_date_t2 > pre_date & sale_date_t1 < pre_date) |>
+  group_by(change_type, sale_year_t1) |>
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |>
+    ggplot(aes(x = sale_year_t1, y = mean_growth, color = change_type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Pre and Post-Treatment Trends by SFHA Change Type, grouped by Sale1") +
+  geom_vline(data = prelim_dates, aes(xintercept = year(pre_date) ) ) 
+
+df_pairs |> filter(sale_date_t2 > pre_date & sale_date_t1 < pre_date) |>
+  group_by(change_type, sale_year_t2) |>
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |>
+  ggplot(aes(x = sale_year_t2, y = mean_growth, color = change_type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Pre and Post-Treatment Trends by SFHA Change Type, grouped by Sale2") +
+  geom_vline(data = prelim_dates, aes(xintercept = year(pre_date) ) ) 
+
+```
+
+
+### Effective Dates!
+
+```{r}
+df_pairs |> 
+  filter(t1_years < 0 ) |>
+  group_by(change_type, t1_years) |>
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |>
+  ggplot(aes(x = t1_years, y = mean_growth, color = change_type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Pre-Treatment Trends by SFHA Change Type, grouped by Years before treatment") 
+
+df_pairs |> 
+#  filter(t1_years > 0 ) |>
+  group_by(change_type, t1_years) |>
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |>
+  ggplot(aes(x = t1_years, y = mean_growth, color = change_type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Pre-Treatment Trends by SFHA Change Type, grouped by Years before treatment") 
+
+df_pairs |> 
+  filter(t2_years > 0 ) |>
+  group_by(change_type, t2_years) |>
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |>
+  ggplot(aes(x = t2_years, y = mean_growth, color = change_type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Post-Treatment Trends by SFHA Change Type, grouped by Years after treatment sale") 
+```
+
+### Preliminary Dates!
+
+```{r}
+df_pairs |> 
+  filter(t1_years_prelim < 0 ) |>
+  group_by(change_type, t1_years_prelim) |>
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |>
+  ggplot(aes(x = t1_years_prelim, y = mean_growth, color = change_type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Pre-Treatment Trends by SFHA Change Type, grouped by Years before treatment") 
+
+df_pairs |> 
+  group_by(change_type, t1_years_prelim) |>
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |>
+  ggplot(aes(x = t1_years_prelim, y = mean_growth, color = change_type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Pre-Treatment Trends by SFHA Change Type, grouped by Years before treatment") 
+
+df_pairs |> 
+  filter(t2_years_prelim > 0 ) |>
+  group_by(change_type, t2_years_prelim) |>
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |>
+  ggplot(aes(x = t2_years_prelim, y = mean_growth, color = change_type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Post-Treatment Trends by SFHA Change Type, grouped by Years after treatment sale") 
+```
+
+```{r}
+
+bal.tab(change_type ~ sale_price_t1 + years_btwn + Triad,
+        data = df_pairs,
+        estimand = "ATT")
+```
+
+## Centered around FIRM update
+
+```{r}
+# Assume your data is named df_pairs
+df_pairs <- df_pairs |>
+  mutate(
+    sale_year_t2 = year(ymd(sale_date_t2)),
+    eff_year = year(ymd(eff_date)),
+    rel_year = sale_year_t2 - eff_year,
+    change_group = if_else(is.na(change_type), "Unknown", change_type)
+  )
+
+# Filter to pre-treatment observations only
+df_pre <- df_pairs |> filter(rel_year < 0)
+
+# Aggregate to calculate mean annualized log price change
+plot_data <- df_pre |>
+  group_by(rel_year, change_group) |>
+  summarise(mean_ann_dlogprice = mean(ann_d_log_price, na.rm = TRUE), .groups = "drop")
+
+# Plot
+ggplot(plot_data, aes(x = rel_year, y = mean_ann_dlogprice, color = change_group)) +
+  geom_line() +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  labs(
+    title = "Pre-Treatment Trends by SFHA Change Type",
+    x = "Years Before FIRM Update",
+    y = "Mean Annualized Log Price Change",
+    color = "SFHA Change Type"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# Assume your data is named df_pairs
+df_pairs2 <- df_pairs |>
+  mutate(
+    #sale_year_t2 = year(ymd(sale_date_t2)),
+   # eff_year = year(ymd(eff_date)),
+    rel_date = sale_date_t1 - eff_date,
+    rel_year = sale_year_t1 - year(eff_date),
+    change_group = if_else(is.na(change_type), "Unknown", change_type)
+  )
+
+# Filter to pre-treatment observations only
+df_pre <- df_pairs2 |> filter(rel_year <=  0)
+
+# Aggregate to calculate mean annualized log price change
+plot_data <- df_pre |>
+  group_by(rel_year, change_group) |>
+  summarise(mean_ann_dlogprice = mean(ann_d_log_price, na.rm = TRUE), .groups = "drop")
+
+# Plot
+ggplot(plot_data, aes(x = rel_year, y = mean_ann_dlogprice, color = change_group)) +
+  geom_line() +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  labs(
+    title = "Pre-Treatment Trends by SFHA Change Type",
+    x = "Years Before FIRM Update",
+    y = "Mean Log Price of First Sale",
+    color = "SFHA Change Type"
+  ) +
+  theme_minimal()
+
+```
+
+
+```{r}
+# Assume your data is named df_pairs
+df_pairs2 <- df_pairs |>
+  mutate(
+    #sale_year_t2 = year(ymd(sale_date_t2)),
+   # eff_year = year(ymd(eff_date)),
+    rel_date = sale_date_t2 - eff_date,
+    rel_year = sale_year_t2 - year(eff_date),
+    change_group = if_else(is.na(change_type), "Unknown", change_type)
+  )
+
+# Filter to pre-treatment observations only
+df_post <- df_pairs2 |> filter(rel_year >= 0)
+
+# Aggregate to calculate mean annualized log price change
+plot_data <- df_post |>
+  group_by(rel_year, change_group) |>
+  summarise(mean_ann_dlogprice = mean(ann_d_log_price, na.rm = TRUE), .groups = "drop")
+
+# Plot
+ggplot(plot_data, aes(x = rel_year, y = mean_ann_dlogprice, color = change_group)) +
+  geom_line() +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  labs(
+    title = "Post-Treatment Trends by SFHA Change Type",
+    x = "Years After FIRM Update",
+    y = "Mean Log Price of 2nd Sale",
+    color = "SFHA Change Type"
+  ) +
+  theme_minimal()
+
+```
+
+## Geography Trends
+
+```{r}
+lm(log(sale_price_t1) ~ change_type * factor(sale_year_t2), data = df_pairs |> filter(sale_date_t1 < eff_date))
+
+```
+
+
+## Regression based pre-trend test
+
+```{r}
+lm(log(sale_price_t1) ~ change_type * factor(sale_year_t2), data = df_pairs |> filter(sale_date_t1 < eff_date))
+
+```
+
