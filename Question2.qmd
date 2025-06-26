@@ -1,0 +1,500 @@
+---
+title: "Cook County Parcel Sales"
+format: 
+  html:
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    toc: true
+    toc-location: left
+    tbl-cap-location: margin
+    fig-cap-location: top
+---
+
+# Data Sources and Background Information
+
+```{r setup, warning=FALSE, message=FALSE}
+library(DescTools)
+library(sf)
+library(tidyverse)
+library(httr)
+library(jsonlite)
+library(glue)
+library(fixest)
+library(skimr)
+
+```
+
+
+
+> Sales are not winsorized
+
+```{r}
+res_sales  <- readRDS("./data/processed/res_sales.rds") |> filter(sale_date > date("2010-01-01"))  
+
+
+pin_muni_key <- read_csv("./data/raw/pin_muni_key.csv")
+
+nicknames <- readxl::read_xlsx("../Merriman RA/ptax/Necessary_Files/muni_shortnames.xlsx")
+
+pin_muni_key <- pin_muni_key |> left_join(nicknames)
+
+
+# problem pins for various reasons
+drop_pins <- c("05272000470000",  # co op
+               "17103180800000",  # became 325 W Wacker Drive, the building that looks like water waves, condo in loop
+               "14281050350000",  # is a condo building, whole building bought in 2006, Currently classed as land? probably due to remodeling permit? 
+               "10191030030000",     # land trust sale and then maybe split into other pins?
+               "17032220150000",   #  becomes 880 N LakeShore Drive and is a CoOp
+               "17032220180000",   # also part of 880 N Lakeshore Dr  and is  a CoOp
+               "17032220200000",    # ditto
+               "05272000010000"     # another CoOp
+               
+)
+
+res_sales <- res_sales |> filter(pin %nin% drop_pins )
+
+
+repeat_sales <- res_sales |> 
+  
+  group_by(pin) |> 
+  mutate(times_sold = n()) |> 
+  filter(times_sold > 1) |> 
+  ungroup() |> 
+
+  # a couple outliers were in there
+  filter( sale_price < 5000000)
+
+```
+
+```{r dropped_pins}
+
+# price corrections randomly spotted
+repeat_sales <- repeat_sales |> 
+  mutate(sale_price = 
+         case_when(
+           pin == "15154220240000" & sale_date == as_date("2006-11-01") ~ 180000,   # not 180 million
+           pin == "08153010051151" ~ 81000, # not 81 million
+         TRUE ~ sale_price
+         ))
+
+
+```
+
+
+```{r}
+# 1) Make sure sale_date is a Date (if not already)
+df_prep <- repeat_sales %>%
+  filter(pin %nin% drop_pins) |> 
+  
+  mutate(
+    sale_year  = year(sale_date),
+    eff_date = ymd(EFF_DATE),
+    pre_date = ymd(PRE_DATE)
+  ) %>%
+  # 2) Keep only the columns we need for repeat‐sales. You can drop geometry, etc.
+  select(pin, sale_date, sale_year, sale_price, in_eff_sfha, in_prelim_sfha, 
+         eff_date, pre_date, in_lomr) %>%
+  # 3) Sort by pin and date
+  arrange(pin, sale_date) %>%
+  # 4) Tag how many times each PIN sold
+  group_by(pin) %>%
+  mutate(times_sold = n()) %>%
+  ungroup() %>%
+  # 5) Keep only those with at least two sales
+  filter(times_sold >= 2)
+
+
+
+# 6) Now create the “paired” records: for each pin, pull next‐row info as “t2”
+df_pairs <- df_prep %>%
+  group_by(pin) %>%
+  arrange(sale_date) %>%
+  # Lead‐lag step: each row’s “lag_” is the previous sale
+  mutate(
+    sale_price_t1   = lag(sale_price),
+    sale_date_t1    = lag(sale_date),
+    sale_year_t1    = year(sale_date_t1),
+    in_sfha_t1      = lag(in_eff_sfha),
+    in_sfha_t1      = ifelse(is.na(in_sfha_t1), "Not SFHA", in_sfha_t1),
+
+    sale_price_t2   = sale_price,
+    sale_date_t2    = sale_date,
+    sale_year_t2    = sale_year,
+    in_sfha_t2      = in_eff_sfha
+  ) %>%
+
+  ungroup() |> 
+  # get rid of redundant variables that would be confusing
+  select(-c(sale_price, sale_date, sale_year, in_eff_sfha))
+
+
+
+df_pairs <- df_pairs %>%
+  mutate(
+        d_log_price = log(sale_price_t2) - log(sale_price_t1),  # same as log (sale2 / sale1)        
+        # time between sales
+         months_btwn = round(time_length(sale_date_t2 - sale_date_t1, "months")),  # between sales
+         years_btwn = round(time_length(sale_date_t2 - sale_date_t1, "years")),    # between sales
+        years_btwn = ifelse(years_btwn < 1, 1, years_btwn),
+        ann_d_log_price = d_log_price / years_btwn,
+
+    
+    # SFHA change as a factor variable
+    change_type = case_when(
+      in_sfha_t1 == "SFHA" & in_sfha_t2 == "Not SFHA" ~ "Removed",
+      in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "SFHA" ~ "Added",
+      in_sfha_t1 == "SFHA" & in_sfha_t2 == "SFHA" ~ "Both In SFHA",
+      in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "Not SFHA" ~ "Both Out of SFHA",
+      TRUE ~ "OTHER"
+      
+    )
+  ) |>
+  
+  # add additional location variables (Triad, township, municipality, etc)
+  left_join(pin_muni_key)
+
+df_pairs <- df_pairs |> filter(change_type != "OTHER")
+
+
+
+df_pairs <- df_pairs |> 
+  mutate(
+    
+    # relative time variables 
+    t_months_eff = round(time_length(sale_date_t1 - eff_date, "months") ), # first sale to FIRM update, in months
+    
+    t_years_eff = round(time_length(sale_date_t1 - eff_date, "years") ),    # first sale to FIRM update, in years
+
+    t_months_prelim = round(time_length(sale_date_t1 - pre_date, "months") ), # first sale to FIRM update, in months
+
+    t_years_prelim = round(time_length(sale_date_t1 - pre_date, "years") ),    # first sale to FIRM update, in years
+
+  )|>
+  # Only keep rows where lag exists (i.e. drop the very first sale for each PIN)
+  filter(!is.na(sale_price_t1))
+
+df_pairs <- df_pairs |> 
+  select(pin, 
+         ann_d_log_price, d_log_price,
+         sale_year_t1, sale_price_t1, in_sfha_t1, 
+         sale_year_t2, sale_price_t2, in_sfha_t2, 
+         years_btwn, change_type, everything()
+  )
+
+df_pairs <- df_pairs |> 
+  mutate(change_type = factor(change_type, levels = c("Both Out of SFHA", "Both In SFHA", "Added", "Removed")))
+```
+
+
+```{r}
+table(df_pairs$years_btwn, df_pairs$change_type)
+
+table(df_pairs$sale_year_t2, df_pairs$change_type)
+```
+
+```{r descriptive-stats-df_prep}
+skim(df_prep)
+```
+
+
+```{r descriptive-stats-df_pairs}
+skim(df_pairs)
+```
+
+# Research Question 2
+
+On June 29th, 2020, First Street Foundation released their flood risk data and the Flood Factor. Provided flood risk data for inland areas that were typically overlooked in FEMA flood maps.
+
+**Does information on flood risk available to the buyer get capitalized into the property value? If so, to what extent? Is this effect moderated by pre-existing information unavailable to the buyer?**
+
+H3: A High risk rating score available to the buyer from First Street will be associated with a larger decrease in the value of the properties outside of an SFHA than properties in an SFHA.
+
+
+
+
+```{r}
+#ff_scores <- read_csv("data/raw/floodfactor_scores.csv")
+
+puni_pins <- read_csv("./data/raw/parcel_universe_currentyear.csv") |> 
+  mutate(pin7 = str_sub(pin, 1, 7))
+
+pin_muni_key <- left_join(pin_muni_key, puni_pins)
+
+```
+
+
+```{r}
+df_pairs <- left_join(df_pairs, pin_muni_key)
+
+df_prep <- left_join(df_prep, pin_muni_key)
+
+df_prep <- df_prep |> 
+  mutate(
+    event = ifelse(sale_date < as_date("2020-06-29"), "1. Pre", "2. Post"),
+    high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE),
+  )
+
+n_distinct(df_pairs$pin)
+
+df_pairs <- df_pairs |> 
+  mutate(ff_factor = factor(env_flood_fs_factor))
+
+
+## Create event indicators
+
+## if the first sale was before the release and the next sale was after the release, then coded as TRUE, otherwise, FALSE
+ff_pairs <- df_pairs |>  
+  mutate(
+    treated = ifelse(sale_date_t1 < as_date("2020-06-29") & sale_date_t2 >= as_date("2020-06-29"), TRUE, FALSE),
+    high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE),
+    new_info_released = ymd("2020-06-29")
+  )
+
+
+
+
+ff_pairs |> filter(treated ==TRUE
+                   & env_flood_fema_sfha == TRUE)
+
+ff_pairs |> filter(treated ==TRUE &
+                  high_ff_score == TRUE)
+
+ff_pairs |> filter(treated ==TRUE
+                   & change_type %in% c("Added", "Removed"))
+
+
+table(ff_pairs$high_ff_score, ff_pairs$treated)
+table(ff_pairs$high_ff_score, ff_pairs$change_type)
+
+```
+
+## Graphs
+
+
+```{r}
+ff_pairs |> 
+  filter(sale_date_t1 < new_info_released) |> 
+    group_by(sale_year_t1, ff_factor) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  ggplot(aes(x = sale_year_t1 , y = mean_growth, color = ff_factor)) +
+  geom_line() +
+  geom_point() + 
+  labs(title = "Pre-Treatment Trends by SFHA Change Type")
+
+
+ff_pairs |> 
+  filter(sale_date_t2 > new_info_released) |>
+  group_by(sale_year_t2, ff_factor) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  ggplot(aes(x = sale_year_t2 , y = mean_growth, color = ff_factor)) +
+  geom_line() +
+  geom_point() + 
+  labs(title = "Post-Treatment Trends by SFHA Change Type")
+```
+
+```{r}
+
+ff_pairs |> 
+  filter(sale_date_t1 < new_info_released) |> 
+    group_by(sale_year_t1, high_ff_score) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  ggplot(aes(x = sale_year_t1 , y = mean_growth, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+  labs(title = "Pre-Treatment Trends by FF Score 5 or higher")
+
+ff_pairs |> 
+  filter(sale_date_t2 < new_info_released & sale_year_t2 > 2015) |>
+  group_by(sale_year_t2, high_ff_score) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  ggplot(aes(x = sale_year_t2 , y = mean_growth, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+  labs(title = "Pre-Treatment Trends for 2nd sale by FF Score 5 or higher")
+
+ff_pairs |> 
+  filter(sale_date_t2 > new_info_released ) |>
+  group_by(sale_year_t2, high_ff_score) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  ggplot(aes(x = sale_year_t2 , y = mean_growth, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+  labs(title = "Post-Treatment Trends by FF Score 5 or higher")
+```
+
+
+## Models
+
+```{r}
+#| column: page
+#| label: tbl-proposal-models-ffscores
+#| tbl-cap: "Model in proposal"
+
+
+  all_models <- list(
+    
+    "High or Low" = list(
+      
+      "I" = feols(d_log_price ~ high_ff_score,       
+                  data = ff_pairs,
+                  cluster = ~pin
+      ),
+      
+      "II" = feols(d_log_price ~ change_type,       
+                   data = ff_pairs,
+                   cluster = ~pin
+                   
+      ),
+      "III" = feols(d_log_price ~ high_ff_score*treated,
+                    data = ff_pairs,
+                    cluster = ~pin
+                    
+      )
+    ),
+        "Ordinal" = list(
+      
+      "I" = feols(d_log_price ~ change_type+ env_flood_fs_factor*treated,       
+                  data = ff_pairs,
+                  cluster = ~pin
+      ),
+      
+      "II" = feols(d_log_price ~ env_flood_fs_factor*change_type,       
+                   data = ff_pairs,
+                   cluster = ~pin
+                    
+      )
+    )
+    )
+  
+all_models_formatted <- modelsummary::modelsummary(all_models,
+             shape = "cbind",    
+               output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+all_models_formatted
+
+
+
+```
+
+```{r}
+#| column: page
+#| label: tbl-fixedeffects-models-ffscores
+#| tbl-cap: "Control for Municipality"
+
+
+  all_models <- list(
+    
+    "High or Low" = list(
+      
+      "I" = feols(d_log_price ~ high_ff_score | clean_name,       
+                  data = ff_pairs,
+                  cluster = ~pin + clean_name
+      ),
+      
+      "II" = feols(d_log_price ~ change_type | clean_name,       
+                   data = ff_pairs,
+                  cluster = ~pin + clean_name
+                   
+      ),
+      "III" = feols(d_log_price ~ high_ff_score*treated | clean_name,
+                    data = ff_pairs,
+                  cluster = ~pin + clean_name
+                    
+      )
+    ),
+        "Ordinal" = list(
+      
+      "I" = feols(d_log_price ~ change_type+ env_flood_fs_factor*treated | clean_name,       
+                  data = ff_pairs,
+                  cluster = ~pin + clean_name
+      ),
+      
+      "II" = feols(d_log_price ~ env_flood_fs_factor*change_type | clean_name,       
+                   data = ff_pairs,
+                  cluster = ~pin + clean_name
+                    
+      ),
+      
+      "II" = feols(d_log_price ~ ff_factor*change_type | clean_name,       
+                   data = ff_pairs,
+                  cluster = ~pin + clean_name
+                    
+      )
+    )
+    )
+  
+all_models_formatted <- modelsummary::modelsummary(all_models,
+             shape = "cbind",    
+               output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+all_models_formatted
+
+
+
+```
+
+                                                                                 
+
+## using df_prep
+
+```{r}
+
+  all_models <- list(
+    
+    "High or Low" = list(
+      
+      "I" = feols(log(sale_price) ~ high_ff_score | clean_name,       
+                  data = df_prep,
+                  cluster = ~pin + clean_name
+      ),
+      
+      "II" = feols(log(sale_price) ~ high_ff_score*in_eff_sfha | clean_name,       
+                   data = df_prep,
+                  cluster = ~pin + clean_name
+                   
+      ),
+      "muni fe" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event | clean_name,
+                    data = df_prep,
+                  cluster = ~pin + clean_name
+                    
+      ),
+      
+      "pin fes" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event | pin,
+                    data = df_prep,
+                  cluster = ~pin + clean_name
+                    
+      ),
+      
+      "2 FEs" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event | pin+ clean_name,
+                    data = df_prep,
+                  cluster = ~pin + clean_name
+                    
+      ),
+      
+      "3 FEs" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event | pin + clean_name + sale_year,
+                    data = df_prep,
+                    ref = 2020,
+                  cluster = ~pin + clean_name
+                    
+      )
+    
+    )
+    )
+  
+all_models_formatted <- modelsummary::modelsummary(all_models,
+             shape = "cbind",    
+               output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+all_models_formatted
+
+
+
+```
+
