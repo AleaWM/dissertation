@@ -36,16 +36,31 @@ pin10_firms  <- read_csv("./data/processed/parcels_wFIRMS_20250604.csv")   |>
 
 # only includes PINs that were in FEMA flood plain.
 sfha_ind <- read_csv("./data/processed/sfha_indicator_parcels.csv") |> 
-  select(pin10, sfha2018:lomr2024) 
+  select(pin10, sfha2018:lomr2024, lomr_date) 
 
 
-lomrs    <- read_csv("./data/processed/lomr_pins_2024.csv") |>
-  rename(
-    lomr_eff     = EFF_DAT,
-    lomr_dfirm_id = DFIRM_I
-  ) |>
-  mutate(lomr_eff = ymd(lomr_eff))   |>  
-  select(-c(mncplty, pltcltw, assssrn, assssrb, geoid, shp_Lng, shap_Ar, SCALE, STATUS, SOURCE_)) 
+# lomrs2024    <- read_csv("./data/processed/lomr_pins_2024.csv") |>
+#   rename(
+#     lomr_eff     = EFF_DAT,
+#     lomr_dfirm_id = DFIRM_ID
+#   ) |>
+#   mutate(lomr_eff = ymd(lomr_eff),
+#          in_lomr = "2024") #  |>  
+#   #(-c(mncplty, pltcltw, assssrn, assssrb, geoid, shp_Lng, shap_Ar, SCALE, STATUS, SOURCE_)) 
+# 
+# 
+# lomrs2018  <- read_csv("./data/processed/parcels_lomrs_2018.csv") |>
+#   rename(
+#     lomr_eff     = EFF_DAT,
+#     lomr_dfirm_id = DFIRM_ID
+#   ) |>
+#   mutate(lomr_eff = ymd(lomr_eff), 
+#          pin10 = str_sub(pin, 1, 10), 
+#          in_lomr = "2018")
+#
+# lomrs_antijoin <- anti_join(lomrs2018, lomrs2024, by = "pin10")
+# lomr_join <- lomrs2018 |> full_join(lomrs2024, by = c("pin10"), suffix = c("lomr2018", "lomr2024"))
+
 
 
 # 3. Merge firms & SFHA indicators into sales
@@ -74,7 +89,7 @@ sales <- sales |>
   mutate(PRE_DATE = ifelse(old_panel %in% c(15, 20, 155) & year >= 2021, as_date("2021-09-22"), as_date(PRE_DATE)),
          PRE_DATE = as_date(PRE_DATE),
   ) |>
-  left_join(lomrs, by = c("pin","pin10") ) |>
+  #left_join(lomrs, by = c("pin","pin10") ) |>
   mutate(
  
     # # CCAO SFHA status post‐2021
@@ -88,24 +103,26 @@ sales <- sales |>
    # the flood zones that existed in the 2018 state NFHL were last updated in 2008. sfha2018 is the default SFHA status for the observations, then lomrs and future updates will be incorporated
         in_eff_sfha = ifelse(sfha2018 == 1, "SFHA", "Not SFHA"),
 
-        in_eff_sfha = ifelse(sfha2024 == 1 & year >= year(EFF_DATE), "SFHA",
-                             ifelse(year >= year(EFF_DATE) & sfha2024 == 0, "Not SFHA", in_eff_sfha)),
+        in_eff_sfha = ifelse(sfha2024 == 1 & sale_date >= EFF_DATE, "SFHA",
+                             ifelse(sale_date >= EFF_DATE & sfha2024 == 0, "Not SFHA", in_eff_sfha)),
 
         in_eff_sfha = ifelse((sfha2018 == 0 & sfha2024 == 0 ) | (is.na(sfha2018) & is.na(sfha2024)) , "Not SFHA", in_eff_sfha),
 
         
     # create similar variable but for the preliminary date: model must deal with anticipation to change
     
-    in_prelim_sfha = ifelse(sfha2018 == 1 & year >= year(PRE_DATE), "SFHA", "Not SFHA"),
+    in_prelim_sfha = ifelse(sfha2018 == 1 & sale_date >= PRE_DATE, "SFHA", "Not SFHA"),
     
-    in_prelim_sfha = ifelse(sfha2024 == 1 & year >= year(PRE_DATE), "SFHA",
-                         ifelse(year >= year(PRE_DATE) & sfha2024 == 0, "Not SFHA", in_prelim_sfha)),
+    in_prelim_sfha = ifelse(sfha2024 == 1 & sale_date >= PRE_DATE, "SFHA",
+                         ifelse(sale_date >= (PRE_DATE) & sfha2024 == 0, "Not SFHA", in_prelim_sfha)),
     
     in_prelim_sfha = ifelse((sfha2018 == 0 & sfha2024 == 0 ) | (is.na(sfha2018) & is.na(sfha2024)) , "Not SFHA", in_prelim_sfha),
         
     # LOMR indicator
-    in_lomr       = if_else(year >= year(lomr_eff) & !is.na(LOMR_ID),
+    in_lomr       = if_else(sale_date >= (lomr_date),
                             "Received LOMR", "Not in LOMR"),
+    in_lomr = ifelse(is.na(in_lomr), "Not in LOMR", in_lomr),
+    
 ) 
 
 
