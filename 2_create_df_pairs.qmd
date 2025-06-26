@@ -110,7 +110,6 @@ Code above helped identify parcels that coded as condos but are separate homes. 
 ```{r}
 res_sales <- res_sales |> 
   mutate(
-    in_lomr = ifelse(is.na(in_lomr), "Not in LOMR", in_lomr),
     in_eff_sfha = 
       case_when(
         pin10 =="0210406033" ~ "Not SFHA", # parcel owns a pond which is in the SFHA. Lots of "condos" on this parcel that are separate townhomes but no building outlines are in floodplain
@@ -143,8 +142,8 @@ repeat_sales <- res_sales |>
   group_by(pin) |> 
   mutate(times_sold = n()) |> 
   filter(times_sold > 1) |> 
-  ungroup() |>
-  filter(class %nin% c("297", "298", "299"))
+  ungroup() # |>
+#  filter(class %nin% c("297", "298", "299"))
   
 
 #res_sales |> group_by(pin, sale_date) |> n_distinct()
@@ -383,7 +382,7 @@ df_prep <- repeat_sales %>%
   pre_date = ymd(PRE_DATE)
   ) %>%
   # 2) Keep only the columns we need for repeat‐sales. You can drop geometry, etc.
-  select(pin, sale_date, sale_year, sale_price, in_eff_sfha, eff_date, pre_date, in_lomr) %>%
+  select(pin, sale_date, sale_year, sale_price, in_eff_sfha, in_prelim_sfha, eff_date, pre_date, in_lomr) %>%
   # 3) Sort by pin and date
   arrange(pin, sale_date) %>%
   # 4) Tag how many times each PIN sold
@@ -417,6 +416,9 @@ df_pairs <- df_prep %>%
   select(-c(sale_price, sale_date, sale_year, in_eff_sfha))
 ```
 
+```{r}
+write_csv(df_prep, "./data/processed/df_prep.csv")
+```
 
 ```{r }
 df_pairs <- df_pairs %>%
