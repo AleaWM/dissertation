@@ -23,7 +23,7 @@ border <- st_read("inputs/Mapping_FIRMs/Cook_County_Border/Cook_County_Border.sh
 #st_layers("inputs/Mapping_Firms/Historical_parcels_-_2022.gdb/ccao_2022parcels.gdb")
 parcels_2024 <- st_read("./inputs/Mapping_Firms/Historical_Parcels_-_2022.gdb/ccao_2022parcels.gdb", 
                         layer = "parcel_2022_parcel2022_enhanced")
-
+# 1,416,419 pin10 distinct parcels,  1,416,446 distinct pins
 parcels_2024 <- parcels_2024 |>
   st_transform("EPSG:6454") 
 
@@ -127,10 +127,15 @@ toc()
 parcels_lomrs_2018 <- read_sf("./data/processed/parcels_lomrs_2018.shp")
 lomrs_2018 <- parcels_lomrs_2018 |> as.data.frame() |> 
   select(pin = name, 
-         DFIRM_ID = DFIRM_I, LOMR_ID, EFF_DAT, CASE_NO) |>  group_by(pin) |>
+         pin10,
+         DFIRM_ID = DFIRM_I, LOMR_ID, EFF_DAT, CASE_NO) |>  
+  group_by(pin10) |>
   slice(1) |>
   ungroup()
 write_csv(lomrs_2018, "./data/processed/parcels_lomrs_2018.csv")
+
+
+
 
 # State NFHL Database ------------------------------------------------
 # as of June 28 2024, filtered to just cook county when read in.
@@ -241,9 +246,10 @@ parcels_lomrs_2024 <- sf::read_sf("data/processed/parcels_lomrs_2024.shp")
 
 lomrs_2024 <- parcels_lomrs_2024 |> as.data.frame() |>
   select(pin = name,
+         pin10,
          DFIRM_ID = DFIRM_I,
          LOMR_ID, EFF_DAT, CASE_NO) |>
-  group_by(pin) |>
+  group_by(pin10) |>
   slice(1) |>
   ungroup()
 
@@ -361,12 +367,15 @@ prelim_sfha_parcels <- read_csv("./data/processed/parcels_preliminary_sfha_20250
 
 
 lomrs2018 <- read_csv("./data/processed/parcels_lomrs_2018.csv") |>
-  mutate(pin10 = str_sub(pin, 1, 10))|>
-  select(-c(pin, DFIRM_ID) ) |> distinct()
+ # mutate(pin10 = str_sub(pin, 1, 10))|>
+  select(-c(pin, DFIRM_ID) ) |> distinct() |>
+  mutate(lomr_year = "2018")
 
 lomrs2024 <- read_csv("data/processed/lomr_pins_2024.csv") |>
-  mutate(pin10 = str_sub(pin, 1, 10))|>
-  select(-c(pin, DFIRM_I) ) |> distinct()
+#  mutate(pin10 = str_sub(pin, 1, 10))|>
+  select(-c(pin, DFIRM_ID) ) |> distinct() |>
+  mutate(lomr_year = "2024")
+
 
 pin_indicators <- sfha2024 |> full_join(prelim_sfha_parcels, by = "pin10", suffix = c("2024", "prelim"))
 
@@ -374,9 +383,49 @@ pin_indicators <- pin_indicators |> full_join(sfha2018, by = c("pin10"), suffix 
 
 
 
-lomr_join <- lomrs2018 |> full_join(lomrs2024, by = c("pin10"), suffix = c("lomr2018", "lomr2024"))
+lomr_join <- lomrs2018 |>
+  full_join(lomrs2024, 
+            by = c("pin10", "CASE_NO", "EFF_DAT"), 
+                                    suffix = c("lomr2018", "lomr2024")
+                                   )  |> 
+group_by(CASE_NO) |> 
+  arrange(pin10) |>
+  rename(lomr_date = EFF_DAT)
 
-pin_indicators <- pin_indicators|>full_join(lomr_join)
+
+write_csv(lomr_join, "./data/processed/joined_LOMR_parcels.csv")
+
+pin_indicators <- pin_indicators |> full_join(lomr_join)
+
+
+# lomrs18_arcgis <- readxl::read_xlsx("./inputs/data/LOMR_PINs_2018NFHL.xlsx") |> 
+#   select(pin = name, pin10, EFF_DATE, CASE_NO) |>
+#   mutate(lomr_year = "2018")
+# 
+# lomrs24_arcgis <- readxl::read_xlsx("./inputs/data/LOMR_PINs_2024NFHL.xlsx") |>
+#   select(pin = name, pin10, EFF_DATE, CASE_NO, assessorbl ) |>
+#   mutate(lomr_year = "2024")
+# 
+# 
+# lomr_tangent <- full_join(lomrs18_arcgis, lomrs24_arcgis, by = c("pin", "pin10", "EFF_DATE", "CASE_NO"), suffix = c("2018", "2024"))
+
+# n_distinct(lomr_tangent$pin)
+# n_distinct(lomr_tangent$pin10)
+# 
+# lomr_tangent |> filter(is.na(lomr_year2018) | is.na(lomr_year2024)) |> arrange(pin10)
+# 
+# lomr_tangent <- lomr_tangent |>
+#   group_by(CASE_NO) |> 
+#   fill(lomr_year2018, .direction = "downup") |>
+#   fill(lomr_year2024, .direction = "downup") |> arrange(pin10)
+# pin_indicators <- pin_indicators |> full_join(lomr_tangent)
+# 
+# # 22 LOMRs in 2018, 43 in 2024
+# lomr_tangent |> group_by(EFF_DATE, CASE_NO) |> summarize(n=n() ) |>
+#   arrange(desc(n))
+# 
+# write_csv(lomr_tangent, "./data/processed/joined_LOMR_parcels_from_arcgis.csv")
+
 
 
 # FINISH THIS, START HERE
@@ -386,8 +435,8 @@ pin_indicators <- pin_indicators|>
     sfha2018 = ifelse(!is.na(FLD_ZONE), 1, 0),
     sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
     prelimsfha = ifelse(!is.na(FLD_ZONEprelim), 1, sfha2024),
-    lomr2018 =  ifelse(!is.na(LOMR_IDlomr2018), 1, 0),
-    lomr2024 = ifelse(!is.na(LOMR_IDlomr2024), 1, 0)
+    lomr2018 =  ifelse(!is.na(lomr_yearlomr2018), 1, 0),
+    lomr2024 = ifelse(!is.na(lomr_yearlomr2024) , 1, 0)
   )
 
 pin_indicators |> write_csv("./data/processed/sfha_indicator_parcels.csv")
