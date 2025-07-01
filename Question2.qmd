@@ -187,6 +187,7 @@ df_pairs <- df_pairs |>
 ```
 
 
+
 ```{r}
 table(df_pairs$years_btwn, df_pairs$change_type)
 
@@ -268,6 +269,15 @@ table(ff_pairs$high_ff_score, ff_pairs$treated)
 table(ff_pairs$high_ff_score, ff_pairs$change_type)
 
 ```
+```{r}
+
+df_prep |> filter(is.na(in_eff_sfha)) ## 22 missing indicators
+
+df_prep |> filter(is.na(env_flood_fs_factor)) |>
+  distinct(pin, nbhd_code, clean_name) |>
+  arrange(pin)
+
+```
 
 ## Graphs
 
@@ -276,7 +286,8 @@ table(ff_pairs$high_ff_score, ff_pairs$change_type)
 ff_pairs |> 
   filter(sale_date_t1 < new_info_released) |> 
     group_by(sale_year_t1, ff_factor) |> 
-  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
+            n = n() ) |> 
   ggplot(aes(x = sale_year_t1 , y = mean_growth, color = ff_factor)) +
   geom_line() +
   geom_point() + 
@@ -286,43 +297,78 @@ ff_pairs |>
 ff_pairs |> 
   filter(sale_date_t2 > new_info_released) |>
   group_by(sale_year_t2, ff_factor) |> 
-  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
+            n = n()) |> 
   ggplot(aes(x = sale_year_t2 , y = mean_growth, color = ff_factor)) +
   geom_line() +
   geom_point() + 
   labs(title = "Post-Treatment Trends by SFHA Change Type")
 ```
 
+
+
 ```{r}
 
 ff_pairs |> 
   filter(sale_date_t1 < new_info_released) |> 
     group_by(sale_year_t1, high_ff_score) |> 
-  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
+            n = n()) |> 
   ggplot(aes(x = sale_year_t1 , y = mean_growth, color = high_ff_score)) +
   geom_line() +
   geom_point() + 
+      geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+
   labs(title = "Pre-Treatment Trends by FF Score 5 or higher")
 
 ff_pairs |> 
   filter(sale_date_t2 < new_info_released & sale_year_t2 > 2015) |>
   group_by(sale_year_t2, high_ff_score) |> 
-  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
+             n = n() ) |> 
   ggplot(aes(x = sale_year_t2 , y = mean_growth, color = high_ff_score)) +
   geom_line() +
   geom_point() + 
+        geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+
   labs(title = "Pre-Treatment Trends for 2nd sale by FF Score 5 or higher")
 
 ff_pairs |> 
   filter(sale_date_t2 > new_info_released ) |>
   group_by(sale_year_t2, high_ff_score) |> 
-  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE)) |> 
+  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
+            n = n()) |> 
   ggplot(aes(x = sale_year_t2 , y = mean_growth, color = high_ff_score)) +
   geom_line() +
   geom_point() + 
+        geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+
   labs(title = "Post-Treatment Trends by FF Score 5 or higher")
 ```
 
+
+```{r interactive-version}
+#| eval: false
+#| include: false
+
+library(plotly)
+
+p <- ff_pairs |> 
+  filter(sale_date_t2 > new_info_released) |> 
+  group_by(sale_year_t2, high_ff_score) |> 
+  summarise(
+    mean_growth = mean(ann_d_log_price, na.rm = TRUE), 
+    n = n()
+  ) |> 
+  ggplot(aes(x = sale_year_t2, y = mean_growth, color = high_ff_score,
+             text = paste("Year:", sale_year_t2, "<br>Mean growth:", round(mean_growth, 3), "<br>n:", n))) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Pre-Treatment Trends by Flood Factor High Risk Variable")
+
+ggplotly(p, tooltip = "text")
+
+```
 
 ## Models
 
@@ -403,11 +449,16 @@ all_models_formatted
                     data = ff_pairs,
                   cluster = ~pin + clean_name
                     
+      ), 
+       "IV" = feols(d_log_price ~ high_ff_score*treated | pin + sale_year_t2 + clean_name,
+                    data = ff_pairs,
+                  cluster = ~pin + clean_name
+                    
       )
     ),
         "Ordinal" = list(
       
-      "I" = feols(d_log_price ~ change_type+ env_flood_fs_factor*treated | clean_name,       
+      "I" = feols(d_log_price ~ change_type*treated + env_flood_fs_factor*treated | clean_name,       
                   data = ff_pairs,
                   cluster = ~pin + clean_name
       ),
@@ -418,7 +469,17 @@ all_models_formatted
                     
       ),
       
-      "II" = feols(d_log_price ~ ff_factor*change_type | clean_name,       
+      "III" = feols(d_log_price ~ ff_factor*change_type | clean_name,       
+                   data = ff_pairs,
+                  cluster = ~pin + clean_name
+                    
+      ),
+         "IV" = feols(d_log_price ~ ff_factor*change_type*treated | pin + clean_name,       
+                   data = ff_pairs,
+                  cluster = ~pin + clean_name
+                    
+      ),
+      "V" = feols(d_log_price ~ ff_factor*change_type*treated | pin,       
                    data = ff_pairs,
                   cluster = ~pin + clean_name
                     
@@ -440,9 +501,13 @@ all_models_formatted
 
                                                                                  
 
-## using df_prep
+# Using All Sales Data - Not just Repeat Sales
+
+**using df_prep**
 
 ```{r}
+#| label: tbl-models-with-dfprep
+#| tbl-cap: "A 'high' flood factor score is a score of 5 or higher. Sales after the 'event' are coded as 'Post' event, which is coded as June 2020 when the scores were released. The interaction of a high flood factor score and being post event is a key variable to look at. Year Fixed Effects are probably necessary due to the growth in sales prices during and after COVID. The last column has PIN, municipality, and sales year fixed effects."
 
   all_models <- list(
     
@@ -478,7 +543,7 @@ all_models_formatted
       
       "3 FEs" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event | pin + clean_name + sale_year,
                     data = df_prep,
-                    ref = 2020,
+                   # ref = 2020,
                   cluster = ~pin + clean_name
                     
       )
