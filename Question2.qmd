@@ -215,9 +215,9 @@ H3: A High risk rating score available to the buyer from First Street will be as
 
 
 ```{r}
-#ff_scores <- read_csv("data/raw/floodfactor_scores.csv")
+puni_pins <- read_csv("data/raw/floodfactor_scores.csv") |>
 
-puni_pins <- read_csv("./data/raw/parcel_universe_currentyear.csv") |> 
+#puni_pins <- read_csv("./data/raw/parcel_universe_currentyear.csv") |> 
   mutate(pin7 = str_sub(pin, 1, 7))
 
 pin_muni_key <- left_join(pin_muni_key, puni_pins)
