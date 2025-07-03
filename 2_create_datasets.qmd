@@ -1,0 +1,292 @@
+---
+title: "Create df_prep and df_pairs"
+format: html
+---
+
+
+```{r setup, warning=FALSE, message=FALSE}
+library(DescTools)
+library(sf)
+library(tidyverse)
+library(httr)
+library(jsonlite)
+library(glue)
+library(fixest)
+library(skimr)
+
+```
+
+> Sales are not winsorized
+
+```{r warning = FALSE, message = FALSE}
+res_sales  <- readRDS("./data/processed/res_sales.rds") |> filter(sale_date > date("2010-01-01"))  
+
+
+pin_muni_key <- read_csv("./data/raw/pin_muni_key.csv")
+
+nicknames <- readxl::read_xlsx("../Merriman RA/ptax/Necessary_Files/muni_shortnames.xlsx")
+
+pin_muni_key <- pin_muni_key |> left_join(nicknames)
+
+```
+
+```{r dropped_pins, message = FALSE}
+# problem pins for various reasons
+drop_pins <- c("05272000470000",  # co op
+               "17103180800000",  # became 325 W Wacker Drive, the building that looks like water waves, condo in loop
+               "14281050350000",  # is a condo building, whole building bought in 2006, Currently classed as land? probably due to remodeling permit? 
+               "10191030030000",     # land trust sale and then maybe split into other pins?
+               "17032220150000",   #  becomes 880 N LakeShore Drive and is a CoOp
+               "17032220180000",   # also part of 880 N Lakeshore Dr  and is  a CoOp
+               "17032220200000",    # ditto
+               "05272000010000",     # another CoOp
+               "21301140150000",  # vacant lot by the lake, 
+               "21301140160000"   # vacant lot by the lake
+               
+)
+
+res_sales <- res_sales |> filter(pin %nin% drop_pins )
+
+repeat_sales <- res_sales |> 
+  
+  group_by(pin) |> 
+  mutate(times_sold = n()) |> 
+  filter(times_sold > 1) |> 
+  ungroup() |> 
+
+  # a couple outliers were in there
+  filter( sale_price < 5000000)
+
+
+# price corrections randomly spotted
+repeat_sales <- repeat_sales |> 
+  mutate(sale_price = 
+         case_when(
+           pin == "15154220240000" & sale_date == as_date("2006-11-01") ~ 180000,   # not 180 million
+           pin == "08153010051151" ~ 81000, # not 81 million
+         TRUE ~ sale_price
+         ))
+```
+
+```{r warning = FALSE, message = FALSE}
+puni_pins <- read_csv("data/processed/floodfactor_scores.csv")
+
+pin_muni_key <- left_join(pin_muni_key, puni_pins)
+
+```
+
+```{r make-df_prep, message = FALSE}
+
+# 1) Make sure sale_date is a Date (if not already)
+df_prep <- repeat_sales %>%
+  mutate(
+    sale_year  = year(sale_date),
+    eff_date = ymd(EFF_DATE),
+    pre_date = ymd(PRE_DATE)
+  ) %>%
+  # 2) Keep only the columns we need for repeat‐sales. You can drop geometry, etc.
+  select(pin, sale_date, sale_year, sale_price, in_eff_sfha, in_prelim_sfha, 
+         eff_date, pre_date, in_lomr) %>%
+  # 3) Sort by pin and date
+  arrange(pin, sale_date) %>%
+  # 4) Tag how many times each PIN sold
+  group_by(pin) %>%
+  mutate(times_sold = n()) %>%
+  ungroup() %>%
+  # 5) Keep only those with at least two sales
+  filter(times_sold >= 2)
+
+
+
+df_prep <- left_join(df_prep, pin_muni_key)
+
+df_prep <- df_prep |> 
+  mutate(
+    event = ifelse(sale_date < as_date("2020-06-29"), "1. Pre", "2. Post"),
+    high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE),
+    new_info_released = ymd("2020-06-29")
+  ) |>
+  select(-c(agency_name, agency_num, short_name, shpfile_name) )
+
+```
+
+> Most of these parcels with missing municipality names have been given addresses using the Assessor's parcel address dataset. Parcels that still haven't matched tend to be parcels that were consolidated for larger homes/buildings and no longer exist. In general, pin splits and consolidations are NOT considered in this analysis.
+
+```{r}
+
+df_prep |> filter(is.na(in_eff_sfha)) |> ## 22 missing indicators - Take care of 7/1/2023. Dropped in dropped_pins section.
+  distinct(pin) |>
+  arrange(pin)
+# 21301140150000 is vacant lot right on the lake. Was coded as 241 in 2010 but is just a parking lot. will be filtered out. 
+# 21301140160000 ditto. 
+
+
+
+# muni_zip_lookup <- df_prep |> 
+#   distinct(zip_code, clean_name, Triad, Township) |> 
+#   filter(!is.na(clean_name) & !is.na(zip_code)& !is.na(Triad) & !is.na(Township))
+
+missing_muniname <- df_prep |> 
+  filter(is.na(clean_name)) |>
+  mutate(pin10 = str_sub(pin, 1, 10)) |>
+ distinct(pin10, 
+          nbhd_code, zip_code, 
+         clean_name
+          ) |>
+  arrange(pin10)
+
+muni_nbhd_lookup <- df_prep |> 
+  distinct(nbhd_code, 
+           zip_code,
+           clean_name, Triad, Township) |> 
+  filter(!is.na(clean_name) & !is.na(nbhd_code) & !is.na(zip_code) & !is.na(Triad) & !is.na(Township) ) 
+  
+
+df_prep <- df_prep |> 
+  # WARNING: Uses first match. Some zipcodes and assessor neighborhoods 
+  # are in multiple municipalities, triads, and townships which is IGNORED FOR NOW 
+  left_join(muni_nbhd_lookup, by = c("zip_code", "nbhd_code"), multiple = "first") |>
+    mutate(
+      clean_name = ifelse(is.na(clean_name.x), clean_name.y, clean_name.x),
+            Triad = ifelse(is.na(Triad.x), Triad.y, Triad.x),
+            Township = ifelse(is.na(Township.x), Township.y, Township.x)
+
+
+           ) |>
+  select(-c(clean_name.x, clean_name.y, Triad.x, Triad.y, Township.x, Township.y))
+
+
+
+missing_muniname2 <- df_prep |>   
+  mutate(pin10 = str_sub(pin, 1, 10)) |>
+ filter(is.na(clean_name)) |> 
+  distinct(pin10, zip_code, nbhd_code, clean_name)
+
+
+
+missing_ff <- df_prep |> 
+  filter(is.na(env_flood_fs_factor)) |>
+  mutate(pin10 = str_sub(pin, 1, 10)) |>
+ distinct(pin10, 
+         # pin, 
+          nbhd_code, zip_code, clean_name
+          ) |>
+  arrange(pin10)
+
+# missing_ff  # 4768 distinct pins, over 12K observations
+# 2723 parcels missing flood factor scores
+
+#write_csv(missing_ff, "data/processed/missing_floodfactor_scores.csv")
+
+```
+
+```{r make-df_pairs, message = FALSE}
+# 6) Now create the “paired” records: for each pin, pull next‐row info as “t2”
+df_pairs <- df_prep %>%
+  group_by(pin) %>%
+  arrange(sale_date) %>%
+  # Lead‐lag step: each row’s “lag_” is the previous sale
+  mutate(
+    sale_price_t1   = lag(sale_price),
+    sale_date_t1    = lag(sale_date),
+    sale_year_t1    = year(sale_date_t1),
+    in_sfha_t1      = lag(in_eff_sfha),
+  #  in_sfha_t1      = ifelse(is.na(in_sfha_t1), "Not SFHA", in_sfha_t1),
+
+    sale_price_t2   = sale_price,
+    sale_date_t2    = sale_date,
+    sale_year_t2    = sale_year,
+    in_sfha_t2      = in_eff_sfha,
+  ) %>%
+
+  ungroup() |> 
+  mutate(new_info_released = ymd("2020-06-29")) |>
+  # get rid of redundant variables that would be confusing
+  select(-c(sale_price, sale_date, sale_year, in_eff_sfha)) 
+
+
+
+df_pairs <- df_pairs %>%
+  mutate(
+        d_log_price = log(sale_price_t2) - log(sale_price_t1),  # same as log (sale2 / sale1)        
+        # time between sales
+         months_btwn = round(time_length(sale_date_t2 - sale_date_t1, "months")),  # between sales
+         years_btwn = round(time_length(sale_date_t2 - sale_date_t1, "years")),    # between sales
+        years_btwn = ifelse(years_btwn < 1, 1, years_btwn),
+        ann_d_log_price = d_log_price / years_btwn,
+
+    
+    # SFHA change as a factor variable
+    change_type = case_when(
+      in_sfha_t1 == "SFHA" & in_sfha_t2 == "Not SFHA" ~ "Removed",
+      in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "SFHA" ~ "Added",
+      in_sfha_t1 == "SFHA" & in_sfha_t2 == "SFHA" ~ "Both In SFHA",
+      in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "Not SFHA" ~ "Both Out of SFHA",
+      TRUE ~ "OTHER"
+      
+    )
+  ) |>
+  
+  # add additional location variables (Triad, township, municipality, etc)
+  left_join(pin_muni_key)
+
+
+
+df_pairs <- df_pairs |> 
+  mutate(
+    
+    # relative time variables 
+    t_months_eff = round(time_length(sale_date_t1 - eff_date, "months") ), # first sale to FIRM update, in months
+    
+    t_years_eff = round(time_length(sale_date_t1 - eff_date, "years") ),    # first sale to FIRM update, in years
+
+    t_months_prelim = round(time_length(sale_date_t1 - pre_date, "months") ), # first sale to FIRM update, in months
+
+    t_years_prelim = round(time_length(sale_date_t1 - pre_date, "years") ),    # first sale to FIRM update, in years
+
+  )|>
+  # Only keep rows where lag exists (i.e. drop the very first sale for each PIN)
+  filter(!is.na(sale_price_t1))
+
+
+
+df_pairs <- df_pairs |> 
+  select(pin, 
+         ann_d_log_price, d_log_price,
+         sale_year_t1, sale_price_t1, in_sfha_t1, 
+         sale_year_t2, sale_price_t2, in_sfha_t2, 
+         years_btwn, change_type, everything()
+  )
+
+df_pairs <- df_pairs |> 
+  mutate(change_type = factor(change_type, levels = c("Both Out of SFHA", "Both In SFHA", "Added", "Removed")))
+
+
+df_pairs <- df_pairs |> 
+  mutate(ff_factor = factor(env_flood_fs_factor))
+
+
+```
+
+There are `r n_distinct(df_pairs$pin)` pins remaining in `df_pairs`.
+
+```{r}
+## Create event indicators
+
+## if the first sale was before the release and the next sale was after the release, then coded as TRUE, otherwise, FALSE
+ff_pairs <- df_pairs |>  
+  mutate(
+    treated = ifelse(sale_date_t1 < as_date("2020-06-29") & sale_date_t2 >= as_date("2020-06-29"), TRUE, FALSE),
+    high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE)
+  )
+```
+
+```{r}
+saveRDS(df_pairs, file = "./data/processed/df_pairs.RDS")
+saveRDS(ff_pairs, file = "./data/processed/ff_pairs.RDS")
+saveRDS(df_prep, file = "./data/processed/df_prep.RDS")
+
+
+```
+
+> Note: ff_pairs is essentially the same as df_pairs but has the treated and high_ff_score variables added. 
