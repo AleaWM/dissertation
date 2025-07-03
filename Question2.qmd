@@ -10,8 +10,20 @@ format:
     tbl-cap-location: margin
     fig-cap-location: top
 ---
+# Research Question 2
+
+On June 29th, 2020, First Street Foundation released their flood risk data and the Flood Factor. Provided flood risk data for inland areas that were typically overlooked in FEMA flood maps.
+
+**Does information on flood risk available to the buyer get capitalized into the property value? If so, to what extent? Is this effect moderated by pre-existing information unavailable to the buyer?**
+
+H3: A High risk rating score available to the buyer from First Street will be associated with a larger decrease in the value of the properties outside of an SFHA than properties in an SFHA.
+
 
 # Data Sources and Background Information
+
+> TO DO: Fill in missing municipality names. Probably can do by shared assessor neighborhood? or even a spatial join if needed for only the parcels that don't have muni names associated with them. Wouldn't be as big of a computational list for a select list of parcels.
+
+> TO DO: Manually collect the \~2000 flood scores for pins that didn't have them. They are also almost all missing nbhd_code, zip_code, and some are missing clean_name.
 
 ```{r setup, warning=FALSE, message=FALSE}
 library(DescTools)
@@ -25,12 +37,11 @@ library(skimr)
 
 ```
 
-
-
 > Sales are not winsorized
 
-```{r}
-res_sales  <- readRDS("./data/processed/res_sales.rds") |> filter(sale_date > date("2010-01-01"))  
+```{r warning = FALSE, message = FALSE}
+res_sales  <- readRDS("./data/processed/res_sales.rds") |> 
+  filter(sale_date > date("2010-01-01"))  
 
 
 pin_muni_key <- read_csv("./data/raw/pin_muni_key.csv")
@@ -39,7 +50,9 @@ nicknames <- readxl::read_xlsx("../Merriman RA/ptax/Necessary_Files/muni_shortna
 
 pin_muni_key <- pin_muni_key |> left_join(nicknames)
 
+```
 
+```{r dropped_pins, message = FALSE}
 # problem pins for various reasons
 drop_pins <- c("05272000470000",  # co op
                "17103180800000",  # became 325 W Wacker Drive, the building that looks like water waves, condo in loop
@@ -48,12 +61,13 @@ drop_pins <- c("05272000470000",  # co op
                "17032220150000",   #  becomes 880 N LakeShore Drive and is a CoOp
                "17032220180000",   # also part of 880 N Lakeshore Dr  and is  a CoOp
                "17032220200000",    # ditto
-               "05272000010000"     # another CoOp
+               "05272000010000",     # another CoOp
+               "21301140150000",  # vacant lot by the lake, 
+               "21301140160000"   # vacant lot by the lake
                
 )
 
 res_sales <- res_sales |> filter(pin %nin% drop_pins )
-
 
 repeat_sales <- res_sales |> 
   
@@ -65,9 +79,6 @@ repeat_sales <- res_sales |>
   # a couple outliers were in there
   filter( sale_price < 5000000)
 
-```
-
-```{r dropped_pins}
 
 # price corrections randomly spotted
 repeat_sales <- repeat_sales |> 
@@ -77,16 +88,19 @@ repeat_sales <- repeat_sales |>
            pin == "08153010051151" ~ 81000, # not 81 million
          TRUE ~ sale_price
          ))
+```
 
+```{r warning = FALSE, message = FALSE}
+puni_pins <- read_csv("data/processed/floodfactor_scores.csv")
+
+pin_muni_key <- left_join(pin_muni_key, puni_pins)
 
 ```
 
+```{r make-df_prep, message = FALSE}
 
-```{r}
 # 1) Make sure sale_date is a Date (if not already)
 df_prep <- repeat_sales %>%
-  filter(pin %nin% drop_pins) |> 
-  
   mutate(
     sale_year  = year(sale_date),
     eff_date = ymd(EFF_DATE),
@@ -106,6 +120,89 @@ df_prep <- repeat_sales %>%
 
 
 
+df_prep <- left_join(df_prep, pin_muni_key)
+
+df_prep <- df_prep |> 
+  mutate(
+    event = ifelse(sale_date < as_date("2020-06-29"), "1. Pre", "2. Post"),
+    high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE),
+    new_info_released = ymd("2020-06-29")
+  ) |>
+  select(-c(agency_name, agency_num, short_name, shpfile_name) )
+
+```
+
+> Most of these parcels with missing municipality names have been given addresses using the Assessor's parcel address dataset. Parcels that still haven't matched tend to be parcels that were consolidated for larger homes/buildings and no longer exist. In general, pin splits and consolidations are NOT considered in this analysis.
+
+```{r}
+
+df_prep |> filter(is.na(in_eff_sfha)) |> ## 22 missing indicators - Take care of 7/1/2023. Dropped in dropped_pins section.
+  distinct(pin) |>
+  arrange(pin)
+# 21301140150000 is vacant lot right on the lake. Was coded as 241 in 2010 but is just a parking lot. will be filtered out. 
+# 21301140160000 ditto. 
+
+
+
+# muni_zip_lookup <- df_prep |> 
+#   distinct(zip_code, clean_name, Triad, Township) |> 
+#   filter(!is.na(clean_name) & !is.na(zip_code)& !is.na(Triad) & !is.na(Township))
+
+missing_muniname <- df_prep |> 
+  filter(is.na(clean_name)) |>
+  mutate(pin10 = str_sub(pin, 1, 10)) |>
+ distinct(pin10, 
+          nbhd_code, zip_code, 
+         clean_name
+          ) |>
+  arrange(pin10)
+
+muni_nbhd_lookup <- df_prep |> 
+  distinct(nbhd_code, 
+           zip_code,
+           clean_name, Triad, Township) |> 
+  filter(!is.na(clean_name) & !is.na(nbhd_code) & !is.na(zip_code) & !is.na(Triad) & !is.na(Township) ) 
+  
+
+df_prep <- df_prep |> 
+  # WARNING: Uses first match. Some zipcodes and assessor neighborhoods 
+  # are in multiple municipalities, triads, and townships which is IGNORED FOR NOW 
+  left_join(muni_nbhd_lookup, by = c("zip_code", "nbhd_code"), multiple = "first") |>
+    mutate(
+      clean_name = ifelse(is.na(clean_name.x), clean_name.y, clean_name.x),
+            Triad = ifelse(is.na(Triad.x), Triad.y, Triad.x),
+            Township = ifelse(is.na(Township.x), Township.y, Township.x)
+
+
+           ) |>
+  select(-c(clean_name.x, clean_name.y, Triad.x, Triad.y, Township.x, Township.y))
+
+
+
+missing_muniname2 <- df_prep |>   
+  mutate(pin10 = str_sub(pin, 1, 10)) |>
+ filter(is.na(clean_name)) |> 
+  distinct(pin10, zip_code, nbhd_code, clean_name)
+
+
+
+missing_ff <- df_prep |> 
+  filter(is.na(env_flood_fs_factor)) |>
+  mutate(pin10 = str_sub(pin, 1, 10)) |>
+ distinct(pin10, 
+         # pin, 
+          nbhd_code, zip_code, clean_name
+          ) |>
+  arrange(pin10)
+
+# missing_ff  # 4768 distinct pins, over 12K observations
+# 2723 parcels missing flood factor scores
+
+#write_csv(missing_ff, "data/processed/missing_floodfactor_scores.csv")
+
+```
+
+```{r make-df_pairs, message = FALSE}
 # 6) Now create the “paired” records: for each pin, pull next‐row info as “t2”
 df_pairs <- df_prep %>%
   group_by(pin) %>%
@@ -116,17 +213,18 @@ df_pairs <- df_prep %>%
     sale_date_t1    = lag(sale_date),
     sale_year_t1    = year(sale_date_t1),
     in_sfha_t1      = lag(in_eff_sfha),
-    in_sfha_t1      = ifelse(is.na(in_sfha_t1), "Not SFHA", in_sfha_t1),
+  #  in_sfha_t1      = ifelse(is.na(in_sfha_t1), "Not SFHA", in_sfha_t1),
 
     sale_price_t2   = sale_price,
     sale_date_t2    = sale_date,
     sale_year_t2    = sale_year,
-    in_sfha_t2      = in_eff_sfha
+    in_sfha_t2      = in_eff_sfha,
   ) %>%
 
   ungroup() |> 
+  mutate(new_info_released = ymd("2020-06-29")) |>
   # get rid of redundant variables that would be confusing
-  select(-c(sale_price, sale_date, sale_year, in_eff_sfha))
+  select(-c(sale_price, sale_date, sale_year, in_eff_sfha)) 
 
 
 
@@ -154,8 +252,6 @@ df_pairs <- df_pairs %>%
   # add additional location variables (Triad, township, municipality, etc)
   left_join(pin_muni_key)
 
-df_pairs <- df_pairs |> filter(change_type != "OTHER")
-
 
 
 df_pairs <- df_pairs |> 
@@ -174,6 +270,8 @@ df_pairs <- df_pairs |>
   # Only keep rows where lag exists (i.e. drop the very first sale for each PIN)
   filter(!is.na(sale_price_t1))
 
+
+
 df_pairs <- df_pairs |> 
   select(pin, 
          ann_d_log_price, d_log_price,
@@ -184,133 +282,194 @@ df_pairs <- df_pairs |>
 
 df_pairs <- df_pairs |> 
   mutate(change_type = factor(change_type, levels = c("Both Out of SFHA", "Both In SFHA", "Added", "Removed")))
-```
 
-
-
-```{r}
-table(df_pairs$years_btwn, df_pairs$change_type)
-
-table(df_pairs$sale_year_t2, df_pairs$change_type)
-```
-
-```{r descriptive-stats-df_prep}
-skim(df_prep)
-```
-
-
-```{r descriptive-stats-df_pairs}
-skim(df_pairs)
-```
-
-# Research Question 2
-
-On June 29th, 2020, First Street Foundation released their flood risk data and the Flood Factor. Provided flood risk data for inland areas that were typically overlooked in FEMA flood maps.
-
-**Does information on flood risk available to the buyer get capitalized into the property value? If so, to what extent? Is this effect moderated by pre-existing information unavailable to the buyer?**
-
-H3: A High risk rating score available to the buyer from First Street will be associated with a larger decrease in the value of the properties outside of an SFHA than properties in an SFHA.
-
-
-
-
-```{r}
-puni_pins <- read_csv("data/raw/floodfactor_scores.csv") |>
-
-#puni_pins <- read_csv("./data/raw/parcel_universe_currentyear.csv") |> 
-  mutate(pin7 = str_sub(pin, 1, 7))
-
-pin_muni_key <- left_join(pin_muni_key, puni_pins)
-
-```
-
-
-```{r}
-df_pairs <- left_join(df_pairs, pin_muni_key)
-
-df_prep <- left_join(df_prep, pin_muni_key)
-
-df_prep <- df_prep |> 
-  mutate(
-    event = ifelse(sale_date < as_date("2020-06-29"), "1. Pre", "2. Post"),
-    high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE),
-  )
-
-n_distinct(df_pairs$pin)
 
 df_pairs <- df_pairs |> 
   mutate(ff_factor = factor(env_flood_fs_factor))
 
 
+```
+
+```{r read-indata}
+df_pairs <- readRDS("data/processed/df_pairs.RDS")
+ff_pairs <- readRDS("data/processed/ff_pairs.rds")
+df_prep <- readRDS("data/processed/df_prep.rds")
+
+```
+
+There are `r n_distinct(df_pairs$pin)` pins remaining in `df_pairs`.
+
+```{r}
 ## Create event indicators
 
 ## if the first sale was before the release and the next sale was after the release, then coded as TRUE, otherwise, FALSE
 ff_pairs <- df_pairs |>  
   mutate(
     treated = ifelse(sale_date_t1 < as_date("2020-06-29") & sale_date_t2 >= as_date("2020-06-29"), TRUE, FALSE),
-    high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE),
-    new_info_released = ymd("2020-06-29")
+    high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE)
   )
-
-
-
-
-ff_pairs |> filter(treated ==TRUE
-                   & env_flood_fema_sfha == TRUE)
-
-ff_pairs |> filter(treated ==TRUE &
-                  high_ff_score == TRUE)
-
-ff_pairs |> filter(treated ==TRUE
-                   & change_type %in% c("Added", "Removed"))
-
-
-table(ff_pairs$high_ff_score, ff_pairs$treated)
-table(ff_pairs$high_ff_score, ff_pairs$change_type)
-
-```
-```{r}
-
-df_prep |> filter(is.na(in_eff_sfha)) ## 22 missing indicators
-
-df_prep |> filter(is.na(env_flood_fs_factor)) |>
-  distinct(pin, nbhd_code, clean_name) |>
-  arrange(pin)
-
 ```
 
-## Graphs
-
+There are `r print(ff_pairs |> filter(treated ==TRUE & high_ff_score == TRUE) |> count())` observations that are treated and have a high flood factor score (greater than 4).
 
 ```{r}
+table(ff_pairs$sale_year_t2, ff_pairs$change_type)
+```
+
+## Descriptive Stats
+
+::: panel-tabset
+### df_prep Descriptive Stats
+
+```{r descriptive-stats-df_prep}
+skim(df_prep)
+```
+
+### ff_pairs Descriptive Stats
+```{r descriptive-stats-df_pairs}
+skim(ff_pairs)
+```
+:::
+
+
+## Parallel Trends Assumptions
+
+
+::: panel-tabset
+### Parallel Trends assumption for all sales
+
+```{r}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+
+df_prep |> 
+  filter(sale_date < new_info_released  &
+            !is.na(high_ff_score)
+         ) |> 
+    group_by(sale_year, high_ff_score) |> 
+  summarise(avg_logprice = mean(log(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_logprice, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+      geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+
+  labs(title = "Pre-Treatment Trends by FF Score 5 or higher",
+        caption = "Dataset: All Sales (df_prep)") +
+  facet_wrap(~Triad)
+
+
+df_prep |> 
+  filter(sale_date > new_info_released &
+            !is.na(high_ff_score)
+         ) |>
+  group_by(sale_year, high_ff_score) |> 
+  summarise(mean_growth = mean(log(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = mean_growth, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+        geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+
+  labs(title = "Post-Treatment Trends by FF Score 5 or higher",
+        caption = "Dataset: All Sales (df_prep)")
+```
+
+```{r}
+
+slopes1 <- lm(log(sale_price) ~ high_ff_score*event*sale_year, data = df_prep)
+
+
+slopes2 <- lm(log(sale_price) ~ in_eff_sfha*event*sale_year, data = df_prep)
+
+
+modelsummary::modelsummary(
+  list(slopes1, slopes2),
+              output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+```
+
+**sale_date:event:in_eff_sfha**\
+→ If significant, it means the difference in slope between groups changed after the event. That does NOT SUPPORT parallel trends assumptions for difference in differences models.
+
+```{r}
+#| layout-ncol: 2
+#| column: page
+#| message: false
+
+ggplot(df_prep |> filter(!is.na(high_ff_score)), aes(x = sale_year, y = log(sale_price), color = high_ff_score)) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ event) +
+  labs(
+    title = "Slope Comparison Pre vs. Post Event by High Flood Factor",
+    x = "Sale Year",
+    y = "Log Price Growth Between Sales",
+    color = "High FF Score",
+        caption = "Dataset: All Sales (df_prep)"
+
+  ) +
+  theme_minimal()
+
+ggplot(df_prep |> 
+         filter(!is.na(in_eff_sfha)), aes(x = sale_year, y = log(sale_price), color = in_eff_sfha)) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ event
+             ) +
+  labs(
+    title = "Slope Comparison Pre vs. Post Event by SFHA Status",
+    x = "Sale Year",
+    y = "Log Price Growth Between Sales",
+    color = "In SFHA",
+    caption = "Dataset: All Sales (df_prep)"
+  ) +
+  theme_minimal()
+```
+
+
+### Parallel trends test for repeat sales
+
+DV is change in logged price.
+
+```{r}
+#| layout-ncol: 2
+#| message: false
+
 ff_pairs |> 
-  filter(sale_date_t1 < new_info_released) |> 
+  filter(sale_date_t1 < new_info_released &
+              !is.na(ff_factor)) |> 
     group_by(sale_year_t1, ff_factor) |> 
   summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
             n = n() ) |> 
   ggplot(aes(x = sale_year_t1 , y = mean_growth, color = ff_factor)) +
   geom_line() +
   geom_point() + 
-  labs(title = "Pre-Treatment Trends by SFHA Change Type")
+  labs(title = "Pre-Treatment Trends by SFHA Change Type", 
+       caption = "Dataset: Repeat Sales") 
 
 
 ff_pairs |> 
-  filter(sale_date_t2 > new_info_released) |>
+  filter(sale_date_t2 > new_info_released &
+           !is.na(ff_factor)) |>
   group_by(sale_year_t2, ff_factor) |> 
   summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
             n = n()) |> 
   ggplot(aes(x = sale_year_t2 , y = mean_growth, color = ff_factor)) +
   geom_line() +
   geom_point() + 
-  labs(title = "Post-Treatment Trends by SFHA Change Type")
+  labs(title = "Post-Treatment Trends by SFHA Change Type", caption = "Dataset: Repeat Sales")
 ```
 
-
-
 ```{r}
+#| column: page
+#| layout-ncol: 3
+#| message: false
 
 ff_pairs |> 
-  filter(sale_date_t1 < new_info_released) |> 
+  filter(sale_date_t1 < new_info_released  &
+            !is.na(high_ff_score)
+         ) |> 
     group_by(sale_year_t1, high_ff_score) |> 
   summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
             n = n()) |> 
@@ -319,10 +478,12 @@ ff_pairs |>
   geom_point() + 
       geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
 
-  labs(title = "Pre-Treatment Trends by FF Score 5 or higher")
+  labs(title = "Pre-Treatment Trends by FF Score 5 or higher",
+        caption = "Dataset: Repeat Sales (ff_pairs)")
 
 ff_pairs |> 
-  filter(sale_date_t2 < new_info_released & sale_year_t2 > 2015) |>
+  filter(sale_date_t2 < new_info_released & sale_year_t2 > 2015 &
+            !is.na(high_ff_score)) |>
   group_by(sale_year_t2, high_ff_score) |> 
   summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
              n = n() ) |> 
@@ -331,10 +492,13 @@ ff_pairs |>
   geom_point() + 
         geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
 
-  labs(title = "Pre-Treatment Trends for 2nd sale by FF Score 5 or higher")
+  labs(title = "Pre-Treatment Trends for 2nd sale by FF Score 5 or higher",
+        caption = "Dataset: Repeat Sales (ff_pairs)")
 
 ff_pairs |> 
-  filter(sale_date_t2 > new_info_released ) |>
+  filter(sale_date_t2 > new_info_released &
+            !is.na(high_ff_score)
+         ) |>
   group_by(sale_year_t2, high_ff_score) |> 
   summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
             n = n()) |> 
@@ -343,34 +507,30 @@ ff_pairs |>
   geom_point() + 
         geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
 
-  labs(title = "Post-Treatment Trends by FF Score 5 or higher")
+  labs(title = "Post-Treatment Trends by FF Score 5 or higher",
+        caption = "Dataset: Repeat Sales (ff_pairs)")
 ```
 
 
-```{r interactive-version}
-#| eval: false
-#| include: false
+Is testing the assumption on repeat sales actually right to do or should I just use all sales?? I feel like it should be all sales.
 
-library(plotly)
+```{r}
 
-p <- ff_pairs |> 
-  filter(sale_date_t2 > new_info_released) |> 
-  group_by(sale_year_t2, high_ff_score) |> 
-  summarise(
-    mean_growth = mean(ann_d_log_price, na.rm = TRUE), 
-    n = n()
-  ) |> 
-  ggplot(aes(x = sale_year_t2, y = mean_growth, color = high_ff_score,
-             text = paste("Year:", sale_year_t2, "<br>Mean growth:", round(mean_growth, 3), "<br>n:", n))) +
-  geom_line() +
-  geom_point() +
-  labs(title = "Pre-Treatment Trends by Flood Factor High Risk Variable")
+slopes1<- lm(d_log_price ~ sale_year_t2*treated*high_ff_score, data = ff_pairs)
 
-ggplotly(p, tooltip = "text")
+slopes2 <- lm(d_log_price ~ sale_year_t2*treated*change_type, data = ff_pairs)
 
+modelsummary::modelsummary(
+  list(slopes1, slopes2),
+               output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
 ```
 
-## Models
+Parallel trends not super supported in either model for repeat sales?
+:::
+
+# Models
 
 ```{r}
 #| column: page
@@ -392,25 +552,25 @@ ggplotly(p, tooltip = "text")
                    cluster = ~pin
                    
       ),
-      "III" = feols(d_log_price ~ high_ff_score*treated,
+      "III" = feols(d_log_price ~ high_ff_score*treated*change_type,
+                    data = ff_pairs,
+                    cluster = ~pin
+                    
+      ),
+      
+      "IV" = feols(d_log_price ~ high_ff_score*treated*change_type | sale_year_t2,
+                    data = ff_pairs,
+                    cluster = ~pin
+                    
+      ),
+      
+      "V" = feols(d_log_price ~ high_ff_score*treated*change_type | sale_year_t2 + pin,
                     data = ff_pairs,
                     cluster = ~pin
                     
       )
-    ),
-        "Ordinal" = list(
-      
-      "I" = feols(d_log_price ~ change_type+ env_flood_fs_factor*treated,       
-                  data = ff_pairs,
-                  cluster = ~pin
-      ),
-      
-      "II" = feols(d_log_price ~ env_flood_fs_factor*change_type,       
-                   data = ff_pairs,
-                   cluster = ~pin
-                    
-      )
     )
+    
     )
   
 all_models_formatted <- modelsummary::modelsummary(all_models,
@@ -428,7 +588,7 @@ all_models_formatted
 ```{r}
 #| column: page
 #| label: tbl-fixedeffects-models-ffscores
-#| tbl-cap: "Control for Municipality"
+#| tbl-cap: "Categorical or Ordinal Risk Scores and then adding some Controls"
 
 
   all_models <- list(
@@ -455,37 +615,7 @@ all_models_formatted
                   cluster = ~pin + clean_name
                     
       )
-    ),
-        "Ordinal" = list(
-      
-      "I" = feols(d_log_price ~ change_type*treated + env_flood_fs_factor*treated | clean_name,       
-                  data = ff_pairs,
-                  cluster = ~pin + clean_name
-      ),
-      
-      "II" = feols(d_log_price ~ env_flood_fs_factor*change_type | clean_name,       
-                   data = ff_pairs,
-                  cluster = ~pin + clean_name
-                    
-      ),
-      
-      "III" = feols(d_log_price ~ ff_factor*change_type | clean_name,       
-                   data = ff_pairs,
-                  cluster = ~pin + clean_name
-                    
-      ),
-         "IV" = feols(d_log_price ~ ff_factor*change_type*treated | pin + clean_name,       
-                   data = ff_pairs,
-                  cluster = ~pin + clean_name
-                    
-      ),
-      "V" = feols(d_log_price ~ ff_factor*change_type*treated | pin,       
-                   data = ff_pairs,
-                  cluster = ~pin + clean_name
-                    
-      )
-    )
-    )
+    ))
   
 all_models_formatted <- modelsummary::modelsummary(all_models,
              shape = "cbind",    
@@ -498,8 +628,6 @@ all_models_formatted
 
 
 ```
-
-                                                                                 
 
 # Using All Sales Data - Not just Repeat Sales
 
@@ -541,9 +669,14 @@ all_models_formatted
                     
       ),
       
+      "3 FEs" = feols(log(sale_price) ~ high_ff_score*event | pin + clean_name + sale_year,
+                    data = df_prep,
+                  cluster = ~pin + clean_name
+                    
+      ),
+      
       "3 FEs" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event | pin + clean_name + sale_year,
                     data = df_prep,
-                   # ref = 2020,
                   cluster = ~pin + clean_name
                     
       )
@@ -563,3 +696,91 @@ all_models_formatted
 
 ```
 
+# Robustness Checks
+
+## Risk Score as Categorical Variable
+
+```{r}
+all_models = list(
+
+"Risk Score as Factor" = list(
+    
+      
+      "III" = feols(d_log_price ~ ff_factor*change_type | clean_name,       
+                   data = ff_pairs,
+                  cluster = ~pin + clean_name
+                    
+      ),
+         "IV" = feols(d_log_price ~ ff_factor*change_type*treated | pin + clean_name,       
+                   data = ff_pairs,
+                  cluster = ~pin + clean_name
+                    
+      ),
+      "V" = feols(d_log_price ~ ff_factor*change_type*treated | pin,       
+                   data = ff_pairs,
+                  cluster = ~pin + clean_name
+                    
+      )
+      ,
+      "V" = feols(d_log_price ~ ff_factor*change_type*treated | pin + sale_year_t2,       
+                   data = ff_pairs,
+                  cluster = ~pin + clean_name
+                    
+      )
+    
+    )
+)
+
+all_models_formatted <- modelsummary::modelsummary(all_models,
+             shape = "cbind",    
+               output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+all_models_formatted
+```
+
+## Risk Score as Ordinal Variable
+
+```{r}
+model_list <- list(
+        "No FEs" = list(
+      
+      "I" = feols(d_log_price ~ change_type+ env_flood_fs_factor*treated,       
+                  data = ff_pairs,
+                  cluster = ~pin
+      ),
+      
+      "II" = feols(d_log_price ~ env_flood_fs_factor*change_type*treated,       
+                   data = ff_pairs,
+                   cluster = ~pin
+                    
+      )),
+        "FEs" = list(
+      
+      "Muni FE" = feols(d_log_price ~ change_type*treated + env_flood_fs_factor*treated | clean_name,       
+                  data = ff_pairs,
+                  cluster = ~pin + clean_name
+      ),
+      
+      "Muni Fe" = feols(d_log_price ~ env_flood_fs_factor*change_type | clean_name,       
+                   data = ff_pairs,
+                  cluster = ~pin + clean_name
+                    
+      ),
+      
+      "PIN FE" = feols(d_log_price ~ env_flood_fs_factor*change_type | pin,       
+                   data = ff_pairs,
+                  cluster = ~pin + clean_name           
+      )
+    )
+        )
+
+all_models_formatted <- modelsummary::modelsummary(model_list,
+             shape = "cbind",    
+               output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+all_models_formatted
+```
