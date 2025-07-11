@@ -1,0 +1,188 @@
+---
+title: "Question 3"
+format: 
+  html:
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    toc: true
+    toc-location: left
+    tbl-cap-location: margin
+    fig-cap-location: top
+---
+
+Data sources:
+
+Areas flagged as damaged from individual assistance grants, PTAX245 appeal forms, potentially from permits that indicate flood damage. 
+
+```{r setup, warning=FALSE, message=FALSE}
+library(DescTools)
+library(sf)
+library(tidyverse)
+library(httr)
+library(jsonlite)
+library(glue)
+library(fixest)
+library(skimr)
+```
+
+
+```{r warning = FALSE, message = FALSE}
+df_pairs <- readRDS("data/processed/df_pairs.RDS")
+ff_pairs <- readRDS("data/processed/ff_pairs.rds")
+df_prep <- readRDS("data/processed/df_prep.rds")
+
+res_pins_permuni = read_csv("../Merriman RA/ptax/Output/ptaxsim_muni_level_2006to2023_new.csv") |>
+  select(year, clean_name, muni_parcels, muni_PC_residential, muni_PC_total, mean_av_c2, muni_fmv, muni_fmv_c2_res, muni_fmv_residential, muni_c2_taxed, muni_res_taxed, muni_eav_taxed ) #|>
+#filter(year %in% c(2006, 2023) )
+
+mc_pins_permuni = read_csv("../Merriman RA/ptax/Output/ptaxsim_muni_MC_2006to2023_new.csv") |>
+  rename_with(~ str_remove(., "muni_mc_"), starts_with("muni_mc_"))|>
+  select(year, clean_name, parcels, major_class_code, PC_residential, PC_major_class, fmv, fmv_c2_res, fmv_residential, eav_taxed ) |>
+  filter(year %in% c(2006, 2023) &
+           major_class_code %in% c(0, 1, 2,3,9))
+
+```
+
+```{r}
+#| tbl-cap: "Change in the number of residential pins from 2006 to 2023 and 2013 to  2023."
+
+change2006 <- res_pins_permuni |> 
+  group_by(clean_name) |> 
+  summarize(
+    pinchange_from_2006 = (muni_PC_residential[year == 2023] - muni_PC_residential[year == 2006]),
+    pct_2006_pins = round(pinchange_from_2006 / muni_PC_residential[year == 2006], digits = 4),
+  ) |> 
+  select(clean_name,  pinchange_from_2006, pct_2006_pins, 
+  ) |> 
+  arrange(pinchange_from_2006)
+
+change2013 <- res_pins_permuni |> 
+  group_by(clean_name) |> 
+  summarize(
+    pinchange_from_2013 = (muni_PC_residential[year == 2023] - muni_PC_residential[year == 2013]),
+    pct_2013_pins = round(pinchange_from_2013 / muni_PC_residential[year == 2013], digits = 4),
+  )
+
+left_join(change2006, change2013) |> 
+  arrange(pinchange_from_2013)
+```
+
+> Sales are not winsorized
+
+Create variable that calculates the % of residential pins in an area that have sold? unique pins with sales / # res pins aggregated to some geographic level? Could be used to flag areas that had decreases in sales after events or from increased flood risk?
+
+
+
+# Research Question 3
+
+
+> Beltran et al. uses repeat sales for an post flood event study.
+
+Treatment group is distinguished with a dummy variable for floodplain location (`in_eff_sfha`) and the treatment refers to the occurrence of a flood. The timing is the date of the sale in relation to the flood event. 
+
+Variable `Treated`  indicates being located in an area that had significant flood damage.
+Variable `flooded` indicates that the 1st sale was before the flood event and the second event was after the flood event. 
+
+**Is lived experience capitalized into sales prices? is this effect (if any) moderated by other existing sources of increased flood risk?**
+
+H4: Experiencing a flood event conveys new risk information. Properties damaged by a flood event that were not in an SFHA expereince a decrease in value larger than damaged properties that were in an SFHA. 
+
+
+> treated zipcodes file! or treated census blocks? from Individual Assistance version updated by FEMA.
+
+**Areas impacted:** can use pins near the pins that submitted PTAX 245 forms or use the zipcodes or census blocks from the individual assistance post disaster aid data from FEMA. 
+
+## Flood Event 2013
+
+```{r}
+# areas impacted by 2013 flood events
+tr_zips <- read_csv("./data/processed/treated_zipcodes.csv") |>
+  filter( year == 2010 
+         # | year == 2013
+          )
+
+tr_zips|> arrange(desc(claimcount))
+
+df_pairs |> group_by(zip_code) |> summarise(n = n_distinct(pin)) |> arrange(desc(n))
+```
+
+
+## Flood Event 2023 - Disaster Declarations / Lived Experience
+
+Cicero and Berwyn had lots of damage during DR 4728. Cicero had 25,836 housing units (and > 14,000 PINs) in 2020 and over 6000 of them applied and were granted IHP funds. 
+
+> Filter for owners of properties, not renters in ihp data
+
+Dolton and Calumet City were damaged during DR 4749.
+
+```{r}
+
+# areas impacted by 2013 flood events
+tr_zips <- read_csv("./data/processed/treated_zipcodes.csv") |>
+  filter( year == 2023)
+
+df_flooded <- df_pairs |>
+  filter(sale_date_t1 < as_date("2023-06-29") & sale_date_t2 > as_date("2023-06-29") )
+
+df_flooded <- df_flooded |>
+  mutate(treated = ifelse(zip_code %in% tr_zips$damagedZipCode, "Treated", "Not Treated"))
+
+table(df_flooded$treated)
+```
+
+
+```{r}
+ 
+
+ptax245 <- readxl::read_xlsx("inputs/PTAX-245_data.xlsx")
+
+ptax245 <- ptax245 %>% 
+  mutate(
+    pin = str_remove_all(pin, "-"),
+    keypin = as.character(KeyPIN)) %>%
+  mutate(keypin_concat = as.character(keypin),
+         keypin_concat = str_remove_all(keypin_concat, "-"),
+         keypin_concat = str_pad(keypin_concat, 14, "left", pad = "0"),
+         major_class = str_sub(Class, 1, 1),
+         parcel = str_sub(pin, 1, 10),
+         block = str_sub(pin, 1, 7),
+         year = 2023,
+         appealed = 1 ) %>%
+  select(pin, keypin_concat, parcel, block, Class, major_class, everything()) %>% 
+  distinct() %>% 
+  arrange(pin)
+
+ptax_pins <- ptax245 |> select(pin) |> pull()
+
+df_pairs <- df_pairs |> mutate(flood2023 = ifelse(pin %in% ptax245, 1, 0))
+
+```
+
+245 PINs in Cicero and 45 PINs in Berwyn appealed their property tax (plus 2 in Oak Park, 2 in River Forest, and 1 in Riverside).
+
+```{r}
+#| include: false
+#| eval: false
+
+df_pairs %>% filter(pin %in% ptax245)
+
+```
+
+
+90,000 Post Disaster Individual Assistance Grants between the two disasters in 2023. 
+Only a few million in NFIP claims were paid out from these flood events but over $300 million in IHP fund were distributed. 
+
+- Part of this is because the areas hit hardest (Cicero and Berwyn have no SFHAs and no properties are required to have flood insurance. In general, not many properties in SFHAs in Cook County, especially where these flood events occurred. Makes it unlikely that residents have flood insurance and they can't file flood insurance claims if they don't have flood insurance. )
+
+Cook County also had disaster declarations in 1993, 1996, 1997, 2007, 2009, 2010, 2013, and 2023X2.
+
+
+
+```{r}
+flooded_pairs <- df_pairs |>  
+  mutate(
+    flooded = ifelse(sale_date_t1 < as_date(2023-07-01) & sale_date_t2 >= as_date(2023-07-01), TRUE, FALSE),
+  ) 
+```
+
