@@ -40,27 +40,10 @@ library(skimr)
 > TO DO: Use grepl() to identify properties bought by municipalities? list of Muni names and if they are similar to the buyer name? Useful for flagging buyouts?
 
 ```{r}
+df_pairs <- readRDS("data/processed/df_pairs.RDS")
+ff_pairs <- readRDS("data/processed/ff_pairs.rds")
+df_prep <- readRDS("data/processed/df_prep.rds")
 
-
-pin_muni_key <- read_csv("./data/raw/pin_muni_key.csv")
-
-nicknames <- readxl::read_xlsx("../Merriman RA/ptax/Necessary_Files/muni_shortnames.xlsx")
-
-pin_muni_key <- pin_muni_key |> left_join(nicknames)
-
-# pin_muni_key |> sample_frac(.1) |> write_csv("pin_munikey_sample.csv")
-
-# sampled_data <- res_sales |> 
-#   sample_frac(0.05)
-# write_csv(sampled_data, 
-#           "data_sample.csv")
-
-
-df_pairs <- readRDS("./data/processed/df_pairs.RDS") |> filter(sale_date_t1 > date("2010-01-01"))
-
-# df_pairs |> 
-#   select(-c(short_name, agency_number, agency_name, stayed_sfha, neither_sfha, shpfile_name, t1_months, t1_years, added_between, removed_between)) |>
-#   write_csv("./data/processed/df_pairs.csv")
 ```
 
 
@@ -121,25 +104,13 @@ Concerns:
 
 ```{r}
 #| eval: false
+#| include: false
 
-# install.packages("skimr")
 library(skimr)
 
 skim(df_pairs)
 ```
 
-```{r}
-#| eval: false 
-
-# not run
-res_sales |> filter(lomr2018 != lomr2024) |>
-  filter(sale_date > as_date("2015-01-01"))
-
-# not run
-# Identify properties with a LOMR before the update
-df <- df %>% group_by(pin) %>%
-  mutate(had_lomr_pre = as.integer(max(lomr2018)==1)) %>% ungroup()
-```
 
 ### Models 
 
@@ -286,19 +257,19 @@ Event study centers uses the first sale before and after there is a flood map up
 
 df_event <- df_pairs |>
   filter(sale_date_t2 > eff_date & sale_date_t1 < eff_date ) |>
-  filter(t2_years < 10 )
+  filter(t_years_eff < 10 )
 
 
 
 
 # 1) Turn year_t2 into a factor (if not already)
 df_event <- df_event %>%
-  mutate(year2_f = factor(t2_years))
+  mutate(t_year_f = factor(t_years_eff))
 
 # 2) Run the regression
 mod <- feols(
   d_log_price ~ change_type  + years_btwn
-             + year2_f 
+             + t_year_f 
   | 0,
   data    = df_event,
   cluster = ~pin       # one row per pin, but safe to cluster anyway
