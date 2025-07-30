@@ -8,7 +8,7 @@ format:
     toc: true
     toc-location: left
     tbl-cap-location: margin
-    fig-cap-location: top
+    fig-cap-location: margin
 ---
 # Research Question 2
 
@@ -34,14 +34,21 @@ library(jsonlite)
 library(glue)
 library(fixest)
 library(skimr)
+library(plm)
+library(jtools)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, results = "hold"  )
 
 ```
 
 > Sales are not winsorized
 
 ```{r warning = FALSE, message = FALSE}
-df_pairs <- readRDS("data/processed/df_pairs.RDS")
-ff_pairs <- readRDS("data/processed/ff_pairs.rds")
+#df_pairs <- readRDS("data/processed/df_pairs.RDS") 
+
+ff_pairs <- readRDS("data/processed/ff_pairs.rds") |>
+  rename(around_event = treated)
+
 df_prep <- readRDS("data/processed/df_prep.rds")
 
 ```
@@ -50,10 +57,10 @@ df_prep <- readRDS("data/processed/df_prep.rds")
 
 
 
-There are `r n_distinct(df_pairs$pin)` pins remaining in `df_pairs`.
+There are `r n_distinct(ff_pairs$pin)` pins remaining in `ff_pairs`.
 
 
-There are `r print(ff_pairs |> filter(treated ==TRUE & high_ff_score == TRUE) |> count())` observations that are treated and have a high flood factor score (greater than 4).
+There are `r print(ff_pairs |> filter(around_event ==TRUE & high_ff_score == TRUE) |> count())` observations that are around_event and have a high flood factor score (greater than 4).
 
 ```{r}
 table(ff_pairs$sale_year_t2, ff_pairs$change_type)
@@ -65,13 +72,26 @@ table(ff_pairs$sale_year_t2, ff_pairs$change_type)
 ### df_prep Descriptive Stats
 
 ```{r descriptive-stats-df_prep}
+#| column: page
 skim(df_prep)
 ```
 
+
 ### ff_pairs Descriptive Stats
-```{r descriptive-stats-df_pairs}
+
+```{r descriptive-stats-ff_pairs}
+#| column: page
 skim(ff_pairs)
 ```
+```{r}
+ggplot() + 
+  geom_histogram(data = ff_pairs, aes( x = ann_d_log_price), bins = 100) + theme_classic()
+
+ggplot() + 
+  geom_histogram(data = ff_pairs, aes( x = d_log_price), bins = 100) + theme_classic()
+```
+
+
 :::
 
 
@@ -260,9 +280,9 @@ Is testing the assumption on repeat sales actually right to do or should I just 
 
 ```{r}
 
-slopes1<- lm(d_log_price ~ sale_year_t2*treated*high_ff_score, data = ff_pairs)
+slopes1<- lm(d_log_price ~ sale_year_t2*around_event*high_ff_score, data = ff_pairs)
 
-slopes2 <- lm(d_log_price ~ sale_year_t2*treated*change_type, data = ff_pairs)
+slopes2 <- lm(d_log_price ~ sale_year_t2*around_event*change_type, data = ff_pairs)
 
 modelsummary::modelsummary(
   list(slopes1, slopes2),
@@ -276,274 +296,230 @@ Parallel trends not super supported in either model for repeat sales?
 
 # Models
 
-## Repeat Sales
+
 
 ```{r}
-#| column: page
-#| label: tbl-simplified-repeatsales-ffscores
-#| tbl-cap: "Uses repeat_sales `ff_pairs`."
+#| include: false
+
+df_prep <- df_prep |> 
+  mutate(in_sfha = ifelse(in_eff_sfha == "SFHA", 1, 0))
+
+df_prep |>
+  group_by(in_sfha) |>
+  summarize(mean = mean(env_flood_fs_factor, na.rm = T),
+            sd = sd(env_flood_fs_factor, na.rm = T))
+```
+
+::: panel-tabset
+## Models for Merriman
 
 
-  all_models <- list(
-    
-    "d_log_price" = list(
-      
-      "I" = feols(d_log_price ~ high_ff_score,       
-                  data = ff_pairs,
-                  cluster = ~pin
-      ),
+```{r}
+#| label: tbl-models-forDFM2
+#| tbl-cap: "feols() command. Exported with export_summs() DV is log(sale_price). Observations include pins that sold 2+ times between 2010 and 2025."
+#| column: page-left
+
+
+options(scipen = 99)
+
+merriman_models <- list(
+  
+  
+    "I" = feols(log(sale_price) ~ high_ff_score | pin  + sale_year,
+              panel.id = c("pin", "sale_year"),
+              vcov = "hetero",
+              data = df_prep,
+
+  ),
+  
+  "II" = feols(log(sale_price) ~ high_ff_score*event | pin + sale_year,
+              panel.id = "pin",
               
-      "II" = feols(d_log_price ~ high_ff_score*treated | pin,
-                    data = ff_pairs,
-                    cluster = ~pin + clean_name
-                    
-      ),
-      
-      "III" = feols(d_log_price ~ high_ff_score*treated | sale_year_t2,
-                    data = ff_pairs,
-                    cluster = ~pin
-                    
-      ),
-      
-      "IV" = feols(d_log_price ~ high_ff_score*treated | sale_year_t2 + pin,
-                    data = ff_pairs,
-                    cluster = ~pin
-        
-      ),
-      
-      "V" = feols(d_log_price ~ high_ff_score*treated | sale_year_t2 + pin,
-                    data = ff_pairs |> group_by(pin) |> filter(n() > 1),
-                    cluster = ~pin
-        
-      )),
-        "Annualized Change P" = list(
+              data = df_prep,
+              cluster = ~ clean_name
+              
+  ),
+  "II.5" = feols(log(sale_price) ~ event + factor(sale_year) | pin,
+               data = df_prep,
+               cluster = ~ clean_name
+               
+  ),
+  "III" = feols(log(sale_price) ~ high_ff_score*event*in_prelim_sfha | pin + sale_year,
+                data = df_prep,
+               # cluster = ~ clean_name
+                              vcov = "hetero" 
 
-      "I" = feols(ann_d_log_price ~ high_ff_score,       
-                   data = ff_pairs,
-                   cluster = ~pin
-                   
-      ),
-      "II" = feols(ann_d_log_price ~ high_ff_score*treated | pin,
-                    data = ff_pairs,
-                    cluster = ~pin + clean_name
-                    
-      ),
-      
-      "III" = feols(ann_d_log_price ~ high_ff_score*treated | sale_year_t2,
-                    data = ff_pairs,
-                    cluster = ~pin
-                    
-      ),
-      
-      "IV" = feols(ann_d_log_price ~ high_ff_score*treated | sale_year_t2 + pin,
-                    data = ff_pairs,
-                    cluster = ~pin
-        
-      ),
-      
-      "IV" = feols(ann_d_log_price ~ high_ff_score*treated | sale_year_t2 + pin,
-                    data = ff_pairs |> group_by(pin) |> filter(n() > 1),
-                    cluster = ~pin
-        
-      ))
-    
-    )
+  ),
   
-all_models_formatted <- modelsummary::modelsummary(all_models,
-             shape = "cbind",    
-               output = "flextable",
-             fmt = function(x) round(x, 2),
-             stars = TRUE)
+  "IV" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event  | pin + sale_year + clean_name,
+               panel.id = "pin",
+               
+               data = df_prep,
+                             vcov = "hetero"
+  ) 
+)
 
-all_models_formatted
 
+export_summs(merriman_models,
+             model.names = c("FF Score Indicator", "FF Score * Data Release", "Data Release and Year Dummies", "Preliminary SFHA", "Effective SFHA"),
+             robust = "HC3"#, statistics = c(N = "nobs", adj.R2 = "adj.r.squared", R2 = "r.squared")
+             )
+
+# 
+# all_models_formatted <- modelsummary::modelsummary(merriman_models,
+# 
+#            #    output = "flextable",
+#              fmt = function(x) round(x, 2),
+#              stars = TRUE)
+# 
+# all_models_formatted
+
+```
+
+
+_A panelmodel object contains: coefficients, residuals, fitted.values, vcov, df.residual and call and functions that extract these elements are provided._ 
+
+```{r}
+#| label: tbl-PLMexample
+#| tbl-cap: "PLM package! Note that it has the correct n value for observations used in the calculation and the N value of observations taht entered the model. They are different! export_sum() and modelsummary() do not show the smaller n value!"
+#| column: page-left
+#| width: 8
+
+
+mod1 <- plm(log(sale_price) ~ high_ff_score*event*in_prelim_sfha,
+              index = c("pin", "sale_year"),
+    effect = "twoway",
+              data = df_prep)
+mod1 |> summary()
+```
+
+
+```{r}
+
+#| label: tbl-models-forDFM2-PLM
+#| tbl-cap: "PLM package!--Same as chunk below. DV is log(sale_price). Observations include pins that sold 2+ times between 2010 and 2025."
+#| column: page-left
+
+merriman_models <- list(
+
+  "II" = plm(log(sale_price) ~ in_eff_sfha,
+              index = c("pin", "sale_year"),
+                 effect = "twoway",
+
+              data = df_prep
+              
+  ),
+  "II" = plm(log(sale_price) ~ event,       
+              index = c("pin", "sale_year"),
+                           effect = "twoway",
+
+              data = df_prep
+               
+  ),
+    "III" = plm(log(sale_price) ~ high_ff_score*event*in_eff_sfha,       
+              index = c("pin", "sale_year"),
+              effect = "twoway",
+              data = df_prep
+              ),
+
+  "IV" = plm(log(sale_price) ~ high_ff_score*event*in_prelim_sfha,       
+              index = c("pin", "sale_year"),
+                           effect = "twoway",
+
+              data = df_prep
+              )
+
+  )
+
+
+export_summs(merriman_models,
+             model.names = c("Just SFHA", "Post FF Data Release", "Add Effective SFHA", "Add Prelim SFHA Identifier")
+            # robust = "HC3"#, statistics = c(N = "nobs", adj.R2 = "adj.r.squared", R2 = "r.squared"))
+)
+# all_models_formatted <- modelsummary::modelsummary(merriman_models,
+# 
+#            #    output = "flextable",
+#              fmt = function(x) round(x, 2),
+#              stars = TRUE)
+# 
+# all_models_formatted
 
 ```
 
 
 ```{r}
-#| column: page
-#| label: tbl-proposal-models-ffscores
-#| tbl-cap: "Model in proposal. Uses repeat_sales `ff_pairs`."
+#| label: tbl-models-forDFM1V2
+#| tbl-cap: "Models for Merriman: Repeat Sales Data Structure. DV = Annualized Change in Sale Price. 1 observation in data represents two sales."
+#| tbl-cap-location: top
+#| layout-ncol: 2
 
 
-  all_models <- list(
-    
-    "High or Low" = list(
-      
-      "I" = feols(d_log_price ~ high_ff_score,       
-                  data = ff_pairs,
-                  cluster = ~pin
-      ),
-      
-      "II" = feols(d_log_price ~ change_type,       
-                   data = ff_pairs,
-                   cluster = ~pin
-                   
-      ),
-      "III" = feols(d_log_price ~ high_ff_score*treated*change_type,
-                    data = ff_pairs,
-                    cluster = ~pin + clean_name
-                    
-      ),
-      
-      "IV" = feols(d_log_price ~ high_ff_score*treated*change_type | sale_year_t2,
-                    data = ff_pairs,
-                    cluster = ~pin
-                    
-      ),
-      
-      "V" = feols(d_log_price ~ high_ff_score*treated*change_type | sale_year_t2 + pin,
-                    data = ff_pairs,
-                    cluster = ~pin
-                    
-      ),
-      
-      "VI" = feols(d_log_price ~ high_ff_score*treated*change_type | sale_year_t2 + pin + clean_name,
-                    data = ff_pairs,
-                    cluster = ~pin + clean_name
-                    
-      ))
-    
-    )
+merriman_models <- list(
   
-all_models_formatted <- modelsummary::modelsummary(all_models,
-             shape = "cbind",    
-               output = "flextable",
-             fmt = function(x) round(x, 2),
-             stars = TRUE)
+  
+  "I" = feols(ann_d_log_price ~ high_ff_score*change_type*around_event + years_btwn | sale_year_t2,
+              data = ff_pairs,
+              vcov = "hetero"
+  ),
+  "II" = feols(ann_d_log_price ~ high_ff_score*around_event + in_sfha_t1 + in_sfha_t2 + years_btwn | sale_year_t2,
+               data = ff_pairs,
+               cluster = ~clean_name
+               
+  ))
 
-all_models_formatted
+export_summs(merriman_models,
+             model.names = c("3-way interaction", "FF Score * Data Release"))
 
+models <- list(
+  
+  "III" = feols(ann_d_log_price ~ high_ff_score*around_event*in_sfha_t1*in_sfha_t2 + years_btwn,
+                data = ff_pairs,
+                cluster = ~clean_name
+                
+  ),
+     
+  "III" = feols(ann_d_log_price ~ high_ff_score*around_event*in_sfha_t1*in_sfha_t2 + years_btwn + Triad | sale_year_t2,
+                data = ff_pairs,
+                cluster = ~clean_name
+  
+))
 
+export_summs(models,
+             model.names = c( "Other SFHAvariables", "Adds triad"),
+             robust = "HC3"#, statistics = c(N = "nobs", adj.R2 = "adj.r.squared", R2 = "r.squared")
+             )
+# 
+# all_models_formatted <- modelsummary::modelsummary(merriman_models,
+#                                                    
+#                                                    output = "flextable",
+#                                                    fmt = function(x) round(x, 2),
+#                                                    stars = TRUE)
+# 
+# all_models_formatted
 
 ```
 
 
-```{r}
-#| column: page
-#| label: tbl-dissertation-ffscorerelease
-#| tbl-cap: "Uses repeat sales `ff_pairs`."
-
-
-  all_models <- list(
-    
-    "High or Low" = list(
-      
-      "PIN FE" = feols(d_log_price ~ high_ff_score ,       
-                  data = ff_pairs,
-                  cluster = ~pin
-      ),
-      
-      "No FE" = feols(d_log_price ~ treated | pin,       
-                   data = ff_pairs,
-                   cluster = ~pin
-                   
-      ),
-      "No FE" = feols(d_log_price ~ high_ff_score*treated,
-                    data = ff_pairs,
-                    cluster = ~pin + clean_name
-                    
-      ),
-      
-      "IV" = feols(d_log_price ~ high_ff_score*treated | pin,
-                    data = ff_pairs,
-                    cluster = ~pin
-                    
-      ),
-      
-      "V" = feols(d_log_price ~ high_ff_score*treated | sale_year_t2 + pin,
-                    data = ff_pairs,
-                    cluster = ~pin
-                    
-      ))
-    
-    )
-  
-all_models_formatted <- modelsummary::modelsummary(all_models,
-             shape = "cbind",    
-               output = "flextable",
-             fmt = function(x) round(x, 2),
-             stars = TRUE)
-
-all_models_formatted
-
-
-
-```
-
-
-```{r}
-#| column: page
-#| label: tbl-fixedeffects-models-ffscores
-#| tbl-cap: "Categorical or Ordinal Risk Scores and then adding some Controls"
-
-
-  all_models <- list(
-    
-    "High or Low" = list(
-      
-      "I" = feols(d_log_price ~ high_ff_score,       
-                  data = ff_pairs,
-                  cluster = ~pin + clean_name
-      ),
-        "I" = feols(d_log_price ~ high_ff_score | sale_year_t2,       
-                  data = ff_pairs,
-                  cluster = ~pin + clean_name
-      ),
-      
-      "II" = feols(d_log_price ~ change_type | sale_year_t2,       
-                   data = ff_pairs,
-                  cluster = ~pin
-                   
-      ),
-      "III" = feols(d_log_price ~ high_ff_score*treated | sale_year_t2,
-                    data = ff_pairs,
-                  cluster = ~pin
-                    
-      ), 
-      "III" = feols(d_log_price ~ high_ff_score*treated | sale_year_t2 + pin,
-                    data = ff_pairs,
-                  cluster = ~pin
-                    
-      ), 
-       "IV" = feols(d_log_price ~ high_ff_score*treated | pin + sale_year_t2 + clean_name,
-                    data = ff_pairs,
-                  cluster = ~pin + clean_name
-                    
-      )
-    ))
-  
-all_models_formatted <- modelsummary::modelsummary(all_models,
-             shape = "cbind",    
-               output = "flextable",
-             fmt = function(x) round(x, 2),
-             stars = TRUE)
-
-all_models_formatted
-
-
-
-```
 
 ## Using All Sales Data - Not just Repeat Sales
 
 **using df_prep**
 
+> Put it into some year's dollars. Convert to common dollar for sales.
+
 ```{r}
 #| label: tbl-models-with-dfprep
 #| tbl-cap: "A 'high' flood factor score is a score of 5 or higher. Sales after the 'event' are coded as 'Post' event, which is coded as June 2020 when the scores were released. The interaction of a high flood factor score and being post event is a key variable to look at. Year Fixed Effects are probably necessary due to the growth in sales prices during and after COVID. The last column has PIN, municipality, and sales year fixed effects."
+#| column: page-left
+
+
+df_prep2 <- df_prep |> filter(times_sold > 1)
 
   all_models <- list(
     
     "High or Low" = list(
-      
-      "I" = feols(log(sale_price) ~ high_ff_score | clean_name,       
-                  data = df_prep,
-                  cluster = ~pin + clean_name
-      ),
-      
-      "II" = feols(log(sale_price) ~ high_ff_score*in_eff_sfha | clean_name,       
+
+      "I" = feols(log(sale_price) ~ high_ff_score*in_eff_sfha | clean_name,       
                    data = df_prep,
                   cluster = ~pin + clean_name
                    
@@ -567,13 +543,24 @@ all_models_formatted
       ),
       
       "3 FEs" = feols(log(sale_price) ~ high_ff_score*event | pin + clean_name + sale_year,
-                    data = df_prep,
-                  cluster = ~pin + clean_name
+                                         panel.id = "pin",
+
+                       data = df_prep2,
+                  cluster = ~ clean_name
                     
       ),
       
       "3 FEs" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event | pin + clean_name + sale_year,
-                    data = df_prep,
+                      panel.id = "pin",
+                    data = df_prep2,
+                  cluster = ~ clean_name
+                    
+      ),
+      
+      "3 FEs" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event | pin + clean_name + sale_year,
+                                            panel.id = "pin",
+
+                    data = df_prep2,
                   cluster = ~pin + clean_name
                     
       )
@@ -604,47 +591,36 @@ all_models_formatted
     
     "High or Low" = list(
       
-      "PIN FE" = feols(log(sale_price) ~ high_ff_score ,       
+      "PIN FE" = feols(log(sale_price) ~ high_ff_score*event | pin ,       
                   data = df_prep,
                   cluster = ~pin
       ),
-      
-      "No FE" = feols(log(sale_price) ~ event | pin,       
-                   data = df_prep,
-                   cluster = ~pin
                    
-      ),
       "No FE" = feols(log(sale_price) ~ high_ff_score*event,
                     data = df_prep,
                     cluster = ~pin + clean_name
                     
       ),
       
-      "IV" = feols(log(sale_price) ~ high_ff_score*event | pin,
-                    data = df_prep,
-                    cluster = ~pin
-                    
-      ),
-      
-      "V" = feols(log(sale_price) ~ high_ff_score*event | sale_year + pin,
-                    data = df_prep,
+      "PIN & Sale Year FE" = feols(log(sale_price) ~ high_ff_score*event | sale_year + pin,
+                    data = df_prep2,
                     cluster = ~pin
                     
       ),
       
       
-      "Triad" = feols(log(sale_price) ~ high_ff_score*event*Triad | sale_year + pin,
-                    data = df_prep,
+      "Control for Triad" = feols(log(sale_price) ~ high_ff_score*event*Triad | sale_year + pin,
+                    data = df_prep2,
                     cluster = ~pin
                     
       ), 
             "3 FEs" = feols(log(sale_price) ~ high_ff_score*event*Triad | pin + clean_name+ sale_year,
-                    data = df_prep,
+                    data = df_prep2,
                     cluster = ~pin
                     
       ),
          "With SFHA" = feols(log(sale_price) ~ high_ff_score*event*in_eff_sfha | pin + clean_name + sale_year,
-                    data = df_prep,
+                    data = df_prep2,
                     cluster = ~pin
                     
       )
@@ -665,35 +641,278 @@ all_models_formatted
 ```
 
 
+
+
+## Repeat Sales
+
+```{r}
+#| column: page
+#| label: tbl-simplified-repeatsales-ffscores-plm
+#| tbl-cap: "PLM output: Uses repeat_sales `ff_pairs`."
+#| eval: false
+#| include: false
+
+
+
+  all_models <- list(
+    
+    "d_log_price" = list(
+      
+      "III" = plm(d_log_price ~ high_ff_score*around_event + years_btwn + factor(sale_year_t2),
+                  index = "pin",
+                    data = ff_pairs
+
+      
+      )),
+        "Annualized Change P" = list(
+
+      "I" = plm(ann_d_log_price ~ high_ff_score*around_event + factor(sale_year_t2),
+                  index = "pin",
+                    data = ff_pairs
+
+      ),
+
+            "Ann Change P" = plm(ann_d_log_price ~ high_ff_score*change_type*around_event + years_btwn + factor(sale_year_t2),
+                  index = "pin",
+                    data = ff_pairs
+                  ),
+
+      # keeps only sales that bracket the event. No longer would need around_event in the equation
+      "Around Event Only" = plm(ann_d_log_price ~ high_ff_score*change_type  + years_btwn + factor(sale_year_t2),
+                  index = "pin",
+                    data = ff_pairs, 
+                    subset = around_event == TRUE,
+      ),
+
+      
+      "Hetero SE" = plm(ann_d_log_price ~ high_ff_score*around_event  + years_btwn + factor(sale_year_t2),
+                  index = "pin",
+                    data = ff_pairs,
+                    ),
+
+      "Repeat Repeat Sales (pin FE)" = plm(ann_d_log_price ~ high_ff_score*around_event + years_btwn + factor(sale_year_t2),
+                  index = "pin",
+                  model = "within",
+                    data = ff_pairs,
+      )
+      )
+    
+    )
+  
+  
+  export_summs(merriman_models,
+            # model.names = c("FF Score Indicator", "FF Score * Data Release", "Data Release and Year Dummies", "3-way nteraction", "3-way interaction with muni FE"),
+            # robust = "HC3"#, statistics = c(N = "nobs", adj.R2 = "adj.r.squared", R2 = "r.squared")
+             )
+  
+  
+all_models_formatted <- modelsummary::modelsummary(all_models,
+             shape = "cbind",    
+               output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+all_models_formatted
+
+
+```
+
+```{r}
+#| column: page
+#| label: tbl-simplified-repeatsales-ffscores
+#| tbl-cap: "Feols Package: Uses repeat_sales `ff_pairs`. "
+
+
+  all_models <- list(
+    
+    "d_log_price" = list(
+      
+      "III" = feols(d_log_price ~ high_ff_score*around_event + years_btwn | sale_year_t2,
+                    data = ff_pairs,
+                    cluster = ~clean_name
+                    
+      
+      )),
+        "Annualized Change P" = list(
+
+      "I" = feols(ann_d_log_price ~ high_ff_score*around_event | sale_year_t2,
+                    data = ff_pairs,
+                    cluster = ~sale_year_t2
+                    
+      ),
+
+      "Ann Change P" = feols(ann_d_log_price ~ high_ff_score*change_type*around_event + years_btwn | sale_year_t2,
+                    data = ff_pairs,
+                    vcov = "hetero"      ),
+
+      # keeps only sales that bracket the event. No longer would need around_event in the equation
+      "Around Event Only" = feols(ann_d_log_price ~ high_ff_score*change_type  + years_btwn | sale_year_t2,
+                    data = (ff_pairs |> group_by(pin) |> filter(n() > 1)) ,
+                    vcov = "hetero"
+      ),
+
+      
+      "Hetero SE" = feols(ann_d_log_price ~ high_ff_score*around_event  + years_btwn | sale_year_t2,
+                    data = ff_pairs,
+                    vcov = "hetero"
+                    ),
+
+      "Repeat Repeat Sales (pin FE)" = feols(ann_d_log_price ~ high_ff_score*around_event + years_btwn | pin + sale_year_t2,
+                    data = (ff_pairs |> group_by(pin) |> filter(n() > 1)) ,
+                    cluster = ~clean_name
+      )
+      )
+    
+    )
+  
+all_models_formatted <- modelsummary::modelsummary(all_models,
+             shape = "cbind",    
+               output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+all_models_formatted
+
+
+```
+
+
+```{r}
+#| column: page
+#| label: tbl-proposal-models-ffscores
+#| tbl-cap: "Model in proposal. Uses repeat_sales `ff_pairs`."
+
+
+  all_models <- list(
+    
+
+      # "I" = feols(d_log_price ~ high_ff_score,       
+      #             data = ff_pairs,
+      #             cluster = ~pin
+      # ),
+      # 
+      # "II" = feols(d_log_price ~ change_type,       
+      #              data = ff_pairs,
+      #              cluster = ~pin
+      #              
+     # ),
+      "Controls for Risk" = feols(d_log_price ~ high_ff_score*around_event*change_type + env_flood_fs_factor,
+                    data = ff_pairs,
+                    cluster = ~clean_name
+                    
+      ),
+      
+            "Controls for Risk - Annualized" = feols(ann_d_log_price ~ high_ff_score*around_event*change_type + env_flood_fs_factor,
+                    data = ff_pairs,
+                    cluster = ~clean_name
+                    
+      ),
+            "Annualized w SFHA indicators" = feols(ann_d_log_price ~ high_ff_score*around_event + in_sfha_t1 + in_sfha_t2 + factor(sale_year_t2) + years_btwn,
+                    data = ff_pairs,
+                    cluster = ~clean_name
+                  
+      ),
+      
+                  "Annualized sfha interactions" = feols(ann_d_log_price ~ high_ff_score*around_event*in_sfha_t1*in_sfha_t2 + factor(sale_year_t2) + years_btwn,
+                    data = ff_pairs,
+                    cluster = ~clean_name
+                  
+      )
+  )
+  
+all_models_formatted <- modelsummary::modelsummary(all_models,
+            # shape = "cbind",    
+               output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+all_models_formatted
+
+
+
+```
+
+
+
+```{r}
+#| column: page
+#| label: tbl-fixedeffects-models-ffscores
+#| tbl-cap: "Categorical or Ordinal Risk Scores and then adding some Controls"
+
+
+  all_models <- list(
+    
+    "High or Low" = list(
+
+      "Categorical FF" = feols(ann_d_log_price ~ high_ff_score*around_event*change_type + sale_year_t2,
+                    data = ff_pairs,
+                  cluster = ~clean_name
+      )
+      , 
+       "Risk Controlled" = feols(ann_d_log_price ~ high_ff_score*around_event*change_type + env_flood_fs_factor + sale_year_t2,
+                    data = ff_pairs,
+                  cluster = ~ clean_name)
+                  , 
+      
+       "Risk Controlled & Muni FE" = feols(ann_d_log_price ~ high_ff_score*around_event*change_type + env_flood_fs_factor + sale_year_t2 | clean_name,
+                    data = ff_pairs,
+                  cluster = ~ clean_name
+      ),
+      
+       "Ordinal FF" = feols(ann_d_log_price ~ env_flood_fs_factor*around_event*change_type  + sale_year_t2 | clean_name,
+                    data = ff_pairs,
+                  cluster = ~ clean_name
+                    
+      )
+    ))
+  
+all_models_formatted <- modelsummary::modelsummary(all_models,
+             shape = "cbind",    
+               output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+all_models_formatted
+
+
+
+```
+
+:::
+
 # Robustness Checks
 
 ## Risk Score as Categorical Variable
 
 ```{r}
+#| label: tbl-categoricalrisk
+#| tbl-cap: "Repeat Sales data structure. DV is change in logged price."
+
+
 all_models = list(
 
 "Risk Score as Factor" = list(
     
       
-      "III" = feols(d_log_price ~ ff_factor*change_type | clean_name,       
+      "Muni FE" = feols(d_log_price ~ ff_factor*change_type | clean_name,       
                    data = ff_pairs,
                   cluster = ~pin + clean_name
                     
       ),
-         "IV" = feols(d_log_price ~ ff_factor*change_type*treated | pin + clean_name,       
+         "Muni FE" = feols(d_log_price ~ ff_factor*change_type*around_event | clean_name,       
                    data = ff_pairs,
                   cluster = ~pin + clean_name
                     
       ),
-      "V" = feols(d_log_price ~ ff_factor*change_type*treated | pin,       
+      "No FE" = feols(d_log_price ~ ff_factor*change_type*around_event,       
                    data = ff_pairs,
-                  cluster = ~pin + clean_name
+                  cluster = ~clean_name
                     
       )
       ,
-      "V" = feols(d_log_price ~ ff_factor*change_type*treated | pin + sale_year_t2,       
+      "Sale Year FE" = feols(d_log_price ~ ff_factor*change_type*around_event | sale_year_t2,       
                    data = ff_pairs,
-                  cluster = ~pin + clean_name
+                  cluster = ~clean_name
                     
       )
     
@@ -709,25 +928,28 @@ all_models_formatted <- modelsummary::modelsummary(all_models,
 all_models_formatted
 ```
 
-## Risk Score as Ordinal Variable
+## Risk Score as Ordinal Variable - Repeat sales
 
 ```{r}
+#| label: tbl-ordinalrisk
+#| tbl-cap: "Repeat Sales data structure. DV is change in logged price."
+#| 
 model_list <- list(
         "No FEs" = list(
       
-      "I" = feols(d_log_price ~ change_type+ env_flood_fs_factor*treated,       
+      "I" = feols(d_log_price ~ change_type+ env_flood_fs_factor*around_event,       
                   data = ff_pairs,
                   cluster = ~pin
       ),
       
-      "II" = feols(d_log_price ~ env_flood_fs_factor*change_type*treated,       
+      "II" = feols(d_log_price ~ env_flood_fs_factor*in_sfha_t2*in_sfha_t2*around_event,       
                    data = ff_pairs,
                    cluster = ~pin
                     
       )),
         "FEs" = list(
       
-      "Muni FE" = feols(d_log_price ~ change_type*treated + env_flood_fs_factor*treated | clean_name,       
+      "Muni FE" = feols(d_log_price ~ change_type*around_event + env_flood_fs_factor*around_event | clean_name,       
                   data = ff_pairs,
                   cluster = ~pin + clean_name
       ),
@@ -738,7 +960,7 @@ model_list <- list(
                     
       ),
       
-      "PIN FE" = feols(d_log_price ~ env_flood_fs_factor*change_type | pin,       
+      "Sold >3 Times, PIN FE" = feols(d_log_price ~ env_flood_fs_factor*change_type | pin,       
                    data = ff_pairs,
                   cluster = ~pin + clean_name           
       )
