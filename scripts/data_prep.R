@@ -5,6 +5,10 @@
 #  - ./data/processed/sfha_indicator_pins.csv
 #  - ./data/processed/lomr_pins_2024.csv
 
+# Outputs:
+#  - ./data/processed/sales_prepped.RDS
+#  - ./data/processed/res_sales.RDS
+
 # Load required libraries
 library(tidyverse)
 library(sf)
@@ -109,6 +113,13 @@ sales <- sales |>
         in_eff_sfha = ifelse((sfha2018 == 0 & sfha2024 == 0 ) | (is.na(sfha2018) & is.na(sfha2024)) , "Not SFHA", in_eff_sfha),
 
         
+        
+   
+        addedto_eff_sfha = ifelse((sfha2018 == 0 & sfha2024 == 1 ), "MappedIn", "0"),
+        removedfrom_eff_sfha = ifelse((sfha2018 == 1 & sfha2024 == 0 ), "MappedOut", "0"),
+        
+        
+        
     # create similar variable but for the preliminary date: model must deal with anticipation to change
     
     in_prelim_sfha = ifelse(sfha2018 == 1 & sale_date >= PRE_DATE, "SFHA", "Not SFHA"),
@@ -117,7 +128,9 @@ sales <- sales |>
                          ifelse(sale_date >= (PRE_DATE) & sfha2024 == 0, "Not SFHA", in_prelim_sfha)),
     
     in_prelim_sfha = ifelse((sfha2018 == 0 & sfha2024 == 0 ) | (is.na(sfha2018) & is.na(sfha2024)) , "Not SFHA", in_prelim_sfha),
-        
+      
+    
+    
     # LOMR indicator
     in_lomr       = if_else(sale_date >= (lomr_date),
                             "Received LOMR", "Not in LOMR"),
