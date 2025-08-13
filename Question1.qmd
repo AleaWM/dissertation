@@ -44,7 +44,6 @@ library(plm)
 ```{r}
 df_pairs <- readRDS("data/processed/df_pairs.RDS")
 df_prep <- readRDS("data/processed/df_prep.rds")
-
 ```
 
 
@@ -236,11 +235,11 @@ all_models_formatted
 > FIRMs are updated in different years!! Fixed Effects is not great with this! 
 
 
-> Create separate indicators for Added to SFHA and Removed from SFHA! Do this in numbered files that make df_prep.
 
 
 ```{r}
-df_prep <- df_prep |> mutate(year = as.factor(sale_year))
+df_prep <- df_prep |> 
+  mutate(year = as.factor(sale_year))
 
 df_prep |> group_by(pin, sale_year) |> filter(n() > 1)
 
@@ -250,6 +249,8 @@ df_prep |> group_by(pin, sale_year) |> filter(n() > 1) |> distinct(pin)
 
 ```{r}
 #| label: tbl-plmmodels-fixedeffects
+
+table(df_prep$change_type)
 
 library(jtools)
 all_models <- list(
@@ -276,6 +277,7 @@ all_models <- list(
                      effect = "twoway",
                      data = df_prep 
   ),
+  
   
   "Prelim With LOMRs" = plm(log(sale_price) ~ in_prelim_sfha + in_lomr,
                      index  =c ("pin", "sale_year"),
@@ -309,6 +311,47 @@ plm(log(sale_price) ~ in_prelim_sfha + in_lomr,
 ```
 
 
+```{r}
+#| label: tbl-addedremoved-fixedeffects
+
+
+table(df_prep$addedto_eff_sfha)
+table(df_prep$removedfrom_eff_sfha)
+
+all_models <- list(
+  
+  "Added or Removed SFHA" = plm(log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha,   
+                   index = c("pin", "sale_year"),
+                   model = "within",
+                   effect = "twoway",
+                   data = df_prep
+
+  ),
+  
+    "Added or Removed Effective" = plm(log(sale_price) ~ addedto_eff_sfha + in_eff_sfha + removedfrom_eff_sfha,   
+                   index = c("pin", "sale_year"),
+                   model = "within",
+                   effect = "twoway",
+                   data = df_prep
+
+  ),
+      "Change Type" = plm(log(sale_price) ~ change_type*addedto_eff_sfha + change_type*removedfrom_eff_sfha,
+                     index  =c ("pin", "sale_year"),
+                     model = "within",
+
+                     effect = "twoway",
+                     data = df_prep
+  )
+) 
+
+
+
+
+export_summs(all_models )
+
+
+```
+ 
 ```{r}
 #| label: tbl-feolsmodels-fixedeffects
 
@@ -355,6 +398,9 @@ df_prep$pre_date_chr <- as.character(df_prep$pre_date)
 
 table(df_prep$eff_date_chr)
 table(df_prep$pre_date_chr)
+table(df_prep$addedto_eff_sfha)
+table(df_prep$removedfrom_eff_sfha)
+
 
 
 all_models <- list(
