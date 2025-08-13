@@ -99,12 +99,118 @@ ggplot() +
 
 
 ::: panel-tabset
+### Not Logged Sales Price
+
+```{r}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+
+df_prep |> 
+  filter(sale_date < new_info_released  &
+            !is.na(high_ff_score)
+         ) |> 
+    group_by(sale_year, high_ff_score) |> 
+  summarise(avg_price = mean(sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_price, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+      geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+
+  labs(title = "Pre-Treatment Trends by FF Score 5 or higher",
+        caption = "Dataset: All Sales (df_prep). \n Sales is NOT winsorized or logged.")
+
+df_prep |> 
+  filter(sale_date > new_info_released &
+            !is.na(high_ff_score)
+         ) |>
+  group_by(sale_year, high_ff_score) |> 
+  summarise(avg_price = mean(sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_price, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+        geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+
+  labs(title = "Post-Treatment Trends by FF Score 5 or higher",
+        caption = "Dataset: All Sales (df_prep)")
+
+
+df_prep |> 
+  filter(sale_date < new_info_released  &
+            !is.na(high_ff_score)
+         ) |> 
+    group_by(sale_year, high_ff_score, Triad) |> 
+  summarise(avg_price = mean(sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_price, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+      geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+
+  labs(title = "Pre-Treatment Trends by FF Score 5 or higher",
+        caption = "Dataset: All Sales (df_prep). \n Sales is NOT winsorized or logged.") +
+  facet_wrap(~Triad)
+
+df_prep |> 
+  filter(sale_date > new_info_released &
+            !is.na(high_ff_score)
+         ) |>
+  group_by(sale_year, high_ff_score, Triad) |> 
+  summarise(avg_price = mean(sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_price, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+        geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+
+  labs(title = "Post-Treatment Trends by FF Score 5 or higher",
+        caption = "Dataset: All Sales (df_prep)") +
+    facet_wrap(~Triad)
+
+```
+
+
 ### Parallel Trends assumption for all sales
 
 ```{r}
 #| column: page
 #| layout-ncol: 2
 #| message: false
+
+
+df_prep |> 
+  filter(sale_date < new_info_released  &
+            !is.na(high_ff_score)
+         ) |> 
+    group_by(sale_year, high_ff_score) |> 
+  summarise(avg_logprice = mean(log(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_logprice, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+      geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+
+  labs(title = "Pre-Treatment Trends by FF Score 5 or higher",
+        caption = "Dataset: All Sales (df_prep)") 
+
+df_prep |> 
+  filter(sale_date > new_info_released &
+            !is.na(high_ff_score)
+         ) |>
+  group_by(sale_year, high_ff_score) |> 
+  summarise(mean_growth = mean(log(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = mean_growth, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+        geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+
+  labs(title = "Post-Treatment Trends by FF Score 5 or higher",
+        caption = "Dataset: All Sales (df_prep)")
+
+
 
 df_prep |> 
   filter(sale_date < new_info_released  &
@@ -142,10 +248,10 @@ df_prep |>
 
 ```{r}
 
-slopes1 <- lm(log(sale_price) ~ high_ff_score*event*sale_year, data = df_prep)
+slopes1 <- lm(log(sale_price) ~ high_ff_score*event*factor(sale_year), data = df_prep)
 
 
-slopes2 <- lm(log(sale_price) ~ in_eff_sfha*event*sale_year, data = df_prep)
+slopes2 <- lm(log(sale_price) ~ in_eff_sfha*event*factor(sale_year), data = df_prep)
 
 
 modelsummary::modelsummary(
@@ -294,6 +400,32 @@ modelsummary::modelsummary(
 Parallel trends not super supported in either model for repeat sales?
 :::
 
+
+```{r}
+missing_ff_score <- df_prep |> filter(is.na(high_ff_score) | is.na(in_eff_sfha))
+
+df_prep |> 
+  filter(!is.na(high_ff_score)) |>
+  filter(!is.na(in_eff_sfha)) |>
+  group_by(sale_year, high_ff_score, in_eff_sfha, event) |>
+  summarize(n = n(), 
+            distinct_pins = n_distinct(pin),
+            avg_log_price = mean(log(sale_price), na.rm=TRUE))
+
+df_prep |> 
+    filter(!is.na(high_ff_score)) |>
+    filter(!is.na(in_eff_sfha)) |>
+  group_by(sale_year, high_ff_score, in_eff_sfha, event) |>
+  summarize(n = n(), 
+                        distinct_pins = n_distinct(pin),
+
+            avg_price = mean(sale_price, na.rm=TRUE))
+
+df_prep <- df_prep |> 
+  filter(!is.na(high_ff_score))
+```
+
+
 # Models
 
 
@@ -324,14 +456,14 @@ options(scipen = 99)
 
 merriman_models <- list(
   
-  
-    "I" = feols(log(sale_price) ~ high_ff_score | pin  + sale_year,
-              panel.id = c("pin", "sale_year"),
-              vcov = "hetero",
-              data = df_prep,
-
-  ),
-  
+  # high_ff_score shouldn't change at PIN level. Variable drops out. 
+  #   "I" = feols(log(sale_price) ~ high_ff_score | pin + sale_year,
+  #             panel.id = c("pin", "sale_year"),
+  #             vcov = "hetero",
+  #             data = df_prep,
+  # 
+  # ),
+  # 
   "II" = feols(log(sale_price) ~ high_ff_score*event | pin + sale_year,
               panel.id = "pin",
               
@@ -339,7 +471,7 @@ merriman_models <- list(
               cluster = ~ clean_name
               
   ),
-  "II.5" = feols(log(sale_price) ~ event + factor(sale_year) | pin,
+  "II.5" = feols(log(sale_price) ~ high_ff_score*event + factor(sale_year) | pin,
                data = df_prep,
                cluster = ~ clean_name
                
@@ -351,7 +483,7 @@ merriman_models <- list(
 
   ),
   
-  "IV" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event  | pin + sale_year + clean_name,
+  "IV" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event  | pin + sale_year,
                panel.id = "pin",
                
                data = df_prep,
@@ -359,45 +491,174 @@ merriman_models <- list(
   ) 
 )
 
-
-export_summs(merriman_models,
-             model.names = c("FF Score Indicator", "FF Score * Data Release", "Data Release and Year Dummies", "Preliminary SFHA", "Effective SFHA"),
-             robust = "HC3"#, statistics = c(N = "nobs", adj.R2 = "adj.r.squared", R2 = "r.squared")
-             )
-
 # 
-# all_models_formatted <- modelsummary::modelsummary(merriman_models,
+# cm2 <- c(
+#   
+#   'Post Event' = 'event2.Post',
+#   'High FF Score x Post Event' = 'high_ff_scoreTRUE:event2.Post',
+#   'In Preliminary SFHA' = 'in_prelim_sfhaSFHA',
+#   'High FF Score x In Prelim SFHA' = 'high_ff_scoreTRUE:in_prelim_sfhaSFHA',
+#   'In Effective SFHA' = 'in_eff_sfhaSFHA',
+#   'In Eff. SFHA x Post Event' = 'in_eff_sfhaSFHA:event2.Post',
+#   'In SFHA, High FF Score & Post Event' = 'in_eff_sfhaSFHA:high_ff_scoreTRUE:event2.Post',
+#   'In Prelim SFHA & Post Event' = 'event2.Post:in_prelim_sfhaSFHA',
+#   'In Prelim SFHA, High FF Score & Post Event' = 'high_ff_scoreTRUE:event2.Post:in_prelim_sfhaSFHA'
+# )
 # 
-#            #    output = "flextable",
-#              fmt = function(x) round(x, 2),
-#              stars = TRUE)
+# export_summs(merriman_models,
+#              model.names = c(#"FF Score Indicator", 
+#                              "FF Score * Data Release", "Data Release and Year Dummies", "Preliminary SFHA", "Effective SFHA"),
+#              robust = "HC3"#,               coefs = cm
 # 
-# all_models_formatted
+#              #statistics = c(N = "nobs", adj.R2 = "adj.r.squared", R2 = "r.squared")
+#              )
 
+
+
+
+
+cm = c(
+  'event2. Post' = 'Post Event',
+  'high_ff_scoreTRUE:event2. Post' = 'High FF Score x Post Event',
+  'event2. Post:high_ff_scoreTRUE' = 'High FF Score x Post Event',
+
+  'in_prelim_sfhaSFHA' = 'In Preliminary SFHA',  
+  'event2.Post:in_prelim_sfhaSFHA' = 'In Prelim SFHA & Post Event',
+  'high_ff_scoreTRUE:in_prelim_sfhaSFHA' = 'In Prelim SFHA x High FF Score',
+  'high_ff_scoreTRUE:event2. Post:in_prelim_sfhaSFHA' = 'In Prelim SFHA, High FF Score & Post Event',
+
+  'in_eff_sfhaSFHA'= 'In Effective SFHA',
+  'in_eff_sfhaSFHA:event2. Post' = 'In Eff. SFHA x Post Event',
+  'high_ff_ScoreTRUE:in_eff_sfhaSFHA' = 'In Eff. SFHA x High FF Score',
+  'high_ff_scoreTRUE:event2. Post:in_eff_sfhaSFHA' = 'In Effective SFHA, High FF Score & Post Event',
+  'in_eff_sfhaSFHA:high_ff_scoreTRUE:event2. Post' = 'In Effective SFHA, High FF Score & Post Event',
+  
+)
+
+
+all_models_formatted <- modelsummary::msummary(
+  merriman_models,
+  fmt = function(x) round(x, 2),
+  stars = TRUE,
+  coef_map = cm)
+
+all_models_formatted
+
+```
+
+
+## Not Logged Sales Price
+
+
+```{r}
+#| label: tbl-models-forDFM2-nonlogged
+#| tbl-cap: "feols() command. Exported with export_summs() DV is sale_price NOT LOGGED. Observations include pins that sold 2+ times between 2010 and 2025."
+#| column: page-left
+
+
+options(scipen = 99)
+
+merriman_models <- list(
+  
+  
+  #   "I" = feols(sale_price ~ high_ff_score | pin  + sale_year,
+  #             panel.id = c("pin", "sale_year"),
+  #             vcov = "hetero",
+  #             data = df_prep,
+  # 
+  # ),
+  # 
+  "II" = feols(sale_price ~ event*high_ff_score | pin + sale_year,
+
+              data = df_prep,
+              cluster = ~ clean_name
+              
+  ),
+  # "II.5" = feols(sale_price ~ event + factor(sale_year) | pin,
+  #              data = df_prep,
+  #              cluster = ~ clean_name
+  #              
+  # ),
+  "III" = feols(sale_price ~ high_ff_score*event*in_prelim_sfha | pin + sale_year,
+                data = df_prep,
+                              vcov = "hetero" 
+
+  ),
+  
+  "IV" = feols(sale_price ~ high_ff_score*event*in_eff_sfha  | pin + sale_year,
+
+               data = df_prep,
+                             vcov = "hetero"
+  ) 
+)
+
+# cm2 <- c(
+#   "Post Event" = "event2. Post",
+#   "High FF Score x Post Event" = "event2. Post:high_ff_scoreTRUE",
+#   
+#   "In Preliminary SFHA" = "in_prelim_sfhaSFHA",
+#   "High FF Score x In Prelim SFHA" = "high_ff_scoreTRUE:in_prelim_sfhaSFHA",
+#   
+#   "In Effective SFHA" = "in_eff_sfhaSFHA",
+#  # "In Eff. SFHA x Post Event" = "in_eff_sfhaSFHA:event2. Post",
+#   "In SFHA, High FF Score & Post Event" = "high_ff_scoreTRUE:event2. Post:in_eff_sfhaSFHA",
+#   "In Prelim SFHA & Post Event" = "event2. Post:in_prelim_sfhaSFHA",
+#   "In Prelim SFHA, High FF Score & Post Event" = "high_ff_scoreTRUE:event2. Post:in_prelim_sfhaSFHA"
+# )
+# 
+# 
+# 
+# export_summs(merriman_models,
+#              model.names = c(#"FF Score Indicator", 
+#                              "FF Score * Data Release", 
+#                            #  "Data Release and Year Dummies", 
+#                              "Preliminary SFHA", 
+#                            "Effective SFHA"),
+#           #   robust = "HC3", #, statistics = c(N = "nobs", adj.R2 = "adj.r.squared", R2 = "r.squared")
+#              coefs = cm2
+#              )
+
+
+
+cm3 = c(
+  'event2. Post' = 'Post Event',
+  'high_ff_scoreTRUE:event2. Post' = 'High FF Score x Post Event',
+  'event2. Post:high_ff_scoreTRUE' = 'High FF Score x Post Event',
+  
+  'in_prelim_sfhaSFHA' = 'In Preliminary SFHA',
+  'event2.Post:in_prelim_sfhaSFHA' = 'In Prelim SFHA & Post Event',
+  'high_ff_scoreTRUE:in_prelim_sfhaSFHA' = 'In Prelim SFHA x High FF Score',
+  'high_ff_scoreTRUE:event2. Post:in_prelim_sfhaSFHA' = 'In Prelim SFHA, High FF Score & Post Event',
+
+  
+  'in_eff_sfhaSFHA'= 'In Effective SFHA',
+  'event2. Post:in_eff_sfhaSFHA' = 'In Eff. SFHA x Post Event',
+  'high_ff_scoreTRUE:in_eff_sfhaSFHA' = 'In Effective SFHA x High FF Score',
+  'in_eff_sfhaSFHA:high_ff_scoreTRUE:event2. Post' = 'In Effective SFHA, High FF Score & Post Event',
+  'high_ff_scoreTRUE:event2. Post:in_eff_sfhaSFHA' = 'In Effective SFHA, High FF Score & Post Event'
+)
+
+all_models_formatted <- modelsummary::msummary(merriman_models,
+
+           #    output = "flextable",
+          #  fmt = function(x) round(x, 2),
+            fmt = function(x) scales::comma(x, big.mark = ",", accuracy = 1),
+
+
+             stars = TRUE,
+          coef_map = cm3
+          )
+
+all_models_formatted
 ```
 
 
 _A panelmodel object contains: coefficients, residuals, fitted.values, vcov, df.residual and call and functions that extract these elements are provided._ 
 
-```{r}
-#| label: tbl-PLMexample
-#| tbl-cap: "PLM package! Note that it has the correct n value for observations used in the calculation and the N value of observations taht entered the model. They are different! export_sum() and modelsummary() do not show the smaller n value!"
-#| column: page-left
-#| width: 8
-
-
-mod1 <- plm(log(sale_price) ~ high_ff_score*event*in_prelim_sfha,
-              index = c("pin", "sale_year"),
-    effect = "twoway",
-              data = df_prep)
-mod1 |> summary()
-```
-
 
 ```{r}
-
 #| label: tbl-models-forDFM2-PLM
-#| tbl-cap: "PLM package!--Same as chunk below. DV is log(sale_price). Observations include pins that sold 2+ times between 2010 and 2025."
+#| tbl-cap: "PLM package! DV is log(sale_price). Observations include pins that sold 2+ times between 2010 and 2025."
 #| column: page-left
 
 merriman_models <- list(
@@ -431,21 +692,38 @@ merriman_models <- list(
 
   )
 
+cm <- c(
+  "Post Event" = "event2. Post",
+#  "High FF Score x Post Event" = "event2. Post:high_ff_scoreTRUE",
+    "High FF Score x Post Event" = "high_ff_scoreTRUE:event2. Post",
+
+  "In Preliminary SFHA" = "in_prelim_sfhaSFHA",
+  "High FF Score x In Prelim SFHA" = "high_ff_scoreTRUE:in_prelim_sfhaSFHA",
+  
+  "In Effective SFHA" = "in_eff_sfhaSFHA",
+ # "In Eff. SFHA x Post Event" = "in_eff_sfhaSFHA:event2. Post",
+  "In SFHA, High FF Score & Post Event" = "high_ff_scoreTRUE:event2. Post:in_eff_sfhaSFHA",
+  "In Prelim SFHA & Post Event" = "event2. Post:in_prelim_sfhaSFHA",
+  "In Prelim SFHA, High FF Score & Post Event" = "high_ff_scoreTRUE:event2. Post:in_prelim_sfhaSFHA"
+)
+
 
 export_summs(merriman_models,
-             model.names = c("Just SFHA", "Post FF Data Release", "Add Effective SFHA", "Add Prelim SFHA Identifier")
+             model.names = c("Just SFHA", "Post FF Data Release", "Add Effective SFHA", "Add Prelim SFHA Identifier"),
+             coefs = cm
             # robust = "HC3"#, statistics = c(N = "nobs", adj.R2 = "adj.r.squared", R2 = "r.squared"))
 )
 # all_models_formatted <- modelsummary::modelsummary(merriman_models,
 # 
 #            #    output = "flextable",
-#              fmt = function(x) round(x, 2),
+#              fmt = function(x) round(x, 2), coef_map = cm,
 #              stars = TRUE)
 # 
 # all_models_formatted
 
 ```
 
+## Annualized Price Change
 
 ```{r}
 #| label: tbl-models-forDFM1V2
@@ -593,7 +871,6 @@ all_models_formatted
       
       "PIN FE" = feols(log(sale_price) ~ high_ff_score*event | pin ,       
                   data = df_prep,
-                  cluster = ~pin
       ),
                    
       "No FE" = feols(log(sale_price) ~ high_ff_score*event,
@@ -604,25 +881,21 @@ all_models_formatted
       
       "PIN & Sale Year FE" = feols(log(sale_price) ~ high_ff_score*event | sale_year + pin,
                     data = df_prep2,
-                    cluster = ~pin
-                    
+
       ),
       
       
       "Control for Triad" = feols(log(sale_price) ~ high_ff_score*event*Triad | sale_year + pin,
                     data = df_prep2,
-                    cluster = ~pin
-                    
+
       ), 
             "3 FEs" = feols(log(sale_price) ~ high_ff_score*event*Triad | pin + clean_name+ sale_year,
                     data = df_prep2,
-                    cluster = ~pin
-                    
+
       ),
          "With SFHA" = feols(log(sale_price) ~ high_ff_score*event*in_eff_sfha | pin + clean_name + sale_year,
                     data = df_prep2,
-                    cluster = ~pin
-                    
+
       )
       )
     
@@ -855,13 +1128,11 @@ all_models_formatted
                   , 
       
        "Risk Controlled & Muni FE" = feols(ann_d_log_price ~ high_ff_score*around_event*change_type + env_flood_fs_factor + sale_year_t2 | clean_name,
-                    data = ff_pairs,
-                  cluster = ~ clean_name
+                    data = ff_pairs
       ),
       
        "Ordinal FF" = feols(ann_d_log_price ~ env_flood_fs_factor*around_event*change_type  + sale_year_t2 | clean_name,
-                    data = ff_pairs,
-                  cluster = ~ clean_name
+                    data = ff_pairs
                     
       )
     ))
@@ -887,8 +1158,10 @@ all_models_formatted
 ```{r}
 #| label: tbl-categoricalrisk
 #| tbl-cap: "Repeat Sales data structure. DV is change in logged price."
+#| eval: false
 
 
+# eval set to false
 all_models = list(
 
 "Risk Score as Factor" = list(
@@ -933,7 +1206,9 @@ all_models_formatted
 ```{r}
 #| label: tbl-ordinalrisk
 #| tbl-cap: "Repeat Sales data structure. DV is change in logged price."
-#| 
+#| eval: false
+
+# eval set to false
 model_list <- list(
         "No FEs" = list(
       
