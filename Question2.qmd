@@ -471,11 +471,11 @@ merriman_models <- list(
               cluster = ~ clean_name
               
   ),
-  "II.5" = feols(log(sale_price) ~ high_ff_score*event + factor(sale_year) | pin,
-               data = df_prep,
-               cluster = ~ clean_name
-               
-  ),
+  # "II.5" = feols(log(sale_price) ~ high_ff_score*event + factor(sale_year) | pin,
+  #              data = df_prep,
+  #              cluster = ~ clean_name
+  #              
+  # ),
   "III" = feols(log(sale_price) ~ high_ff_score*event*in_prelim_sfha | pin + sale_year,
                 data = df_prep,
                # cluster = ~ clean_name
@@ -524,14 +524,20 @@ cm = c(
 
   'in_prelim_sfhaSFHA' = 'In Preliminary SFHA',  
   'event2.Post:in_prelim_sfhaSFHA' = 'In Prelim SFHA & Post Event',
+  'in_prelim_sfhaSFHA:event2.Post' = 'In Prelim SFHA & Post Event',
+
   'high_ff_scoreTRUE:in_prelim_sfhaSFHA' = 'In Prelim SFHA x High FF Score',
   'high_ff_scoreTRUE:event2. Post:in_prelim_sfhaSFHA' = 'In Prelim SFHA, High FF Score & Post Event',
 
   'in_eff_sfhaSFHA'= 'In Effective SFHA',
   'in_eff_sfhaSFHA:event2. Post' = 'In Eff. SFHA x Post Event',
+  'event2. Post:in_eff_sfhaSFHA' = 'In Eff. SFHA x Post Event',
+
   'high_ff_ScoreTRUE:in_eff_sfhaSFHA' = 'In Eff. SFHA x High FF Score',
+  'in_eff_sfhaSFHA:high_ff_ScoreTRUE' = 'In Eff. SFHA x High FF Score',
+
   'high_ff_scoreTRUE:event2. Post:in_eff_sfhaSFHA' = 'In Effective SFHA, High FF Score & Post Event',
-  'in_eff_sfhaSFHA:high_ff_scoreTRUE:event2. Post' = 'In Effective SFHA, High FF Score & Post Event',
+  'in_eff_sfhaSFHA:high_ff_scoreTRUE:event2. Post' = 'In Effective SFHA, High FF Score & Post Event'
   
 )
 
@@ -539,8 +545,8 @@ cm = c(
 all_models_formatted <- modelsummary::msummary(
   merriman_models,
   fmt = function(x) round(x, 2),
-  stars = TRUE,
-  coef_map = cm)
+  stars = TRUE,coef_map = cm
+  )
 
 all_models_formatted
 
@@ -722,6 +728,48 @@ export_summs(merriman_models,
 # all_models_formatted
 
 ```
+
+### Residuals
+
+```{r}
+
+mod1_fe = plm(log(sale_price) ~ high_ff_score*event*in_prelim_sfha,       
+              index = c("pin", "sale_year"),
+              effect = "twoway",
+              data = df_prep
+              )
+
+fitted_data <- broom::augment(mod1_fe, data = df_prep)
+    
+
+ggplot(fitted_data, aes(x = .resid)) +
+      geom_histogram(binwidth = 0.1, fill = "skyblue", color = "black") +
+      labs(title = "Histogram of Residuals",
+           x = "Residuals",
+           y = "Frequency") +
+      theme_minimal()  
+
+
+
+mod2_fe = plm(sale_price ~ high_ff_score*event*in_prelim_sfha,       
+              index = c("pin", "sale_year"),
+              effect = "twoway",
+              data = df_prep
+              )
+
+fitted_data <- broom::augment(mod2_fe, data = df_prep)
+    
+
+ggplot(fitted_data, aes(x = .resid)) +
+      geom_histogram(binwidth = 100000, 
+                     fill = "skyblue", color = "black") +
+      labs(title = "Histogram of Residuals",
+           x = "Residuals",
+           y = "Frequency") +
+      theme_minimal()  
+
+```
+
 
 ## Annualized Price Change
 
