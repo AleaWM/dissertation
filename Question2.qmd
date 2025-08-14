@@ -298,106 +298,6 @@ ggplot(df_prep |>
 ```
 
 
-### Parallel trends test for repeat sales
-
-DV is change in logged price.
-
-```{r}
-#| layout-ncol: 2
-#| message: false
-
-ff_pairs |> 
-  filter(sale_date_t1 < new_info_released &
-              !is.na(ff_factor)) |> 
-    group_by(sale_year_t1, ff_factor) |> 
-  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
-            n = n() ) |> 
-  ggplot(aes(x = sale_year_t1 , y = mean_growth, color = ff_factor)) +
-  geom_line() +
-  geom_point() + 
-  labs(title = "Pre-Treatment Trends by SFHA Change Type", 
-       caption = "Dataset: Repeat Sales") 
-
-
-ff_pairs |> 
-  filter(sale_date_t2 > new_info_released &
-           !is.na(ff_factor)) |>
-  group_by(sale_year_t2, ff_factor) |> 
-  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
-            n = n()) |> 
-  ggplot(aes(x = sale_year_t2 , y = mean_growth, color = ff_factor)) +
-  geom_line() +
-  geom_point() + 
-  labs(title = "Post-Treatment Trends by SFHA Change Type", caption = "Dataset: Repeat Sales")
-```
-
-```{r}
-#| column: page
-#| layout-ncol: 3
-#| message: false
-
-ff_pairs |> 
-  filter(sale_date_t1 < new_info_released  &
-            !is.na(high_ff_score)
-         ) |> 
-    group_by(sale_year_t1, high_ff_score) |> 
-  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
-            n = n()) |> 
-  ggplot(aes(x = sale_year_t1 , y = mean_growth, color = high_ff_score)) +
-  geom_line() +
-  geom_point() + 
-      geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
-
-  labs(title = "Pre-Treatment Trends by FF Score 5 or higher",
-        caption = "Dataset: Repeat Sales (ff_pairs)")
-
-ff_pairs |> 
-  filter(sale_date_t2 < new_info_released & sale_year_t2 > 2015 &
-            !is.na(high_ff_score)) |>
-  group_by(sale_year_t2, high_ff_score) |> 
-  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
-             n = n() ) |> 
-  ggplot(aes(x = sale_year_t2 , y = mean_growth, color = high_ff_score)) +
-  geom_line() +
-  geom_point() + 
-        geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
-
-  labs(title = "Pre-Treatment Trends for 2nd sale by FF Score 5 or higher",
-        caption = "Dataset: Repeat Sales (ff_pairs)")
-
-ff_pairs |> 
-  filter(sale_date_t2 > new_info_released &
-            !is.na(high_ff_score)
-         ) |>
-  group_by(sale_year_t2, high_ff_score) |> 
-  summarise(mean_growth = mean(ann_d_log_price, na.rm = TRUE),
-            n = n()) |> 
-  ggplot(aes(x = sale_year_t2 , y = mean_growth, color = high_ff_score)) +
-  geom_line() +
-  geom_point() + 
-        geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
-
-  labs(title = "Post-Treatment Trends by FF Score 5 or higher",
-        caption = "Dataset: Repeat Sales (ff_pairs)")
-```
-
-
-Is testing the assumption on repeat sales actually right to do or should I just use all sales?? I feel like it should be all sales.
-
-```{r}
-
-slopes1<- lm(d_log_price ~ sale_year_t2*around_event*high_ff_score, data = ff_pairs)
-
-slopes2 <- lm(d_log_price ~ sale_year_t2*around_event*change_type, data = ff_pairs)
-
-modelsummary::modelsummary(
-  list(slopes1, slopes2),
-               output = "flextable",
-             fmt = function(x) round(x, 2),
-             stars = TRUE)
-```
-
-Parallel trends not super supported in either model for repeat sales?
 :::
 
 
@@ -860,7 +760,7 @@ export_summs(models,
      "muni & year fe" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event | clean_name + sale_year,
                     data = df_prep
                     
-      ),
+      )
       
 
     )
@@ -891,18 +791,18 @@ all_models_formatted
 
       
       "PIN & Sale Year FE" = feols(log(sale_price) ~ high_ff_score*event | pin + sale_year,
-                    data = df_prep2,
+                    data = df_prep,
 
       ),
       
       
       "Triad Interaction" = feols(log(sale_price) ~ high_ff_score*event*Triad | pin + sale_year,
-                    data = df_prep2,
+                    data = df_prep,
 
       ), 
 
          "4way Interaction" = feols(log(sale_price) ~ high_ff_score*event*in_eff_sfha*Triad | pin + clean_name + sale_year,
-                    data = df_prep2,
+                    data = df_prep,
 
       )
       )
