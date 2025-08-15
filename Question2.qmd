@@ -39,12 +39,6 @@ library(jtools)
 
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, results = "hold"  )
 
-```
-
-> Sales are not winsorized
-
-```{r warning = FALSE, message = FALSE}
-#df_pairs <- readRDS("data/processed/df_pairs.RDS") 
 
 ff_pairs <- readRDS("data/processed/ff_pairs.rds") |>
   rename(around_event = treated)
@@ -52,6 +46,8 @@ ff_pairs <- readRDS("data/processed/ff_pairs.rds") |>
 df_prep <- readRDS("data/processed/df_prep.rds")
 
 ```
+
+> Sales are not winsorized
 
 > Most of these parcels with missing municipality names have been given addresses using the Assessor's parcel address dataset. Parcels that still haven't matched tend to be parcels that were consolidated for larger homes/buildings and no longer exist. In general, pin splits and consolidations are NOT considered in this analysis.
 
@@ -105,6 +101,8 @@ ggplot() +
 #| column: page
 #| layout-ncol: 2
 #| message: false
+df_prep <- df_prep |> filter(!is.na(Triad))
+
 
 df_prep |> 
   filter(sale_date < new_info_released  &
@@ -116,7 +114,8 @@ df_prep |>
   ggplot(aes(x = sale_year , y = avg_price, color = high_ff_score)) +
   geom_line() +
   geom_point() + 
-      geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+   #   geom_text(aes(label = n), vjust = -1, size = 3) + 
+    scale_x_continuous(breaks = c(2010,  2015, 2020), limits = c(2009,2021 ) ) + 
 
   labs(title = "Pre-Treatment Trends by FF Score 5 or higher",
         caption = "Dataset: All Sales (df_prep). \n Sales is NOT winsorized or logged.")
@@ -131,8 +130,8 @@ df_prep |>
   ggplot(aes(x = sale_year , y = avg_price, color = high_ff_score)) +
   geom_line() +
   geom_point() + 
-        geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
-
+      scale_x_continuous(breaks = c(2020, 2024), limits = c(2019,2025 ) ) + 
+#    geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
   labs(title = "Post-Treatment Trends by FF Score 5 or higher",
         caption = "Dataset: All Sales (df_prep)")
 
@@ -147,10 +146,12 @@ df_prep |>
   ggplot(aes(x = sale_year , y = avg_price, color = high_ff_score)) +
   geom_line() +
   geom_point() + 
-      geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+   #   geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
 
   labs(title = "Pre-Treatment Trends by FF Score 5 or higher",
         caption = "Dataset: All Sales (df_prep). \n Sales is NOT winsorized or logged.") +
+    scale_x_continuous(breaks = c(2010,  2015, 2020), limits = c(2009,2021 ) ) + 
+
   facet_wrap(~Triad)
 
 df_prep |> 
@@ -163,7 +164,8 @@ df_prep |>
   ggplot(aes(x = sale_year , y = avg_price, color = high_ff_score)) +
   geom_line() +
   geom_point() + 
-        geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+   #     geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+      scale_x_continuous(breaks = c(2020, 2024), limits = c(2019,2025 ) ) + 
 
   labs(title = "Post-Treatment Trends by FF Score 5 or higher",
         caption = "Dataset: All Sales (df_prep)") +
@@ -171,6 +173,37 @@ df_prep |>
 
 ```
 
+```{r include = FALSE, eval=FALSE}
+# code from MVH
+# not tested
+
+library(fixest)
+
+# df columns assumed: y (your chosen transform), x (running var), year, id
+didrd_pretest <- function(df, y, x, year, id, cutoff, T0, h, poly = 1, cl = ~id){
+  d <- df[abs(df[[x]] - cutoff) <= h, ]
+  d$right <- as.integer(d[[x]] >= cutoff)
+
+  fml <- as.formula(paste0(
+    y, " ~ right + ",
+    "poly(", x, ",", poly, ")+poly(", x, ",", poly, "):right + ",
+    "i(", year, ") + ",
+    "i(", year, ", right, ref=", T0 - 1, ") | ",
+    id
+  ))
+  m <- feols(fml, data = d, cluster = cl)
+
+  pre_years <- sort(unique(d[[year]][d[[year]] < T0]))
+  # joint test: all pre-year deviations from the base pre-year = 0
+  w <- wald(m, paste0("i(", year, ", right)::", pre_years[pre_years != (T0 - 1)]))
+  list(model = m, pretrend_p = w$p.value, wald = w)
+}
+
+# Run on levels / log1p / asinh using the SAME h
+# didrd_pretest(df, "sales",  "dist", "yr", "pin", 0, 2019, h = 5)
+# didrd_pretest(df, "log1p_sales", "dist", "yr", "pin", 0, 2019, h = 5)
+# didrd_pretest(df, "asinh_sales","dist","yr","pin",0, 2019, h = 5)
+```
 
 ### Parallel Trends assumption for all sales
 
@@ -190,7 +223,8 @@ df_prep |>
   ggplot(aes(x = sale_year , y = avg_logprice, color = high_ff_score)) +
   geom_line() +
   geom_point() + 
-      geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+   #   geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+    scale_x_continuous(breaks = c(2010,  2015, 2020), limits = c(2009,2021 ) ) + 
 
   labs(title = "Pre-Treatment Trends by FF Score 5 or higher",
         caption = "Dataset: All Sales (df_prep)") 
@@ -200,12 +234,13 @@ df_prep |>
             !is.na(high_ff_score)
          ) |>
   group_by(sale_year, high_ff_score) |> 
-  summarise(mean_growth = mean(log(sale_price), na.rm = TRUE),
+  summarise(avg_logprice = mean(log(sale_price), na.rm = TRUE),
             n = n()) |> 
-  ggplot(aes(x = sale_year , y = mean_growth, color = high_ff_score)) +
+  ggplot(aes(x = sale_year , y = avg_logprice, color = high_ff_score)) +
   geom_line() +
   geom_point() + 
-        geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+     #   geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+      scale_x_continuous(breaks = c(2020, 2024), limits = c(2019,2025 ) ) + 
 
   labs(title = "Post-Treatment Trends by FF Score 5 or higher",
         caption = "Dataset: All Sales (df_prep)")
@@ -222,7 +257,8 @@ df_prep |>
   ggplot(aes(x = sale_year , y = avg_logprice, color = high_ff_score)) +
   geom_line() +
   geom_point() + 
-      geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+    #  geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+    scale_x_continuous(breaks = c(2010,  2015, 2020), limits = c(2009,2021 ) ) + 
 
   labs(title = "Pre-Treatment Trends by FF Score 5 or higher",
         caption = "Dataset: All Sales (df_prep)") +
@@ -233,12 +269,49 @@ df_prep |>
             !is.na(high_ff_score)
          ) |>
   group_by(sale_year, high_ff_score, Triad) |> 
-  summarise(mean_growth = mean(log(sale_price), na.rm = TRUE),
+  summarise(avg_logprice = mean(log(sale_price), na.rm = TRUE),
             n = n()) |> 
-  ggplot(aes(x = sale_year , y = mean_growth, color = high_ff_score)) +
+  ggplot(aes(x = sale_year , y = avg_logprice, color = high_ff_score)) +
   geom_line() +
   geom_point() + 
-        geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+     #   geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+      scale_x_continuous(breaks = c(2020, 2024), limits = c(2019,2025 ) ) + 
+
+  labs(title = "Post-Treatment Trends by FF Score 5 or higher",
+        caption = "Dataset: All Sales (df_prep)") +
+    facet_wrap(~Triad)
+
+
+
+df_prep |> 
+  filter(sale_date < new_info_released  &
+            !is.na(high_ff_score)
+         ) |> 
+    group_by(sale_year, high_ff_score, Triad) |> 
+  summarise(inverse_price = mean(1/sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = inverse_price, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+      #geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+    scale_x_continuous(breaks = c(2010,  2015, 2020), limits = c(2009,2021 ) ) + 
+
+  labs(title = "Pre-Treatment Trends by FF Score 5 or higher",
+        caption = "Dataset: All Sales (df_prep)") +
+  facet_wrap(~Triad)
+
+df_prep |> 
+  filter(sale_date > new_info_released &
+            !is.na(high_ff_score)
+         ) |>
+  group_by(sale_year, high_ff_score, Triad) |> 
+  summarise(inverse_price = mean(1/sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = inverse_price, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+     #   geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+      scale_x_continuous(breaks = c(2020, 2024), limits = c(2019,2025 ) ) + 
 
   labs(title = "Post-Treatment Trends by FF Score 5 or higher",
         caption = "Dataset: All Sales (df_prep)") +
@@ -247,22 +320,241 @@ df_prep |>
 ```
 
 ```{r}
+#| column: page
+#| layout-ncol: 2
+#| message: false
 
-slopes1 <- lm(log(sale_price) ~ high_ff_score*event*factor(sale_year), data = df_prep)
+
+df_prep |> 
+  filter(sale_date < new_info_released  &
+            !is.na(high_ff_score)
+         ) |> 
+    group_by(sale_year, in_eff_sfha) |> 
+  summarise(avg_logprice = mean(log(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_logprice, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+    #  geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+    scale_x_continuous(breaks = c(2010,  2015, 2020), limits = c(2009,2021 ) ) + 
+
+  labs(title = "Pre-Treatment Trends by SFHA Status",
+        caption = "Dataset: All Sales (df_prep)") 
+
+df_prep |> 
+  filter(sale_date > new_info_released &
+            !is.na(high_ff_score)
+         ) |>
+    group_by(sale_year, in_eff_sfha) |> 
+  summarise(avg_logprice = mean(log(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_logprice, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+    #  geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+      scale_x_continuous(breaks = c(2020, 2024), limits = c(2019,2025 ) ) + 
+
+  labs(title = "Post-Treatment Trends by SFHA Status",
+        caption = "Dataset: All Sales (df_prep)") 
 
 
-slopes2 <- lm(log(sale_price) ~ in_eff_sfha*event*factor(sale_year), data = df_prep)
 
+df_prep |> 
+  filter(sale_date < new_info_released  &
+            !is.na(high_ff_score)
+         ) |> 
+    group_by(sale_year, in_eff_sfha, Triad) |> 
+  summarise(avg_logprice = mean(log(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_logprice, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+     # geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+    scale_x_continuous(breaks = c(2010,  2015, 2020), limits = c(2009,2021 ) ) + 
+
+  labs(title = "Pre-Treatment Trends by SFHA Status",
+        caption = "Dataset: All Sales (df_prep)") +
+  facet_wrap(~Triad)
+
+df_prep |> 
+  filter(sale_date > new_info_released &
+            !is.na(high_ff_score)
+         ) |>
+  group_by(sale_year, in_eff_sfha, Triad) |> 
+  summarise(avg_logprice = mean(log(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_logprice, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+      #  geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+      scale_x_continuous(breaks = c(2020, 2024), limits = c(2019,2025 ) ) + 
+
+  labs(title = "Post-Treatment Trends by SFHA Status",
+        caption = "Dataset: All Sales (df_prep)") +
+    facet_wrap(~Triad)
+
+
+
+df_prep |> 
+  filter(sale_date < new_info_released  &
+            !is.na(high_ff_score)
+         ) |> 
+    group_by(sale_year, in_eff_sfha, Triad) |> 
+  summarise(inverse_price = mean(1/sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = inverse_price, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+   #   geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+    scale_x_continuous(breaks = c(2010,  2015, 2020), limits = c(2009,2021 ) ) + 
+
+  labs(title = "Pre-Treatment Trends by SFHA Status",
+        caption = "Dataset: All Sales (df_prep)") +
+  facet_wrap(~Triad)
+
+df_prep |> 
+  filter(sale_date > new_info_released &
+            !is.na(high_ff_score)
+         ) |>
+  group_by(sale_year, in_eff_sfha, Triad) |> 
+  summarise(inverse_price = mean(1/sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = inverse_price, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+     #   geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+      scale_x_continuous(breaks = c(2020, 2024), limits = c(2019,2025 ) ) + 
+
+  labs(title = "Post-Treatment Trends by SFHA Status",
+        caption = "Dataset: All Sales (df_prep)") +
+    facet_wrap(~Triad)
+
+```
+
+```{r}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+
+
+df_prep |> 
+  filter(sale_date < new_info_released  &
+            !is.na(high_ff_score)
+         ) |> 
+    group_by(sale_year, in_eff_sfha) |> 
+  summarise(asinh_price = mean(asinh(sale_price)),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = asinh_price, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+    #  geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+    scale_x_continuous(breaks = c(2010,  2015, 2020), limits = c(2009,2021 ) ) + 
+
+  labs(title = "Pre-Treatment Trends by SFHA Status") 
+
+df_prep |> 
+  filter(sale_date > new_info_released &
+            !is.na(high_ff_score)
+         ) |>
+    group_by(sale_year, in_eff_sfha) |> 
+  summarise(asinh_price = mean(asinh(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = asinh_price, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+    #  geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+      scale_x_continuous(breaks = c(2020, 2024), limits = c(2019,2025 ) ) + 
+
+  labs(title = "Post-Treatment Trends by SFHA Status") 
+
+
+
+df_prep |> 
+  filter(sale_date < new_info_released  &
+            !is.na(high_ff_score)
+         ) |> 
+    group_by(sale_year, high_ff_score, Triad) |> 
+  summarise(asinh_price = mean(asinh(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = asinh_price, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+   #   geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+    scale_x_continuous(breaks = c(2010,  2015, 2020), limits = c(2009,2021 ) ) + 
+
+  labs(title = "Pre-Treatment Trends by SFHA Status") +
+  facet_wrap(~Triad)
+
+df_prep |> 
+  filter(sale_date > new_info_released &
+            !is.na(high_ff_score)
+         ) |>
+  group_by(sale_year, high_ff_score, Triad) |> 
+  summarise(asinh_price = mean(asinh(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = asinh_price, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+    #    geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+      scale_x_continuous(breaks = c(2020, 2024), limits = c(2019,2025 ) ) + 
+
+  labs(title = "Post-Treatment Trends by SFHA Status",
+        caption = "Dataset: All Sales (df_prep)") +
+    facet_wrap(~Triad)
+
+
+
+
+```
+
+### Testing slopes 
+
+```{r}
+#| layout-ncol: 1
+#| label: tbl-notloggedDV
+
+slopes1 <- lm(sale_price ~ high_ff_score*event*sale_year, data = df_prep)
 
 modelsummary::modelsummary(
-  list(slopes1, slopes2),
+  slopes1,
               output = "flextable",
              fmt = function(x) round(x, 2),
              stars = TRUE)
+
+
 ```
 
-**sale_date:event:in_eff_sfha**\
+
+```{r}
+#| label: tbl-loggedDV
+
+
+slopes1 <- lm(log(sale_price) ~ high_ff_score*event*sale_year, data = df_prep)
+
+modelsummary::modelsummary(
+  slopes1,
+              output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+slopes3 <- lm(asinh(sale_price) ~ high_ff_score*event*sale_year, data = df_prep)
+
+modelsummary::modelsummary(
+  slopes3,
+              output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+
+```
+
+**sale_year:in_eff_sfha**\
+If not statistically significant, then I fail to reject the null hypothesis --> there is no evidence of different pre-treatment trends between properties that were in and out of SFHAs.
+
+**sale_year:event:in_eff_sfha**\
 → If significant, it means the difference in slope between groups changed after the event. That does NOT SUPPORT parallel trends assumptions for difference in differences models.
+
+
 
 ```{r}
 #| layout-ncol: 2
@@ -314,7 +606,7 @@ df_prep |>
     median = median(log_price),
     n = n(), 
     distinct_pins = n_distinct(pin),
-  )
+  ) |> DT::datatable(rownames = FALSE)
 
 df_prep |> 
   filter(!is.na(high_ff_score)) |>
@@ -325,15 +617,81 @@ df_prep |>
     median = median(sale_price),
     n = n(), 
     distinct_pins = n_distinct(pin),
-  )
+  ) |> DT::datatable(rownames = FALSE)
+
 
 df_prep <- df_prep |> 
   filter(!is.na(high_ff_score))
 ```
 
 
+```{r}
+
+df_prep |> 
+    filter(sale_year > 2015) |>     # just to have roughly the same number of years on both sides of the event
+  filter(!is.na(high_ff_score)) |>
+  filter(!is.na(in_eff_sfha)) |>
+  mutate(log_price = log(sale_price)) |>
+  group_by(high_ff_score, in_eff_sfha, event) |>
+  summarize(            
+    avg_log_price = mean(log_price, na.rm=TRUE),
+    median = median(log_price),
+    n = n(), 
+    distinct_pins = n_distinct(pin),
+  )
+
+df_prep |> 
+  filter(sale_year > 2015) |>
+  filter(!is.na(high_ff_score)) |>
+  filter(!is.na(in_eff_sfha)) |>
+  group_by(high_ff_score, in_eff_sfha, event) |>
+  summarize(
+    avg_price = mean(sale_price, na.rm=TRUE),
+    median = median(sale_price),
+    n = n(), 
+    distinct_pins = n_distinct(pin),
+  )
+
+
+```
+
+
+
+Properties with high flood score but no SFHA
+- "02014000171053" = "1354 whispering springs Palatine IL" Parcel is a "condo" but a bunch of detached homes around a pond. Flood score is 7. Has a parcel inside of it (1733 EMERALD BAY 5, PALATINE, IL 60074) with a FF=6 that IS in a FEMA flood zone. Not sure if there was a specific pin divisin for this reason 
+)
+
+```{r}
+
+df_prep |> filter(high_ff_score == FALSE & in_eff_sfha == "SFHA") |> 
+  mutate(parcel = str_sub(pin, 1, 10)) |> distinct(parcel, in_eff_sfha, high_ff_score)
+
+# Not in SFHA
+"01014050100000" = "804 division st, barrington IL"
+"01021000330000"  = "7 Marmon LN Barringonton IL"
+"02013020771280" = "2 Dundee Quarter 302 Palatine IL" # considered condo but its all detached homes or townhomes. AND IN A LOMR
+"0102300012" = "221 Oakdene Drive Barrington" # only land barely touches SFHA
+
+"0216410003" = "25 North Clyde Avenue, Palatine, IL, 60067, USA" # actually has a flood factor of 5
+
+"1505117011" = "100 S Roberta AVe Northlake" # parcel boundary touches SFHA but not house
+
+"1504117057" = "1642 N 39th Ave Stone Park" # score of 6, is in SFHA
+"1505205013" = "1652 43RD AVE, STONE PARK, IL 60165" # has a flood score of 7! and is in SFHA
+```
+
+
 # Models
 
+```{r}
+#| label: trial-removelomrs
+
+df_prep <- df_prep |> filter(in_lomr == "Not in LOMR") |> group_by(pin) |> mutate(times_sold = n()) |> filter(times_sold > 1) |> ungroup()
+
+df_prep |> filter(high_ff_score == FALSE & in_eff_sfha == "SFHA")
+
+
+```
 
 
 ```{r}
@@ -349,7 +707,7 @@ df_prep |>
 ```
 
 ::: panel-tabset
-## Models for Merriman
+## DV = Logged Sale Price
 
 
 ```{r}
@@ -458,8 +816,67 @@ all_models_formatted
 
 ```
 
+```{r}
+#| label: tbl-models-forDFM2-
+#| tbl-cap: "feols() command. Exported with msummary() DV is log(sale_price). Observations include pins that sold 2+ times between 2010 and 2025. Without pretty labels." 
+#| column: page-left
 
-## Not Logged Sales Price
+
+options(scipen = 99)
+
+merriman_models <- list(
+  
+  # high_ff_score shouldn't change at PIN level. Variable drops out. 
+  #   "I" = feols(log(sale_price) ~ high_ff_score | pin + sale_year,
+  #             panel.id = c("pin", "sale_year"),
+  #             vcov = "hetero",
+  #             data = df_prep,
+  # 
+  # ),
+  # 
+  "II" = feols(log(sale_price) ~ high_ff_score*event | pin + sale_year,
+              panel.id = "pin",
+              
+              data = df_prep,
+              cluster = ~ clean_name
+              
+  ),
+  # "II.5" = feols(log(sale_price) ~ high_ff_score*event + factor(sale_year) | pin,
+  #              data = df_prep,
+  #              cluster = ~ clean_name
+  #              
+  # ),
+  "III" = feols(log(sale_price) ~ high_ff_score*event*in_prelim_sfha | pin + sale_year,
+                data = df_prep,
+               # cluster = ~ clean_name
+                              vcov = "hetero" 
+
+  ),
+  
+  "IV" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event  | pin + sale_year,
+               panel.id = "pin",
+               
+               data = df_prep,
+                             vcov = "hetero"
+  ) 
+)
+
+
+
+
+
+all_models_formatted <- modelsummary::msummary(
+  merriman_models,
+  fmt = function(x) round(x, 2),
+  stars = TRUE
+  )
+
+all_models_formatted
+
+```
+
+
+## DV = Sales Price (not logged!)
 
 
 ```{r}
@@ -635,20 +1052,39 @@ export_summs(merriman_models,
 
 ```
 
-### Residuals
+
+### Distribution of Sale Prices
 
 ```{r}
+ggplot(df_prep, aes(x = sale_price)) +
+      geom_histogram(#binwidth = 0.1, 
+                     fill = "skyblue", color = "black") +
+      labs(title = "Sale Price  Distribution",
+           x = "$",
+           y = "Frequency") +
+      theme_minimal() 
 
+ggplot(df_prep, aes(x = log(sale_price))) +
+      geom_histogram(#binwidth = 0.1, 
+                     fill = "skyblue", color = "black") +
+      labs(title = "Logged Sale Price  Distribution",
+           x = "$",
+           y = "Frequency") +
+      theme_minimal()
+```
+
+
+```{r residuals, include = FALSE, eval = FALSE}
 mod1_fe = plm(log(sale_price) ~ high_ff_score*event*in_prelim_sfha,       
               index = c("pin", "sale_year"),
               effect = "twoway",
               data = df_prep
               )
 
-fitted_data <- broom::augment(mod1_fe, data = df_prep)
+fitted_data1 <- broom::augment(mod1_fe, data = df_prep)
     
 
-ggplot(fitted_data, aes(x = .resid)) +
+ggplot(fitted_data1, aes(x = .resid)) +
       geom_histogram(binwidth = 0.1, fill = "skyblue", color = "black") +
       labs(title = "Histogram of Residuals",
            x = "Residuals",
@@ -663,10 +1099,10 @@ mod2_fe = plm(sale_price ~ high_ff_score*event*in_prelim_sfha,
               data = df_prep
               )
 
-fitted_data <- broom::augment(mod2_fe, data = df_prep)
+fitted_data2 <- broom::augment(mod2_fe, data = df_prep)
     
 
-ggplot(fitted_data, aes(x = .resid)) +
+ggplot(fitted_data2, aes(x = .resid)) +
       geom_histogram(binwidth = 100000, 
                      fill = "skyblue", color = "black") +
       labs(title = "Histogram of Residuals",
@@ -733,7 +1169,7 @@ export_summs(models,
 
 
 
-## Using All Sales Data - Not just Repeat Sales
+## Muni Fixed Effects, DV = ln(p)
 
 **using df_prep**
 
