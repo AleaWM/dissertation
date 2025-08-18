@@ -19,8 +19,9 @@ library(skimr)
 > Sales are not winsorized
 
 ```{r warning = FALSE, message = FALSE}
-res_sales  <- readRDS("./data/processed/res_sales.rds") |> filter(sale_date > date("2010-01-01"))  
+#res_sales  <- readRDS("./data/processed/res_sales.rds") |> filter(sale_date > date("2010-01-01"))  
 
+res_sales  <- readRDS("./data/processed/res_sales_buildings.rds") |> filter(sale_date > date("2010-01-01"))
 
 pin_muni_key <- read_csv("./data/raw/pin_muni_key.csv")
 
@@ -86,7 +87,7 @@ df_prep <- repeat_sales %>%
   ) %>%
   # 2) Keep only the columns we need for repeat‐sales. You can drop geometry, etc.
   select(pin, sale_date, sale_year, sale_price, in_eff_sfha, in_prelim_sfha, 
-         eff_date, pre_date, in_lomr) %>%
+         eff_date, pre_date, in_lomr, addedto_eff_sfha, removedfrom_eff_sfha) %>%
   # 3) Sort by pin and date
   arrange(pin, sale_date) %>%
   # 4) Tag how many times each PIN sold
@@ -107,6 +108,19 @@ df_prep <- df_prep |>
     new_info_released = ymd("2020-06-29")
   ) |>
   select(-c(agency_name, agency_num, short_name, shpfile_name) )
+
+df_prep <- df_prep |> 
+  group_by(pin) |>
+  mutate(change_type = 
+           case_when(
+           sum(in_eff_sfha == "SFHA") == times_sold ~ "Always SFHA",
+           sum(in_eff_sfha  == "SFHA") == 0 ~ "Never SFHA",
+           T ~ "Changes SFHA"
+    
+  ),
+  change_type = factor(change_type, levels = c("Never SFHA", "Always SFHA", "Changes SFHA"))
+  ) |>
+  ungroup()
 
 ```
 
@@ -238,7 +252,7 @@ df_pairs <- df_pairs |>
     # relative time variables 
     t_months_eff = round(time_length(sale_date_t1 - eff_date, "months") ), # first sale to FIRM update, in months
     
-    t_years_eff = round(time_length(sale_date_t1 - eff_date, "years") ),    # first sale to FIRM update, in years
+    t_years_eff = round(time_length(sale_date_t1 - eff_date, "years") ),    # first sale to FIRM upd ate, in years
 
     t_months_prelim = round(time_length(sale_date_t1 - pre_date, "months") ), # first sale to FIRM update, in months
 
@@ -282,9 +296,13 @@ ff_pairs <- df_pairs |>
 ```
 
 ```{r}
-saveRDS(df_pairs, file = "./data/processed/df_pairs.RDS")
-saveRDS(ff_pairs, file = "./data/processed/ff_pairs.RDS")
-saveRDS(df_prep, file = "./data/processed/df_prep.RDS")
+# saveRDS(df_pairs, file = "./data/processed/df_pairs.RDS")
+# saveRDS(ff_pairs, file = "./data/processed/ff_pairs.RDS")
+# saveRDS(df_prep, file = "./data/processed/df_prep.RDS")
+
+saveRDS(ff_pairs, file = "./data/processed/ff_pairs_buildings.RDS")
+saveRDS(df_prep, file = "./data/processed/df_prep_buildings.RDS")
+saveRDS(df_pairs, file = "./data/processed/df_pairs_buildings.RDS")
 
 
 ```
