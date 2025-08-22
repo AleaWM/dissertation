@@ -3,7 +3,6 @@
 #  - ./data/raw/Assessor_Parcel_Sales_20250105.csv
 #  - ./data/processed/parcels_wFIRMS.csv
 #  - ./data/processed/sfha_indicator_pins.csv
-#  - ./data/processed/lomr_pins_2024.csv
 
 # Outputs:
 #  - ./data/processed/sales_prepped.RDS
@@ -20,12 +19,13 @@ library(lubridate)
 
 
 # 1. Read and preprocess sales data
-sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") |>
+#sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") |>
+  sales <- read_csv("./data/raw/Assessor_-_Parcel_Sales_20250709.csv") |>
   filter(year > 2005) |>
   mutate(
     class_1dig = str_sub(class, 1, 1),
     class       = as.numeric(class),
-    date        = mdy(sale_date),
+    # date        = mdy(sale_date),
     pin10       = str_sub(pin, 1, 10),
     sale_date   = mdy(sale_date)
   )
@@ -36,11 +36,23 @@ pin10_firms  <- read_csv("./data/processed/parcels_wFIRMS_20250604.csv")   |>
   select(-c(PRE_DATE, EFF_DATE))
 
 
+# only includes parcels that were flagged as having a BUILDING outline in the FEMA flood plain.
+sfha_ind <- read_csv("./data/processed/sfha_indicator_buildings.csv")  |> select(-pin)
+
+sfha_ind <- sfha_ind |> group_by(pin10) |> 
+  summarize(sfha2018 = max(sfha2018),
+            sfha2024 = max(sfha2024),
+            prelimsfha = max(prelimsfha),
+            lomr2018 = max(lomr2018),
+            lomr2024 = max(lomr2024),
+            EFF_DATlomr2018 = max(EFF_DATlomr2018),
+            EFF_DATlomr2024 = max(EFF_DATlomr2024),
+            )
 
 
-# only includes PINs that were in FEMA flood plain.
-sfha_ind <- read_csv("./data/processed/sfha_indicator_parcels.csv") |> 
-  select(pin10, sfha2018:lomr2024, lomr_date) 
+# includes PINs and parcels where the parcel polygon intersected with the FEMA flood plain.
+# sfha_ind <- read_csv("./data/processed/sfha_indicator_parcels.csv") |> 
+#  select(pin10, sfha2018:lomr2024, lomr_date) 
 
 
 # lomrs2024    <- read_csv("./data/processed/lomr_pins_2024.csv") |>
@@ -74,10 +86,11 @@ sales <- sales |>
   left_join(sfha_ind, by = "pin10") |>
   mutate(
     class    = as.character(class),
-    lomr2018 = as.character(lomr2018),
-    sfha2018 = as.character(sfha2018),
-    lomr2024 = as.character(lomr2024),
-    sfha2024 = as.character(sfha2024)
+    lomr2018 = (ifelse(is.na(lomr2018), 0, lomr2018)),
+    sfha2018 = (ifelse(is.na(sfha2018), 0, sfha2018)),
+    lomr2024 = (ifelse(is.na(lomr2024), 0, lomr2024)),
+    sfha2024 = (ifelse(is.na(sfha2024), 0, sfha2024)),
+    prelimsfha = (ifelse(is.na(prelimsfha), 0, prelimsfha))
   )
 
 
@@ -115,8 +128,13 @@ sales <- sales |>
         
         
    
-        addedto_eff_sfha = ifelse((sfha2018 == 0 & sfha2024 == 1 ), "MappedIn", "0"),
-        removedfrom_eff_sfha = ifelse((sfha2018 == 1 & sfha2024 == 0 ), "MappedOut", "0"),
+        addedto_eff_sfha = ifelse((sfha2018 == 0 & sfha2024 == 1 &
+                                     sale_date > EFF_DATE), "MappedIn", "0"),
+        addedto_prelim_sfha = ifelse((sfha2018 == 0 & prelimsfha == 1 &
+                                        sale_date > PRE_DATE), "MappedIn", "0"),
+        
+        removedfrom_eff_sfha = ifelse((sfha2018 == 1 & sfha2024 == 0 ) &
+                                        sale_date > EFF_DATE, "MappedOut", "0"),
         
         
         
@@ -132,7 +150,7 @@ sales <- sales |>
     
     
     # LOMR indicator
-    in_lomr       = if_else(sale_date >= (lomr_date),
+    in_lomr       = if_else(sale_date >= (EFF_DATlomr2018) | sale_date >= (EFF_DATlomr2024) ,
                             "Received LOMR", "Not in LOMR"),
     in_lomr = ifelse(is.na(in_lomr), "Not in LOMR", in_lomr),
     
@@ -171,27 +189,9 @@ res_sales <- sales |>
     #   )
 res_sales <- res_sales |> filter(times_sold < 15)
 
-# # 6. Summarize into pin_groups
-# pin_groups <- res_sales |>
-#   group_by(pin) |>
-#   arrange(year) |>
-#   filter(n() < 6) |>
-#   summarize(
-#     times_sold     = n(),
-#     multisales    = if_else(n() > 1, "Multi", "Once"),
-#     sold_post2023 = as.integer(any(year > 2022)),
-#     ccao_sfha     = first(ccao_sfha),
-#     first_price   = first(sale_price),
-#     min_price     = min(sale_price, na.rm = TRUE),
-#     avg_price     = mean(sale_price, na.rm = TRUE),
-#     max_price     = max(sale_price, na.rm = TRUE),
-#     last_price    = last(sale_price),
-#     .groups       = "drop"
-#   )
-
 
 # Save objects for later use in your Quarto doc
-saveRDS(sales,       "./data/processed/sales_prepped.rds")
-saveRDS(res_sales,   "./data/processed/res_sales.rds")
+saveRDS(sales,       "./data/processed/sales_prepped_buildings.rds")
+saveRDS(res_sales,   "./data/processed/res_sales_buildings.rds")
 #saveRDS(pin_groups,  "./data/processed/pin_groups.rds")
 
