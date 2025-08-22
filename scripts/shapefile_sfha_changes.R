@@ -353,22 +353,22 @@ pin_indicators |> write_csv("./data/processed/sfha_indicator_pins.csv")
 
 
 
-
+# Make PARCEL indicator File Below --------------------------------------------
 ### REDO THE JOIN, use pin10 instead of pin!!!
 
 sfha2018 <- read_csv("data/processed/parcels_sfha_2018.csv") |> 
   mutate(pin10 = str_sub(pin, 1, 10)) |>
-  select(pin10, FLD_ZONE = FLD_ZON, FLD_AR_ID = FLD_AR_, ZONE_SUBTY = ZONE_SU) |>
+  select(pin10, FLD_ZONE, FLD_AR_, ZONE_SUBTY) |>
   distinct()
 
 sfha2024 <- read_csv("data/processed/sfha_pins_2024.csv") |>
   mutate(pin10 = str_sub(pin, 1, 10))|>
-  select(pin10, FLD_ZONE = FLD_ZON, FLD_AR_ID = FLD_AR_, ZONE_SUBTY = ZONE_SU) |>
+  select(pin10, FLD_ZONE, FLD_AR_, ZONE_SUBTY) |>
   distinct()
 
 prelim_sfha_parcels <- read_csv("./data/processed/parcels_preliminary_sfha_20250605.csv") |>
   mutate(pin10 = str_sub(pin, 1, 10)) |>
-  select(pin10, FLD_ZONE, FLD_AR_ID, ZONE_SUBTY) |>
+  select(pin10, FLD_ZONE, FLD_AR_ = FLD_AR_ID, ZONE_SUBTY) |>
   distinct()
 
 
@@ -411,6 +411,8 @@ pin_indicators <- pin_indicators|>
     lomr2018 =  ifelse(!is.na(lomr_yearlomr2018), 1, 0),
     lomr2024 = ifelse(!is.na(lomr_yearlomr2024) , 1, 0)
   )
+
+distinct_parcels <- pin_indicators |> distinct(pin10, sfha2018, sfha2024, prelimsfha, lomr2018, lomr2024)
 
 pin_indicators |> write_csv("./data/processed/sfha_indicator_parcels.csv")
 
