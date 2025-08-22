@@ -90,8 +90,8 @@ parcels_2024 <- st_transform(parcels_2024, common_crs)
 fld_haz_ar_2018 <- st_transform(fld_haz_ar_2018, common_crs)
 sf_use_s2(TRUE)
 
-parcels_2018 <- st_set_precision(parcels_2018, 1e6)    # Set precision to reduce computational load
-parcels_2024 <- st_set_precision(parcels_2024, 1e6)    # Set precision to reduce computational load
+#parcels_2018 <- st_set_precision(parcels_2018, 1e6)    # Set precision to reduce computational load
+#parcels_2024 <- st_set_precision(parcels_2024, 1e6)    # Set precision to reduce computational load
 
 tic()
 beep_on_error(
@@ -241,9 +241,8 @@ write_sf(parcels_lomrs_2024, "./data/processed/parcels_lomrs_2024.shp")
 beep("coin")
 toc()
 
-# Make it a smaller CSV
 parcels_lomrs_2024 <- sf::read_sf("data/processed/parcels_lomrs_2024.shp")
-
+# Make it a smaller CSV
 lomrs_2024 <- parcels_lomrs_2024 |> as.data.frame() |>
   select(pin = name,
          pin10,
@@ -324,7 +323,7 @@ write_sf(prelim_sfha, "./data/processed/parcels_preliminary_sfha_20250605.csv" )
  
 prelim_sfha |>filter(pin %in% lomrs_2024$pin)
  
- prelim_sfha |> filter(pin %in% sfha_2024$pin)
+prelim_sfha |> filter(pin %in% sfha_2024$pin)
  
 pin_indicators <- sfha_2018 |> full_join(sfha_2024, by = c("pin", "DFIRM_ID"), suffix = c("2018", "2024"))
  
@@ -348,7 +347,7 @@ pin_indicators |> write_csv("./data/processed/sfha_indicator_pins.csv")
 
 
 
-### REDO THE JOIN, create and pin10 instead of pin!!!
+### REDO THE JOIN, use pin10 instead of pin!!!
 
 sfha2018 <- read_csv("data/processed/parcels_sfha_2018.csv") |> 
   mutate(pin10 = str_sub(pin, 1, 10)) |>
@@ -397,39 +396,6 @@ write_csv(lomr_join, "./data/processed/joined_LOMR_parcels.csv")
 
 pin_indicators <- pin_indicators |> full_join(lomr_join)
 
-
-# lomrs18_arcgis <- readxl::read_xlsx("./inputs/data/LOMR_PINs_2018NFHL.xlsx") |> 
-#   select(pin = name, pin10, EFF_DATE, CASE_NO) |>
-#   mutate(lomr_year = "2018")
-# 
-# lomrs24_arcgis <- readxl::read_xlsx("./inputs/data/LOMR_PINs_2024NFHL.xlsx") |>
-#   select(pin = name, pin10, EFF_DATE, CASE_NO, assessorbl ) |>
-#   mutate(lomr_year = "2024")
-# 
-# 
-# lomr_tangent <- full_join(lomrs18_arcgis, lomrs24_arcgis, by = c("pin", "pin10", "EFF_DATE", "CASE_NO"), suffix = c("2018", "2024"))
-
-# n_distinct(lomr_tangent$pin)
-# n_distinct(lomr_tangent$pin10)
-# 
-# lomr_tangent |> filter(is.na(lomr_year2018) | is.na(lomr_year2024)) |> arrange(pin10)
-# 
-# lomr_tangent <- lomr_tangent |>
-#   group_by(CASE_NO) |> 
-#   fill(lomr_year2018, .direction = "downup") |>
-#   fill(lomr_year2024, .direction = "downup") |> arrange(pin10)
-# pin_indicators <- pin_indicators |> full_join(lomr_tangent)
-# 
-# # 22 LOMRs in 2018, 43 in 2024
-# lomr_tangent |> group_by(EFF_DATE, CASE_NO) |> summarize(n=n() ) |>
-#   arrange(desc(n))
-# 
-# write_csv(lomr_tangent, "./data/processed/joined_LOMR_parcels_from_arcgis.csv")
-
-
-
-# FINISH THIS, START HERE
-
 pin_indicators <- pin_indicators|>
   mutate(
     sfha2018 = ifelse(!is.na(FLD_ZONE), 1, 0),
@@ -459,13 +425,13 @@ ggplot() +
 
 
 
-# Join FIRM data to parcels --------------------------------------------------
-tic()
-beep_on_error(
-  parcels_sfha_2024 <- st_join(parcels_2024, st_clip_firms_2024, join = st_intersects), sound = "wilhelm"  ) # kept all 1.43 million parcels_2024
-parcels_sfha_2018 <- parcels_sfha_2024 |> filter(!is.na(name))
-write_sf(parcels_sfha_2024, "./data/processed/parcels_inFIRMs_2024.shp", )
-
-beep("coin")
-toc()
-
+# # Join FIRM data to parcels --------------------------------------------------
+# tic()
+# beep_on_error(
+#   parcels_sfha_2024 <- st_join(parcels_2024, st_clip_firms_2024, join = st_intersects), sound = "wilhelm"  ) # kept all 1.43 million parcels_2024
+# parcels_sfha_2018 <- parcels_sfha_2024 |> filter(!is.na(name))
+# write_sf(parcels_sfha_2024, "./data/processed/parcels_inFIRMs_2024.shp", )
+# 
+# beep("coin")
+# toc()
+# 
