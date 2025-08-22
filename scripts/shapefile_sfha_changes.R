@@ -341,11 +341,10 @@ n_distinct(pin_indicators$pin) # 58,363 unique PINs
 # 57,836 as of August 22 2025
 
 pin_indicators <-pin_indicators|>
-  select(-c(DFIRM_ID, DFIRM_ID.y, DFIRM_ID.x)) |>
   mutate(
     sfha2018 = ifelse(!is.na(FLD_ZONE2018), 1, 0),
     sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
-    prelimsfha = ifelse(!is.na(SFHACHG), 1, 0),
+    prelimsfha = ifelse(!is.na(FLD_ZONE_pre), 1, sfha2024),
     lomr2018 =  ifelse(!is.na(LOMR_ID2018), 1, 0),
     lomr2024 = ifelse(!is.na(LOMR_ID2024), 1, 0)
          )
