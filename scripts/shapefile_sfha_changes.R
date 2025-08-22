@@ -1,5 +1,7 @@
 # Purpose: Identifies parcels in SFHA areas and LOMRs in 2018 and the 2024 NFHL.
-# Outputs: Creates sfha_indicator_pins.csv
+# Outputs: 
+#    sfha_indicator_pins.csv
+#    sfha_indicator_parcels.csv
 # Inputs:
 
 
@@ -68,9 +70,8 @@ effective_firms_2018 <- ggplot() +
 effective_firms_2018
 
 
-table(st_is_valid(parcels_2018)) ## 77 were not valid for 2024
-table(st_is_simple(parcels_2018))
-table(st_is_simple(parcels_2024))
+table(st_is_valid(parcels_2018)) ## 100 were not valid for 2018
+table(st_is_valid(parcels_2024)) ## 77 were not valid for 2024
 
 # can check ones that weren't valid
 # notvalid <- parcels_2018[!st_is_valid(parcels_2018), ]
@@ -80,8 +81,8 @@ parcels_2018 <- parcels_2018[st_is_valid(parcels_2018), ]
 parcels_2024 <- parcels_2024[st_is_valid(parcels_2024), ]
 
 # check stuff
-st_geometry(parcels_2024)
-attributes(parcels_2024)
+# st_geometry(parcels_2024)
+#a ttributes(parcels_2024)
 
 fld_haz_ar_2018 <- st_cast(fld_haz_ar_2018, "MULTIPOLYGON")
 common_crs <- st_crs(parcels_2018)
@@ -108,7 +109,8 @@ parcels_sfha_2018 <- read_sf("./data/processed/parcels_sfha_2018.shp")
 sfha_2018 <- parcels_sfha_2018 |> 
   as.data.frame() |> 
   select(pin = name, 
-          DFIRM_ID = DFIRM_I, FLD_ZON, ZONE_SU, FLD_AR_) |> 
+          DFIRM_ID = DFIRM_I, 
+         FLD_ZONE = FLD_ZON, ZONE_SUBTY = ZONE_SU, FLD_AR_) |> 
   group_by(pin) |>
   slice(1) |>
   ungroup()
@@ -220,9 +222,9 @@ toc()
 parcels_sfha_2024 <- sf::read_sf("data/processed/parcels_sfha_2024.shp")
 
 sfha_2024 <- parcels_sfha_2024 |> as.data.frame() |>
-  select(-c(GFID:geometry)) |>
+  select(-c(GFID:shape)) |>
   select(pin = name, 
-         DFIRM_ID = DFIRM_I, FLD_ZON, ZONE_SU, FLD_AR_) |>
+         DFIRM_ID = DFIRM_ID, FLD_ZONE, ZONE_SUBTY, FLD_AR_ = FLD_AR_ID) |>
   group_by(pin) |>
   slice(1) |>
   ungroup()
@@ -287,7 +289,6 @@ lomrs_2024 |>  write_csv("data/processed/lomr_pins_2024.csv")
   st_transform("EPSG:6454") |>
   st_intersection(border)
  
-parcels_2024 
 prelim_sfha <- st_cast(prelim_sfha, "MULTIPOLYGON")
 prelim_sfha <- st_transform(prelim_sfha, common_crs)
 
@@ -316,7 +317,7 @@ prelim_sfha <- parcels_2024_prelimdatabase |> as.data.frame() |>
   slice(1) |>
   ungroup()
 
-write_sf(prelim_sfha, "./data/processed/parcels_preliminary_sfha_20250605.csv" )
+write_sf(prelim_sfha, "./data/processed/parcels_preliminary_sfha_20250822.csv" )
 
  
 ### Join PIN lists together 
@@ -327,16 +328,23 @@ prelim_sfha |> filter(pin %in% sfha_2024$pin)
  
 pin_indicators <- sfha_2018 |> full_join(sfha_2024, by = c("pin", "DFIRM_ID"), suffix = c("2018", "2024"))
  
-pin_indicators <- pin_indicators |> full_join(prelim_sfha, by = "pin")
+pin_indicators <- pin_indicators |> full_join(prelim_sfha,
+                                              by = c("pin", "DFIRM_ID"), 
+                                              ) |>
+  rename(FLD_ZONE_pre = FLD_ZONE, ZONE_SUBTY_pre = ZONE_SUBTY, FLD_AR_ID_pre = FLD_AR_ID) 
+
+
 lomr_join <- lomrs_2018 |> full_join(lomrs_2024, by = c("pin", "DFIRM_ID"), suffix = c("2018", "2024"))
 pin_indicators <- pin_indicators |> full_join(lomr_join)
 
 n_distinct(pin_indicators$pin) # 58,363 unique PINs
+# 57,836 as of August 22 2025
 
 pin_indicators <-pin_indicators|>
+  select(-c(DFIRM_ID, DFIRM_ID.y, DFIRM_ID.x)) |>
   mutate(
-    sfha2018 = ifelse(!is.na(FLD_ZON2018), 1, 0),
-    sfha2024 = ifelse(!is.na(FLD_ZON2024), 1, 0),
+    sfha2018 = ifelse(!is.na(FLD_ZONE2018), 1, 0),
+    sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
     prelimsfha = ifelse(!is.na(SFHACHG), 1, 0),
     lomr2018 =  ifelse(!is.na(LOMR_ID2018), 1, 0),
     lomr2024 = ifelse(!is.na(LOMR_ID2024), 1, 0)
