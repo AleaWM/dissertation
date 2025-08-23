@@ -29,6 +29,7 @@ nicknames <- readxl::read_xlsx("../Merriman RA/ptax/Necessary_Files/muni_shortna
 
 pin_muni_key <- pin_muni_key |> left_join(nicknames)
 
+
 ```
 
 ```{r dropped_pins, message = FALSE}
@@ -73,6 +74,8 @@ repeat_sales <- repeat_sales |>
 puni_pins <- read_csv("data/processed/floodfactor_scores.csv")
 
 pin_muni_key <- left_join(pin_muni_key, puni_pins)
+
+
 
 ```
 
@@ -127,7 +130,6 @@ df_prep <- df_prep |>
 > Most of these parcels with missing municipality names have been given addresses using the Assessor's parcel address dataset. Parcels that still haven't matched tend to be parcels that were consolidated for larger homes/buildings and no longer exist. In general, pin splits and consolidations are NOT considered in this analysis.
 
 ```{r}
-
 df_prep |> filter(is.na(in_eff_sfha)) |> ## 22 missing indicators - Take care of 7/1/2023. Dropped in dropped_pins section.
   distinct(pin) |>
   arrange(pin)
@@ -191,6 +193,33 @@ missing_ff <- df_prep |>
 # 2723 parcels missing flood factor scores
 
 #write_csv(missing_ff, "data/processed/missing_floodfactor_scores.csv")
+```
+
+
+```{r}
+manual_ff_scores <- readxl::read_xlsx("data/processed/pins_with_some_addresses_forgoogle.xlsx") |>
+  mutate(pin = str_pad(pin, 14, "left", "0"), 
+         pin10 = str_sub(pin,1,10)) |>
+    select(pin10, flood_factor_score, clean_name)
+
+
+
+df_prep <- df_prep  |>  
+  mutate(pin10 = str_sub(pin, 1, 10)) |>
+  left_join(manual_ff_scores, by= "pin10")
+
+df_prep |> filter(is.na(env_flood_fs_factor)) |> count()
+df_prep |> filter(is.na(clean_name.x)) |> count()
+
+df_prep <- df_prep |> 
+    mutate(flood_factor_score = ifelse(is.na(env_flood_fs_factor), flood_factor_score, env_flood_fs_factor),
+           clean_name = ifelse(is.na(clean_name.x), clean_name.y, clean_name.x),
+      high_ff_score = ifelse(env_flood_fs_factor > 4 | flood_factor_score > 4, TRUE, FALSE))
+
+  
+df_prep |> filter(is.na(flood_factor_score))
+df_prep |> filter(is.na(clean_name)) |> count()
+
 
 ```
 
@@ -291,7 +320,7 @@ There are `r n_distinct(df_pairs$pin)` pins remaining in `df_pairs`.
 ff_pairs <- df_pairs |>  
   mutate(
     treated = ifelse(sale_date_t1 < as_date("2020-06-29") & sale_date_t2 >= as_date("2020-06-29"), TRUE, FALSE),
-    high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE)
+    high_ff_score = ifelse(env_flood_fs_factor > 4 | flood_factor_score > 4, TRUE, FALSE)
   )
 ```
 
