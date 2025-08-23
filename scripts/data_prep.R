@@ -37,7 +37,7 @@ pin10_firms  <- read_csv("./data/processed/parcels_wFIRMS_20250604.csv")   |>
 
 
 # only includes parcels that were flagged as having a BUILDING outline in the FEMA flood plain.
-sfha_ind <- read_csv("./data/processed/sfha_indicator_buildings.csv")  |> select(-pin)
+sfha_ind <- read_csv("./data/processed/sfha_indicator_buildings.csv")  
 
 sfha_ind <- sfha_ind |> group_by(pin10) |> 
   summarize(sfha2018 = max(sfha2018),
@@ -48,36 +48,6 @@ sfha_ind <- sfha_ind |> group_by(pin10) |>
             EFF_DATlomr2018 = max(EFF_DATlomr2018),
             EFF_DATlomr2024 = max(EFF_DATlomr2024),
             )
-
-
-# includes PINs and parcels where the parcel polygon intersected with the FEMA flood plain.
-# sfha_ind <- read_csv("./data/processed/sfha_indicator_parcels.csv") |> 
-#  select(pin10, sfha2018:lomr2024, lomr_date) 
-
-
-# lomrs2024    <- read_csv("./data/processed/lomr_pins_2024.csv") |>
-#   rename(
-#     lomr_eff     = EFF_DAT,
-#     lomr_dfirm_id = DFIRM_ID
-#   ) |>
-#   mutate(lomr_eff = ymd(lomr_eff),
-#          in_lomr = "2024") #  |>  
-#   #(-c(mncplty, pltcltw, assssrn, assssrb, geoid, shp_Lng, shap_Ar, SCALE, STATUS, SOURCE_)) 
-# 
-# 
-# lomrs2018  <- read_csv("./data/processed/parcels_lomrs_2018.csv") |>
-#   rename(
-#     lomr_eff     = EFF_DAT,
-#     lomr_dfirm_id = DFIRM_ID
-#   ) |>
-#   mutate(lomr_eff = ymd(lomr_eff), 
-#          pin10 = str_sub(pin, 1, 10), 
-#          in_lomr = "2018")
-#
-# lomrs_antijoin <- anti_join(lomrs2018, lomrs2024, by = "pin10")
-# lomr_join <- lomrs2018 |> full_join(lomrs2024, by = c("pin10"), suffix = c("lomr2018", "lomr2024"))
-
-
 
 # 3. Merge firms & SFHA indicators into sales
 sales <- sales |>
@@ -147,6 +117,7 @@ sales <- sales |>
     
     in_prelim_sfha = ifelse((sfha2018 == 0 & sfha2024 == 0 ) | (is.na(sfha2018) & is.na(sfha2024)) , "Not SFHA", in_prelim_sfha),
       
+    in_prelim_sfha = ifelse(prelimsfha == 1 & sale_date >= PRE_DATE, "SFHA", in_prelim_sfha),
     
     
     # LOMR indicator
