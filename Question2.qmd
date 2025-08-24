@@ -79,13 +79,6 @@ skim(df_prep)
 #| column: page
 skim(ff_pairs)
 ```
-```{r}
-ggplot() + 
-  geom_histogram(data = ff_pairs, aes( x = ann_d_log_price), bins = 100) + theme_classic()
-
-ggplot() + 
-  geom_histogram(data = ff_pairs, aes( x = d_log_price), bins = 100) + theme_classic()
-```
 
 
 :::
@@ -180,7 +173,8 @@ df_prep |>
 library(fixest)
 
 # df columns assumed: y (your chosen transform), x (running var), year, id
-didrd_pretest <- function(df, y, x, year, id, cutoff, T0, h, poly = 1, cl = ~id){
+didrd_pretest <- function(df, y, x, year, id, cutoff, T0, h, poly = 1, cl = NULL
+                          ){
   d <- df[abs(df[[x]] - cutoff) <= h, ]
   d$right <- as.integer(d[[x]] >= cutoff)
 
@@ -200,9 +194,103 @@ didrd_pretest <- function(df, y, x, year, id, cutoff, T0, h, poly = 1, cl = ~id)
 }
 
 # Run on levels / log1p / asinh using the SAME h
-# didrd_pretest(df, "sales",  "dist", "yr", "pin", 0, 2019, h = 5)
+didrd_pretest(df_prep, "sale_price",  "dist", "sale_year", "pin", 2020, 2019, h = 5)
 # didrd_pretest(df, "log1p_sales", "dist", "yr", "pin", 0, 2019, h = 5)
 # didrd_pretest(df, "asinh_sales","dist","yr","pin",0, 2019, h = 5)
+
+
+
+
+
+# Local RD × DiD pretrend check, narrated.
+didrd_pretest <- function(
+  df, y, x, year, id,
+  cutoff, T0, h,
+  poly = 1,
+  cluster = NULL,
+  verbose = TRUE
+){
+  # 1) Enforce that column names are strings
+  #    because we’re doing non-standard evaluation below.
+  stopifnot(is.character(c(y, x, year, id)))
+
+  # 2) Keep only observations within bandwidth h around the cutoff
+  #    because RD logic only makes sense locally near the threshold.
+  d <- subset(df,
+              is.finite(df[[y]]) & is.finite(df[[x]]) &
+              abs(df[[x]] - cutoff) <= h)
+
+  # 3) Indicator for being on the right side of the cutoff
+  #    because treatment/exposure flips at the boundary.
+  d$right <- as.integer(d[[x]] >= cutoff)
+
+  # 4) Build the regression in parts so the “why” is clear.
+  #    (a) poly(x, poly) + poly(x, poly):right
+  #        because we allow different smooth trends in the running variable
+  #        on each side of the cutoff (local polynomial RD control).
+  run_side <- sprintf("poly(%s,%d) + poly(%s,%d):right", x, poly, x, poly)
+
+  #    (b) i(year)
+  #        because we need time fixed effects to net out common shocks.
+  time_fe  <- sprintf("i(%s)", year)
+
+  #    (c) i(year, right, ref = T0-1)
+  #        because we want an event-study of right vs. left
+  #        with the last pre-treatment year as the base.
+  evt      <- sprintf("i(%s, right, ref=%s)", year, T0 - 1)
+
+  #    (d) | id
+  #        because unit fixed effects soak up time-invariant differences.
+  fe_part  <- id
+
+  # Full formula:
+  #    y ~ right + {RD polynomials by side} + {time FE} + {event study} | {unit FE}
+  # The “right” main effect is the post-baseline difference-in-levels at the base year.
+  fml_str  <- sprintf("%s ~ right + %s + %s + %s | %s", 
+                      y, run_side, time_fe, evt, fe_part)
+  fml      <- as.formula(fml_str)
+
+  # 5) Cluster by unit by default
+  #    because serial correlation within units is expected.
+  cl <- if (is.null(cluster)) as.formula(paste0("~", id)) else cluster
+
+  if (verbose) {
+    cat("\n================ Model Specification (human-readable) ================\n")
+    cat("Outcome:\n  ", y, "\n\n", sep = "")
+    cat("Local window:\n  |", x, " - ", cutoff, "| <= ", h, "\n\n", sep = "")
+    cat("Key terms & WHY:\n")
+    cat("  right                                 # because treatment flips at the cutoff; captures side difference at base year\n")
+    cat("  poly(", x, ",", poly, ")              # because we control for smooth trend in running variable (left side)\n", sep = "")
+    cat("  poly(", x, ",", poly, "):right        # because we allow a different trend on the right side (RD by side)\n", sep = "")
+    cat("  i(", year, ")                         # because time FE remove common shocks across both sides\n", sep = "")
+    cat("  i(", year, ", right, ref=", T0 - 1, ")  # because event-study: right vs. left by year (base = last pre year)\n", sep = "")
+    cat("  | ", id, "                            # because unit FE remove time-invariant unit heterogeneity\n\n", sep = "")
+    cat("Null we test (parallel pretrends, locally):\n")
+    cat("  All pre-treatment coefficients from i(", year, ", right, ...) equal 0 (except the base year).\n\n", sep = "")
+    cat("Full fixest formula:\n  ", fml_str, "\n", sep = "")
+    cat("======================================================================\n\n")
+  }
+
+  # 6) Estimate
+  m <- feols(fml, data = d, cluster = cl)
+
+  # 7) Collect all pre-treatment years
+  pre_years <- sort(unique(d[[year]][d[[year]] < T0]))
+
+  # 8) Joint Wald: all pre-treatment right-side deviations = 0 (ex base year)
+  test_terms <- paste0("i(", year, ", right)::", pre_years[pre_years != (T0 - 1)])
+  w <- if (length(test_terms)) wald(m, test_terms) else NULL
+
+  # 9) Return
+  list(
+    model      = m,
+    window_n   = nrow(d),
+    pre_years  = pre_years,
+    wald_terms = test_terms,
+    pretrend_p = if (is.null(w)) NA_real_ else w$p.value,
+    wald       = w
+  )
+}
 ```
 
 ### Parallel Trends assumption for all sales
@@ -685,11 +773,12 @@ df_prep |> filter(high_ff_score == FALSE & in_eff_sfha == "SFHA") |>
 
 ```{r}
 #| label: trial-removelomrs
+#| eval: false
 
-df_prep <- df_prep |> filter(in_lomr == "Not in LOMR") |> group_by(pin) |> mutate(times_sold = n()) |> filter(times_sold > 1) |> ungroup()
-
-df_prep |> filter(high_ff_score == FALSE & in_eff_sfha == "SFHA")
-
+# would filter out pins that had LOMRs
+df_prep <- df_prep |> 
+  filter(in_lomr == "Not in LOMR") |> group_by(pin) |> 
+  mutate(times_sold = n()) |> filter(times_sold > 1) |> ungroup()
 
 ```
 
@@ -735,24 +824,29 @@ merriman_models <- list(
               cluster = ~ clean_name
               
   ),
-  # "II.5" = feols(log(sale_price) ~ high_ff_score*event + factor(sale_year) | pin,
-  #              data = df_prep,
-  #              cluster = ~ clean_name
-  #              
-  # ),
+  "II.5" = feols(log(sale_price) ~ high_ff_score*event*in_lomr*in_prelim_sfha | pin+sale_year,
+               data = df_prep,
+               cluster = ~ clean_name
+
+  ),
   "III" = feols(log(sale_price) ~ high_ff_score*event*in_prelim_sfha | pin + sale_year,
                 data = df_prep,
-               # cluster = ~ clean_name
                               vcov = "hetero" 
 
   ),
   
   "IV" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event  | pin + sale_year,
                panel.id = "pin",
-               
                data = df_prep,
                              vcov = "hetero"
-  ) 
+  ) ,
+  
+  "IV" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event*in_lomr  | pin + sale_year,
+               panel.id = "pin",
+               data = df_prep,
+                                            vcov = "hetero"
+
+  )
 )
 
 # 
@@ -783,6 +877,7 @@ merriman_models <- list(
 
 cm = c(
   'event2. Post' = 'Post Event',
+  'in_lomrLOMR' = 'Has LOMR',
   'high_ff_scoreTRUE:event2. Post' = 'High FF Score x Post Event',
   'event2. Post:high_ff_scoreTRUE' = 'High FF Score x Post Event',
 
@@ -809,7 +904,8 @@ cm = c(
 all_models_formatted <- modelsummary::msummary(
   merriman_models,
   fmt = function(x) round(x, 2),
-  stars = TRUE,coef_map = cm
+  stars = TRUE,
+  coef_map = cm
   )
 
 all_models_formatted
@@ -1260,7 +1356,7 @@ all_models_formatted
 
 
 
-## Repeat Sales
+ ## Repeat Sales
 
 ```{r}
 #| column: page
