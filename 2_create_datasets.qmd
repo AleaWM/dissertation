@@ -19,9 +19,9 @@ library(skimr)
 > Sales are not winsorized
 
 ```{r warning = FALSE, message = FALSE}
-#res_sales  <- readRDS("./data/processed/res_sales.rds") |> filter(sale_date > date("2010-01-01"))  
+res_sales  <- readRDS("./data/processed/res_sales.rds") |> filter(sale_date > date("2010-01-01"))  
 
-res_sales  <- readRDS("./data/processed/res_sales_buildings.rds") |> filter(sale_date > date("2010-01-01"))
+#res_sales  <- readRDS("./data/processed/res_sales_buildings.rds") |> filter(sale_date > date("2010-01-01"))
 
 pin_muni_key <- read_csv("./data/raw/pin_muni_key.csv")
 
@@ -325,13 +325,13 @@ ff_pairs <- df_pairs |>
 ```
 
 ```{r}
-# saveRDS(df_pairs, file = "./data/processed/df_pairs.RDS")
-# saveRDS(ff_pairs, file = "./data/processed/ff_pairs.RDS")
-# saveRDS(df_prep, file = "./data/processed/df_prep.RDS")
+saveRDS(df_pairs, file = "./data/processed/df_pairs.RDS")
+saveRDS(ff_pairs, file = "./data/processed/ff_pairs.RDS")
+saveRDS(df_prep, file = "./data/processed/df_prep.RDS")
 
-saveRDS(ff_pairs, file = "./data/processed/ff_pairs_buildings.RDS")
-saveRDS(df_prep, file = "./data/processed/df_prep_buildings.RDS")
-saveRDS(df_pairs, file = "./data/processed/df_pairs_buildings.RDS")
+# saveRDS(ff_pairs, file = "./data/processed/ff_pairs_buildings.RDS")
+# saveRDS(df_prep, file = "./data/processed/df_prep_buildings.RDS")
+# saveRDS(df_pairs, file = "./data/processed/df_pairs_buildings.RDS")
 
 
 ```
