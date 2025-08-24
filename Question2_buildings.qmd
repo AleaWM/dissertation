@@ -814,15 +814,20 @@ merriman_models <- list(
                 data = df_prep,
                # cluster = ~ clean_name
                               vcov = "hetero" 
-
+               
   ),
   
   "IV" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event  | pin + sale_year,
                panel.id = "pin",
-               
                data = df_prep,
-                             vcov = "hetero"
-  ) 
+               vcov = "hetero"
+  ) ,
+  
+  "IV" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event*in_lomr  | pin + sale_year,
+               panel.id = "pin",
+               vcov = "hetero",
+               data = df_prep
+  )
 )
 
 # 
@@ -881,7 +886,8 @@ cm = c(
 all_models_formatted <- modelsummary::msummary(
   merriman_models,
   fmt = function(x) round(x, 2),
-  stars = TRUE, coef_map = cm
+  stars = TRUE,
+  coef_map = cm
   )
 
 all_models_formatted
@@ -896,41 +902,32 @@ all_models_formatted
 
 options(scipen = 99)
 
-merriman_models <- list(
-  
-  # high_ff_score shouldn't change at PIN level. Variable drops out. 
-  #   "I" = feols(log(sale_price) ~ high_ff_score | pin + sale_year,
-  #             panel.id = c("pin", "sale_year"),
-  #             vcov = "hetero",
-  #             data = df_prep,
-  # 
-  # ),
-  # 
+merriman_models2 <- list(
+
   "II" = feols(log(sale_price) ~ high_ff_score*event | pin + sale_year,
               panel.id = "pin",
-              
               data = df_prep,
               cluster = ~ clean_name
               
   ),
-  # "II.5" = feols(log(sale_price) ~ high_ff_score*event + factor(sale_year) | pin,
-  #              data = df_prep,
-  #              cluster = ~ clean_name
-  #              
-  # ),
+
   "III" = feols(log(sale_price) ~ high_ff_score*event*in_prelim_sfha | pin + sale_year,
                 data = df_prep,
-               # cluster = ~ clean_name
-                              vcov = "hetero" 
+                vcov = "hetero" 
 
   ),
   
   "IV" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event  | pin + sale_year,
                panel.id = "pin",
-               
                data = df_prep,
-                             vcov = "hetero"
-  ) 
+               vcov = "hetero"
+  )  ,
+  
+  "V" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event*in_lomr  | pin + sale_year,
+               panel.id = "pin",
+               vcov = "hetero",
+               data = df_prep
+  )
 )
 
 
@@ -938,7 +935,7 @@ merriman_models <- list(
 
 
 all_models_formatted <- modelsummary::msummary(
-  merriman_models,
+  merriman_models2,
   fmt = function(x) round(x, 2),
   stars = TRUE
   )
@@ -947,6 +944,17 @@ all_models_formatted
 
 ```
 
+```{r}
+feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event*in_lomr  | pin + sale_year,
+               panel.id = "pin",
+               vcov = "hetero",
+               data = df_prep) |> modelsummary::msummary()
+
+feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event*in_lomr  | pin + sale_year,
+               panel.id = "pin",
+               vcov = "hetero",
+               data = df_prep) |> export_summs()
+```
 
 ## DV = Sales Price (not logged!)
 
