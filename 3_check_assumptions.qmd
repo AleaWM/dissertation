@@ -35,33 +35,26 @@ library(did)
 
 pin_muni_key <- read_csv("./data/raw/pin_muni_key.csv")
 
-df_pairs <- readRDS("./data/processed/df_pairs.RDS") |>
-  group_by(pin) |>
-  mutate(
-    years_btwn = ifelse(years_btwn < 1, 1, years_btwn),
-     in_updated_firm = ifelse(pre_date > date("2008-01-01"), "Updated", "Not Updated"),
-    
-    treated_groups_eff = year(eff_date),
-    treated_groups_eff = ifelse(treated_groups_eff < 2010, NA, treated_groups_eff),
-    first_treat_year_prelim = year(pre_date),
-    first_treat_year_prelim = ifelse(first_treat_year_prelim < 2009, NA, first_treat_year_prelim),
-    
-    pin_num = as.numeric(pin),
-    treated = ifelse(sale_date_t1 < pre_date  & sale_date_t2 > pre_date & in_updated_firm == "Updated" & change_type %in% c("Added", "Removed"), "Treated", "Not Treated"),
-  ) 
+# df_pairs <- readRDS("./data/processed/df_pairs.RDS") |>
+#   group_by(pin) |>
+#   mutate(
+#     years_btwn = ifelse(years_btwn < 1, 1, years_btwn),
+#      in_updated_firm = ifelse(pre_date > date("2008-01-01"), "Updated", "Not Updated"),
+#     
+#     treated_groups_eff = year(eff_date),
+#     treated_groups_eff = ifelse(treated_groups_eff < 2010, NA, treated_groups_eff),
+#     first_treat_year_prelim = year(pre_date),
+#     first_treat_year_prelim = ifelse(first_treat_year_prelim < 2009, NA, first_treat_year_prelim),
+#     
+#     pin_num = as.numeric(pin),
+#     treated = ifelse(sale_date_t1 < pre_date  & sale_date_t2 > pre_date & in_updated_firm == "Updated" & change_type %in% c("Added", "Removed"), "Treated", "Not Treated"),
+#   ) 
+# 
 
 
+#parcels_w_buildings_sfha <- read_csv("./data/processed/sfha_indicator_buildings.csv")
 
-# df_pairs |>
-#   select(-c(short_name, agency_number, agency_name, stayed_sfha, neither_sfha, shpfile_name, added_between, removed_between)) |>
-#   write_csv("./data/processed/df_pairs.csv")
-
-
-
-parcels_w_buildings_sfha <- read_csv("./data/processed/buildings_distinct_in_sfha.csv")
-
-df_prep <- read_csv("./data/processed/df_prep.csv") |>  
-    left_join(pin_muni_key) 
+df_prep <- read_rds("./data/processed/df_prep_buildings.RDS") # |>  # left_join(pin_muni_key) 
 
 
 df_prep <- df_prep |>
@@ -91,6 +84,16 @@ Condo rules:
 if the building touches the floodplain, the whole building has flood insurance
 
 # Assumptions for Models
+
+| Variable          | Description                                     |
+| ----------------- | ----------------------------------------------- |
+| `log_price`       |  log price  (your main DV)                      |
+| `sale_year`       | Year of first sale                              |
+| `change_type`     | SFHA transition category (e.g., Added, Removed) |
+| `eff_date`        | Flood map effective date (treatment timing)     |
+| `clean_name`      | Municipality                                    |
+| `Triad`           | Subregional identifier (potential FE subgroup)  |
+
 
 | Variable          | Description                                     |
 | ----------------- | ----------------------------------------------- |
