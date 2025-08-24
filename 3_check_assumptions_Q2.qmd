@@ -95,10 +95,6 @@ table(df_prep$sale_year, df_prep$event, df_prep$in_eff_sfha)
 
 
 ```{r}
-library(dplyr)
-library(ggplot2)
-library(broom)
-
 # summarize data
 df_summary <- df_prep |> 
   group_by(sale_year, in_eff_sfha, event) |> 
@@ -158,6 +154,88 @@ car::linearHypothesis(m, c("sale_year:in_eff_sfhaSFHA = 0",
                       "sale_year:in_eff_sfhaSFHA:event2. Post = 0"))
 
 ```
+
+
+```{r}
+# summarize data
+df_summary <- df_prep |> 
+  filter(!is.na(high_ff_score)) |> 
+  group_by(sale_year, in_eff_sfha, high_ff_score, event) |> 
+  summarize(median_log_price = median(log_price, na.rm = TRUE), .groups = "drop")
+
+# fit slopes by group
+slopes <- df_summary |> 
+  group_by(in_eff_sfha, high_ff_score, event) |> 
+  do(tidy(lm(median_log_price ~ sale_year, data = .))) |> 
+  filter(term == "sale_year") |> 
+  mutate(slope_label = paste0("Slope = ", round(estimate, 3)))
+
+# pick label positions (e.g., at the max year of each line)
+label_positions <- df_summary |> 
+  group_by(in_eff_sfha, high_ff_score, event) |> 
+  summarize(
+    x = max(sale_year), 
+    y = median(median_log_price), 
+    .groups = "drop"
+  )
+
+slopes <- left_join(slopes, label_positions, by = c("in_eff_sfha", "high_ff_score", "event"))
+
+# plot
+ggplot(df_summary, aes(x = sale_year, y = median_log_price, 
+                       color = in_eff_sfha, linetype = event)) +
+  geom_line() +
+  geom_vline(xintercept=2020) +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_text(data = slopes, aes(x = x, y = y, label = slope_label, 
+                               color = in_eff_sfha, linetype = NULL), 
+           hjust = 1, vjust = 2, 
+            show.legend = FALSE) +
+  ggtitle("By SFHA Status - Median Values with Slopes") +
+  facet_wrap(~high_ff_score)
+
+# plot
+ggplot(df_summary, aes(x = sale_year, y = median_log_price, 
+                       color = high_ff_score, linetype = event)) +
+  geom_line() +
+  geom_vline(xintercept=2020) +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_text(data = slopes, aes(x = x, y = y, label = slope_label, 
+                               color = high_ff_score, linetype = NULL), 
+           hjust = 1, vjust = 2, 
+            show.legend = FALSE) +
+  ggtitle("By SFHA Status - Median Values with Slopes") +
+  facet_wrap(~in_eff_sfha)
+
+```
+```{r}
+m <- lm(median_log_price ~ sale_year * in_eff_sfha * high_ff_score* event, data = df_summary)
+summary(m)
+```
+
+```{r}
+m1 <- lm(median_log_price ~ sale_year + in_eff_sfha + high_ff_score + event, data = df_summary)
+m2 <- lm(median_log_price ~ sale_year * in_eff_sfha * high_ff_score * event, data = df_summary)
+
+anova(m1, m2)
+```
+
+```{r}
+library(car)
+
+m <- lm(median_log_price ~ sale_year * in_eff_sfha * high_ff_score * event, data = df_summary)
+
+# joint test of slope differences
+car::linearHypothesis(m, c("sale_year:in_eff_sfhaSFHA = 0",
+                      "sale_year:event2. Post = 0",
+                      "sale_year:in_eff_sfhaSFHA:event2. Post = 0",
+                      "sale_year:in_eff_sfhaSFHA:high_ff_scoreTRUE:event2. Post=0",
+                      "sale_year:high_ff_scoreTRUE:event2. Post = 0"
+
+                      ))
+
+```
+
 
 
 ## Placebo Test 1 
@@ -305,6 +383,87 @@ m <- lm(median_log_price ~ sale_year * in_eff_sfha * placebo_event, data = df_su
 car::linearHypothesis(m, c("sale_year:in_eff_sfhaSFHA = 0",
                       "sale_year:placebo_event2. Post = 0",
                       "sale_year:in_eff_sfhaSFHA:placebo_event2. Post = 0"))
+
+```
+
+```{r}
+# summarize data
+df_summary <- df_prep |> 
+    mutate(placebo_event = ifelse(sale_year > 2018, "2. Post", "1. Pre")) |>
+  filter(!is.na(high_ff_score)) |> 
+  group_by(sale_year, in_eff_sfha, high_ff_score, placebo_event) |> 
+  summarize(median_log_price = median(log_price, na.rm = TRUE), .groups = "drop")
+
+# fit slopes by group
+slopes <- df_summary |> 
+  group_by(in_eff_sfha, high_ff_score, placebo_event) |> 
+  do(tidy(lm(median_log_price ~ sale_year, data = .))) |> 
+  filter(term == "sale_year") |> 
+  mutate(slope_label = paste0("Slope = ", round(estimate, 3)))
+
+# pick label positions (e.g., at the max year of each line)
+label_positions <- df_summary |> 
+  group_by(in_eff_sfha, high_ff_score, placebo_event) |> 
+  summarize(
+    x = max(sale_year), 
+    y = median(median_log_price), 
+    .groups = "drop"
+  )
+
+slopes <- left_join(slopes, label_positions, by = c("in_eff_sfha", "high_ff_score", "placebo_event"))
+
+# plot
+ggplot(df_summary, aes(x = sale_year, y = median_log_price, 
+                       color = in_eff_sfha, linetype = placebo_event)) +
+  geom_line() +
+  geom_vline(xintercept=2018.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_text(data = slopes, aes(x = x, y = y, label = slope_label, 
+                               color = in_eff_sfha, linetype = NULL), 
+           hjust = 1, vjust = 2, 
+            show.legend = FALSE) +
+  ggtitle("By SFHA Status - Median Values with Slopes") +
+  facet_wrap(~high_ff_score)
+
+# plot
+ggplot(df_summary, aes(x = sale_year, y = median_log_price, 
+                       color = high_ff_score, linetype = placebo_event)) +
+  geom_line() +
+  geom_vline(xintercept=2018.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_text(data = slopes, aes(x = x, y = y, label = slope_label, 
+                               color = high_ff_score, linetype = NULL), 
+           hjust = 1, vjust = 2, 
+            show.legend = FALSE) +
+  ggtitle("By SFHA Status - Median Values with Slopes") +
+  facet_wrap(~in_eff_sfha)
+
+```
+```{r}
+m <- lm(median_log_price ~ sale_year * in_eff_sfha * high_ff_score* placebo_event, data = df_summary)
+summary(m)
+```
+
+```{r}
+m1 <- lm(median_log_price ~ sale_year + in_eff_sfha + high_ff_score + placebo_event, data = df_summary)
+m2 <- lm(median_log_price ~ sale_year * in_eff_sfha * high_ff_score * placebo_event, data = df_summary)
+
+anova(m1, m2)
+```
+
+```{r}
+library(car)
+
+m <- lm(median_log_price ~ sale_year * in_eff_sfha * high_ff_score * placebo_event, data = df_summary)
+
+# joint test of slope differences
+car::linearHypothesis(m, c("sale_year:in_eff_sfhaSFHA = 0",
+                      "sale_year:placebo_event2. Post = 0",
+                      "sale_year:in_eff_sfhaSFHA:placebo_event2. Post = 0",
+                      "sale_year:in_eff_sfhaSFHA:high_ff_scoreTRUE:placebo_event2. Post=0",
+                      "sale_year:high_ff_scoreTRUE:placebo_event2. Post = 0"
+
+                      ))
 
 ```
 
