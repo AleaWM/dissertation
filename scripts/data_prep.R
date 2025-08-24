@@ -19,13 +19,12 @@ library(lubridate)
 
 
 # 1. Read and preprocess sales data
-#sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") |>
-  sales <- read_csv("./data/raw/Assessor_-_Parcel_Sales_20250709.csv") |>
+# sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") |> # 1,832,419
+sales <- read_csv("./data/raw/Assessor_-_Parcel_Sales_20250709.csv") |> # 1,838,476
   filter(year > 2005) |>
   mutate(
     class_1dig = str_sub(class, 1, 1),
     class       = as.numeric(class),
-    # date        = mdy(sale_date),
     pin10       = str_sub(pin, 1, 10),
     sale_date   = mdy(sale_date)
   )
@@ -35,9 +34,7 @@ library(lubridate)
 pin10_firms  <- read_csv("./data/processed/parcels_wFIRMS_20250604.csv")   |> 
   select(-c(PRE_DATE, EFF_DATE))
 
-
-# only includes parcels that were flagged as having a BUILDING outline in the FEMA flood plain.
-sfha_ind <- read_csv("./data/processed/sfha_indicator_buildings.csv")  
+sfha_ind <- read_csv("./data/processed/sfha_indicator_parcels.csv")  
 
 sfha_ind <- sfha_ind |> group_by(pin10) |> 
   summarize(sfha2018 = max(sfha2018),
@@ -45,14 +42,12 @@ sfha_ind <- sfha_ind |> group_by(pin10) |>
             prelimsfha = max(prelimsfha),
             lomr2018 = max(lomr2018),
             lomr2024 = max(lomr2024),
-            EFF_DATlomr2018 = max(EFF_DATlomr2018),
-            EFF_DATlomr2024 = max(EFF_DATlomr2024),
+            lomr_date = max(lomr_date)
             )
 
 # 3. Merge firms & SFHA indicators into sales
 sales <- sales |>
   left_join(pin10_firms,    by = "pin10") |>
- # mutate(Location = if_else(pin %in% sfha_ind$pin, "In FP", "Outside FP")) |>
   left_join(sfha_ind, by = "pin10") |>
   mutate(
     class    = as.character(class),
@@ -68,7 +63,6 @@ firm_dates <- readxl::read_xlsx("./data/raw/S_FIRM_PAN.xlsx") |>
   mutate(PRE_DATE = as_date(PRE_DATE),
          EFF_DATE = as_date(EFF_DATE)) |>
   select(FIRM_PAN, old_panel, PRE_DATE, EFF_DATE)
-#firm_dates <- readxl::read_xlsx("./data/raw/S_FIRM_PAN_2018and2024 NFHL Layers.xlsx") 
 
 # 4. Join LOMR table and create SFHA/LOMR flags
 sales <- sales |>
@@ -76,7 +70,6 @@ sales <- sales |>
   mutate(PRE_DATE = ifelse(old_panel %in% c(15, 20, 155) & year >= 2021, as_date("2021-09-22"), as_date(PRE_DATE)),
          PRE_DATE = as_date(PRE_DATE),
   ) |>
-  #left_join(lomrs, by = c("pin","pin10") ) |>
   mutate(
  
     # # CCAO SFHA status post‐2021
@@ -121,7 +114,7 @@ sales <- sales |>
     
     
     # LOMR indicator
-    in_lomr       = if_else(sale_date >= (EFF_DATlomr2018) | sale_date >= (EFF_DATlomr2024) ,
+    in_lomr       = if_else(sale_date >= (lomr_date) ,
                             "Received LOMR", "Not in LOMR"),
     in_lomr = ifelse(is.na(in_lomr), "Not in LOMR", in_lomr),
     
@@ -162,7 +155,7 @@ res_sales <- res_sales |> filter(times_sold < 15)
 
 
 # Save objects for later use in your Quarto doc
-saveRDS(sales,       "./data/processed/sales_prepped_buildings.rds")
-saveRDS(res_sales,   "./data/processed/res_sales_buildings.rds")
-#saveRDS(pin_groups,  "./data/processed/pin_groups.rds")
+saveRDS(sales,       "./data/processed/sales_prepped.rds")
+saveRDS(res_sales,   "./data/processed/res_sales.rds")
+
 
