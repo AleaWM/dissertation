@@ -106,9 +106,9 @@ df_prep <- left_join(df_prep, pin_muni_key)
 
 df_prep <- df_prep |> 
   mutate(
-    event = ifelse(sale_date < as_date("2020-06-29"), "1. Pre", "2. Post"),
+    event = ifelse(sale_date <= as_date("2020-06-29"), "1. Pre", "2. Post"),
     high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE),
-    new_info_released = ymd("2020-06-29")
+    new_info_released = as_date("2020-06-29")
   ) |>
   select(-c(agency_name, agency_num, short_name, shpfile_name) )
 
@@ -243,7 +243,7 @@ df_pairs <- df_prep %>%
   ) %>%
 
   ungroup() |> 
-  mutate(new_info_released = ymd("2020-06-29")) |>
+  mutate(new_info_released = as_date("2020-06-29")) |>
   # get rid of redundant variables that would be confusing
   select(-c(sale_price, sale_date, sale_year, in_eff_sfha)) 
 
