@@ -73,6 +73,25 @@ There are `r print(ff_pairs |> filter(around_event ==TRUE & high_ff_score == TRU
 table(ff_pairs$sale_year_t2, ff_pairs$change_type)
 ```
 
+```{r}
+#| layout-ncol: 2
+
+table(df_prep$sale_year, df_prep$addedto_eff_sfha)
+table(df_prep$sale_year, df_prep$removedfrom_eff_sfha)
+
+```
+
+**Removes missing values until final data cleaning is completed. Dropping them here to see smallest sample sizes in models and graphs.**
+
+```{r remove-missingvalues}
+df_prep <- df_prep |>
+  filter(!is.na(high_ff_score) &
+           !is.na(eff_date) &
+           !is.na(clean_name) &
+           !is.na(pre_date)
+         )
+``` 
+
 ## Descriptive Stats
 
 ::: panel-tabset
@@ -790,40 +809,29 @@ options(scipen = 99)
 
 merriman_models <- list(
   
-  # high_ff_score shouldn't change at PIN level. Variable drops out. 
-  #   "I" = feols(log(sale_price) ~ high_ff_score | pin + sale_year,
-  #             panel.id = c("pin", "sale_year"),
-  #             vcov = "hetero",
-  #             data = df_prep,
-  # 
-  # ),
-  # 
-  "II" = feols(log(sale_price) ~ high_ff_score*event | pin + sale_year,
+
+  "High FF Score after Info Release" = feols(log(sale_price) ~ high_ff_score*event | pin + sale_year,
               panel.id = "pin",
               
               data = df_prep,
               cluster = ~ clean_name
               
   ),
-  # "II.5" = feols(log(sale_price) ~ high_ff_score*event + factor(sale_year) | pin,
-  #              data = df_prep,
-  #              cluster = ~ clean_name
-  #              
-  # ),
-  "III" = feols(log(sale_price) ~ high_ff_score*event*in_prelim_sfha | pin + sale_year,
+
+  "3-way Interaction (Preliminary SFHA)" = feols(log(sale_price) ~ high_ff_score*event*in_prelim_sfha | pin + sale_year,
                 data = df_prep,
                # cluster = ~ clean_name
                               vcov = "hetero" 
                
   ),
   
-  "IV" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event  | pin + sale_year,
+  "3-way Interaction (Effective SFHA)" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event  | pin + sale_year,
                panel.id = "pin",
                data = df_prep,
                vcov = "hetero"
   ) ,
   
-  "IV" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event*in_lomr  | pin + sale_year,
+  "Adds in_lomr" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*event*in_lomr  | pin + sale_year,
                panel.id = "pin",
                vcov = "hetero",
                data = df_prep
@@ -858,23 +866,32 @@ merriman_models <- list(
 
 cm = c(
   'event2. Post' = 'Post Event',
+  
+  'in_prelim_sfhaSFHA' = 'Enters Prelim. SFHA',  
+  
+  'event2. Post:in_prelim_sfhaSFHA' = 'In Prelim SFHA & Post Event',
+  'in_prelim_sfhaSFHA:event2. Post' = 'In Prelim SFHA & Post Event',
+  
   'high_ff_scoreTRUE:event2. Post' = 'High FF Score x Post Event',
   'event2. Post:high_ff_scoreTRUE' = 'High FF Score x Post Event',
-
-  'in_prelim_sfhaSFHA' = 'In Preliminary SFHA',  
-  'event2. Post:in_prelim_sfhaSFHA' = 'In Prelim SFHA & Post Event',
-  'in_prelim_sfhaSFHA: event2. Post' = 'In Prelim SFHA & Post Event',
   
-  'in_prelim_sfhaSFHA:event2.Post' = 'In Prelim SFHA & Post Event',
+  
+  'in_prelim_sfhaSFHA:high_ff_scoreTRUE' = 'In Prelim SFHA x High FF Score',
   'high_ff_scoreTRUE:in_prelim_sfhaSFHA' = 'In Prelim SFHA x High FF Score',
+  
   'high_ff_scoreTRUE:event2. Post:in_prelim_sfhaSFHA' = 'In Prelim SFHA, High FF Score & Post Event',
-
-  'in_eff_sfhaSFHA'= 'In Effective SFHA',
-  #'in_eff_sfhaSFHA:event2. Post' = 'In Eff. SFHA x Post Event',
+  'in_prelim_sfhaSFHA:high_ff_scoreTRUE:event2. Post' = 'In Effective SFHA, High FF Score & Post Event',
+  
+  
+  'in_eff_sfhaSFHA'= 'Enters Effective SFHA',
+  
   'event2. Post:in_eff_sfhaSFHA' = 'In Eff. SFHA x Post Event',
-    'in_eff_sfhaSFHA:event2. Post' = 'In Eff. SFHA x Post Event',
+  'in_eff_sfhaSFHA:event2. Post' = 'In Eff. SFHA x Post Event',
+  
+  'high_ff_ScoreTRUE:event2. Post' = 'High FF Score & Post Event',
+  'event2. Post:high_ff_ScoreTRUE' = 'High FF Score & Post Event',
+  
   'high_ff_ScoreTRUE:in_eff_sfhaSFHA' = 'In Eff. SFHA x High FF Score',
-    'high_ff_ScoreTRUE:event2. Post' = 'High FF Score & Post Event',
   'in_eff_sfhaSFHA:high_ff_ScoreTRUE' = 'In Eff. SFHA x High FF Score',
 
   'high_ff_scoreTRUE:event2. Post:in_eff_sfhaSFHA' = 'In Effective SFHA, High FF Score & Post Event',
@@ -904,6 +921,13 @@ options(scipen = 99)
 
 merriman_models2 <- list(
 
+    "No 'Event' Variable" = feols(log(sale_price) ~ in_eff_sfha*high_ff_score*in_lomr  | pin + sale_year,
+              panel.id = "pin",
+              data = df_prep,
+                vcov = "hetero" 
+              
+  ),
+  
   "II" = feols(log(sale_price) ~ high_ff_score*event | pin + sale_year,
               panel.id = "pin",
               data = df_prep,
