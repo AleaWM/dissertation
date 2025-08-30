@@ -1,0 +1,534 @@
+---
+title: "Parallel Trends Graphs for Q2"
+format: 
+  html:
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    toc: true
+    toc-location: left
+    tbl-cap-location: margin
+    fig-cap-location: margin
+---
+
+
+
+```{r setup, warning=FALSE, message=FALSE}
+library(DescTools)
+library(sf)
+library(tidyverse)
+library(httr)
+library(jsonlite)
+library(glue)
+library(fixest)
+library(skimr)
+library(plm)
+library(jtools)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+
+df_prep <- readRDS("data/processed/df_prep_buildings.rds") |>
+  select(-c(clean_name.x, clean_name.y))
+
+df_prep <- df_prep |> 
+  # 282 PINs in 2022 were sold as part of a new Condo in Schaumburg 
+  # (parcel = 0710101038). Condo building has high flood factor score. 
+  # Looks like it is now apartments? 21 Kristin Drive.  DROPPED
+
+  filter(pin10 != "0710101038") |>
+  mutate(log_price = log(sale_price)) |> 
+  filter(!is.na(Triad) & Triad != "NA")
+
+```
+
+
+```{r remove-missingvalues}
+df_prep <- df_prep |>
+  filter(
+    !is.na(high_ff_score) &
+           !is.na(eff_date) &
+           !is.na(clean_name) &
+           !is.na(pre_date) &
+           !is.na(Triad)
+         )
+``` 
+
+
+```{r}
+df_prep |> 
+  mutate(period = if_else(sale_date < new_info_released, "1.Pre", "2.Post")) |> 
+  group_by(period, sale_year, in_eff_sfha, Triad) |> 
+  summarise(avg_price = mean(log_price, na.rm = TRUE),
+            n = n(), .groups = "drop") |> 
+  ggplot(aes(x = sale_year, y = avg_price, color = in_eff_sfha)) +
+  geom_point() +
+  geom_line() +
+    geom_vline(xintercept=2020, lty = 2) +
+
+  geom_smooth(aes(linetype = period), method = "lm", se = FALSE) +
+  facet_wrap(~Triad) +
+  labs(title = "Pre- and Post-Event Slopes by Triad and SFHA Status",
+       caption = "",
+       x = NULL, y = "Avg. Logged Sale Price") +
+  scale_x_continuous(breaks = seq(2010,2025,5))+
+  theme_classic()+
+  theme(legend.position = "bottom") 
+
+```
+
+```{r}
+
+
+df_prep |> 
+  mutate(period = if_else(sale_date < new_info_released, "1.Pre", "2.Post")) |> 
+  group_by(period, sale_year, in_eff_sfha, high_ff_score, Triad ) |> 
+  summarise(median_price = median(log_price, na.rm = TRUE),
+            n = n(), .groups = "drop") |> 
+  ggplot(aes(x = sale_year, y = median_price, color = high_ff_score) ) +
+  geom_point() +
+  geom_line(alpha = .5) +
+    geom_vline(xintercept=2020) +
+  facet_wrap(vars(Triad, in_eff_sfha), ncol = 2) +
+
+  geom_smooth(aes(linetype = period), method = "lm", se = FALSE) +
+  labs(title = "Pre vs Post Slopes by Triad and FEMA SFHA Status",
+       x = NULL, y = "Median Logged Price"       ) +
+      scale_y_continuous(limits = c(11, 14)) +
+
+  scale_x_continuous(breaks = c(2010,2020, 2024), limits = c(2015, 2025))+
+    theme_classic()+
+
+  theme(legend.position = "bottom") 
+
+```
+
+```{r}
+#| include: false 
+
+df_prep |> filter(high_ff_score == TRUE & in_eff_sfha == "Not SFHA" & Triad == "North" & sale_year == 2022) |> mutate(pin10 = str_sub(pin,1,10)) |> group_by(pin10) |> mutate(n = n()) |> arrange(desc(n), pin) |>
+  select(pin10, pin, clean_name, n, sale_price, flood_factor_score, times_sold, in_eff_sfha)
+```
+
+
+
+
+## Parallel Trends Assumptions
+
+
+::: panel-tabset
+
+### Not Logged Sales Price
+
+```{r}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+
+df_prep |> 
+  group_by(sale_year, high_ff_score, event) |> 
+  summarise(avg_price = mean(sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_price, color = high_ff_score, lty = event)) +
+  geom_line() +
+  geom_point() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  scale_y_continuous(labels = scales::dollar) + 
+  geom_vline(xintercept=2020, lty = 2) +
+  theme_classic() + 
+  #    geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  labs(title = "Pre- and Post- Event Treatment Trends",
+       y = "Avg. Sale Price",
+       x = NULL)
+
+
+df_prep |> 
+  group_by(sale_year, high_ff_score, Triad, event) |> 
+  summarise(avg_price = mean(sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_price, color = high_ff_score, lty = event)) +
+  geom_line() +
+  geom_point() + 
+  theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  #     geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  scale_y_continuous(labels = scales::dollar) + 
+  geom_vline(xintercept=2020, lty = 2) +
+  
+  labs(title = "Pre- and Post-Event Trends by Triad",
+       y = "Avg. Sale Price",
+       x = NULL) +
+  facet_wrap(~Triad)
+
+```
+
+### Transformations of Sale Price
+
+```{r}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+
+
+df_prep |> 
+    group_by(sale_year, high_ff_score, event) |> 
+  summarise(avg_logprice = mean(log(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_logprice, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+  theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  #     geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  scale_y_continuous(labels = scales::dollar) + 
+  geom_vline(xintercept=2020, lty = 2) +
+  
+  labs(title = "Pre- and Post-Event Trends by Triad",
+       y = "Avg. Logged Sale Price",
+       x = NULL)
+
+df_prep |> 
+  group_by(sale_year, high_ff_score, event, Triad) |> 
+  summarise(avg_logprice = mean(log(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_logprice, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+   theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  #     geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  geom_vline(xintercept=2020, lty = 2) +
+  
+  labs(title = "Pre- and Post-Event Trends by Triad",
+       y = "Avg. Logged Sale Price",
+       x = NULL) +
+  facet_wrap(~Triad)
+```
+
+
+```{r}
+#| layout-ncol: 2
+
+df_prep |> 
+    group_by(sale_year, high_ff_score, Triad, event) |> 
+  summarise(inverse_price = mean(1/sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = inverse_price, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+   theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  #     geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  geom_vline(xintercept=2020, lty = 2) +
+    scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
+
+  labs(title = "Pre- and Post-Event Trends by Triad",
+       y = "1/Sale Price",
+       x = NULL) +
+  facet_wrap(~Triad)
+
+df_prep |> 
+  group_by(sale_year, high_ff_score, Triad, event) |> 
+  summarise(inverse_price = mean(1/sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = inverse_price, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+   theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+    scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
+
+  #     geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  geom_vline(xintercept=2020, lty = 2) +
+  
+  labs(title = "Pre- and Post-Event Trends by Triad",
+       y = "Avg. Inverse of Sale Price",
+       x = NULL,
+       caption = "Inverse Price = 1 / sale_price") +
+  facet_wrap(~Triad)
+
+```
+
+```{r}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+
+
+df_prep |> 
+    group_by(sale_year, in_eff_sfha, event) |> 
+  summarise(avg_logprice = mean(log(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_logprice, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+   theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  #     geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  geom_vline(xintercept=2020, lty = 2) +
+    scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
+
+  labs(title = "Pre- and Post-Event Trends by SFHA Status",
+       y = "Avg. Logged Sale Price",
+       x = NULL) 
+
+
+
+df_prep |> 
+    group_by(sale_year, in_eff_sfha, Triad, event) |> 
+  summarise(avg_logprice = mean(log(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_logprice, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+   theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  #     geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  geom_vline(xintercept=2020, lty = 2) +
+    scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
+
+  labs(title = "Pre- and Post-Event Trends by Triad",
+       y = "Avg. Logged Sale Price",
+       x = NULL) + 
+       facet_wrap(~Triad)
+
+
+
+df_prep |> 
+    group_by(sale_year, in_eff_sfha, event) |> 
+  summarise(inverse_price = mean(1/sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = inverse_price, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+   theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  #     geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  geom_vline(xintercept=2020, lty = 2) +
+    scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
+
+  labs(title = "Pre- and Post-Event Trends by SFHA Status",
+       y = "Avg. Inverse of Sale Price",
+       x = NULL,
+       caption = "Inverse Price = 1 / sale_price")
+
+
+df_prep |> 
+    group_by(sale_year, in_eff_sfha, Triad, event) |> 
+  summarise(inverse_price = mean(1/sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = inverse_price, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+   theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+
+  scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
+  scale_y_continuous(labels = scales::dollar) + 
+  geom_vline(xintercept=2020, lty = 2) +
+  
+  labs(title = "Pre- and Post-Event Trends by Triad and SFHA Status",
+       y = "Avg. Inverse of Sale Price",
+       x = NULL,
+       caption = "Inverse Price = 1 / sale_price") + 
+  facet_wrap(~Triad)
+
+
+```
+
+```{r}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+
+
+df_prep |> 
+    group_by(sale_year, in_eff_sfha, event) |> 
+  summarise(asinh_price = mean(asinh(sale_price)),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = asinh_price, color = in_eff_sfha)) +
+  geom_line() +
+  geom_point() + 
+   theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  geom_vline(xintercept=2020, lty = 2) +
+  
+  labs(title = "Pre- and Post-Event Trends by Triad",
+       y = "Avg. asinh(Sale Price)",
+       x = NULL)
+
+
+
+
+df_prep |> 
+  group_by(sale_year, high_ff_score, Triad, event) |> 
+  summarise(asinh_price = mean(asinh(sale_price), na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = asinh_price, color = high_ff_score)) +
+  geom_line() +
+  geom_point() + 
+   theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  #     geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  scale_y_continuous(labels = scales::dollar) + 
+  geom_vline(xintercept=2020, lty = 2) +
+  
+  labs(title = "Pre- and Post-Event Trends by Triad",
+       y = "Avg. asinh(Sale Price)",
+       x = NULL) + 
+  facet_wrap(~Triad)
+
+
+
+```
+
+### Testing slopes 
+
+```{r}
+#| layout-ncol: 1
+#| label: tbl-notloggedDV
+
+slopes1 <- lm(sale_price ~ high_ff_score*event*sale_year, data = df_prep)
+
+# modelsummary::modelsummary(
+#   slopes1,
+#               output = "flextable",
+#              fmt = function(x) round(x, 2),
+#              stars = TRUE)
+
+
+slopes2 <- lm(log(sale_price) ~ high_ff_score*event*sale_year, data = df_prep)
+# 
+# modelsummary::modelsummary(
+#   slopes2,
+#               output = "flextable",
+#              fmt = function(x) round(x, 2),
+#              stars = TRUE)
+
+slopes3 <- lm(asinh(sale_price) ~ high_ff_score*event*sale_year, data = df_prep)
+
+# modelsummary::modelsummary(
+#   slopes3,
+#               output = "flextable",
+#              fmt = function(x) round(x, 2),
+#              stars = TRUE)
+
+
+modelsummary::modelsummary(
+  list(slopes1, slopes2, slopes3),
+              output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+
+
+```
+
+**sale_year:in_eff_sfha**\
+If not statistically significant, then I fail to reject the null hypothesis --> there is no evidence of different pre-treatment trends between properties that were in and out of SFHAs.
+
+**sale_year:event:in_eff_sfha**\
+→ If significant, it means the difference in slope between groups changed after the event. That does NOT SUPPORT parallel trends assumptions for difference in differences models.
+
+
+:::
+
+## Other random stuff
+
+
+```{r}
+missing_ff_score <- df_prep |> filter(is.na(high_ff_score) | is.na(in_eff_sfha))
+
+df_prep |> 
+  filter(!is.na(high_ff_score)) |>
+  filter(!is.na(in_eff_sfha)) |>
+  mutate(log_price = log(sale_price)) |>
+  group_by(sale_year, high_ff_score, in_eff_sfha, event) |>
+  summarize(            
+    avg_log_price = mean(log_price, na.rm=TRUE),
+    median = median(log_price),
+    n = n(), 
+    distinct_pins = n_distinct(pin),
+  ) |> DT::datatable(rownames = FALSE)
+
+df_prep |> 
+  filter(!is.na(high_ff_score)) |>
+  filter(!is.na(in_eff_sfha)) |>
+  group_by(sale_year, high_ff_score, in_eff_sfha, event) |>
+  summarize(
+    avg_price = mean(sale_price, na.rm=TRUE),
+    median = median(sale_price),
+    n = n(), 
+    distinct_pins = n_distinct(pin),
+  ) |> DT::datatable(rownames = FALSE)
+
+
+df_prep <- df_prep |> 
+  filter(!is.na(high_ff_score))
+```
+
+
+```{r}
+
+df_prep |> 
+    filter(sale_year > 2015) |>     # just to have roughly the same number of years on both sides of the event
+  filter(!is.na(high_ff_score)) |>
+  filter(!is.na(in_eff_sfha)) |>
+  mutate(log_price = log(sale_price)) |>
+  group_by(high_ff_score, in_eff_sfha, event) |>
+  summarize(            
+    avg_log_price = mean(log_price, na.rm=TRUE),
+    median = median(log_price),
+    n = n(), 
+    distinct_pins = n_distinct(pin),
+  )
+
+df_prep |> 
+  filter(sale_year > 2015) |>
+  filter(!is.na(high_ff_score)) |>
+  filter(!is.na(in_eff_sfha)) |>
+  group_by(high_ff_score, in_eff_sfha, event) |>
+  summarize(
+    avg_price = mean(sale_price, na.rm=TRUE),
+    median = median(sale_price),
+    n = n(), 
+    distinct_pins = n_distinct(pin),
+  )
+
+
+```
+
+
+
+<!---Properties with high flood score but no SFHA
+- "02014000171053" = "1354 whispering springs Palatine IL" Parcel is a "condo" but a bunch of detached homes around a pond. Flood score is 7. Has a parcel inside of it (1733 EMERALD BAY 5, PALATINE, IL 60074) with a FF=6 that IS in a FEMA flood zone. Not sure if there was a specific pin division for this reason) ---> 
+
+
+```{r}
+#| eval: false
+
+
+df_prep |> 
+  filter(high_ff_score == FALSE & in_eff_sfha == "SFHA") |> 
+  mutate(parcel = str_sub(pin, 1, 10)) |> 
+  distinct(parcel, in_eff_sfha, high_ff_score)
+
+
+```
+
+
+
+SOLVED "01014050100000" = "804 division st, barrington IL"  
+SOLVED "01021000330000"  = "7 Marmon LN Barringonton IL"  
+"0102300012" = "221 Oakdene Drive Barrington" # only land barely touches SFHA  
+
+"02013020771280" = "2 Dundee Quarter 302 Palatine IL" # considered condo but its all detached homes or townhomes. AND IN A LOMR
+
+"0216410003" = "25 North Clyde Avenue, Palatine, IL, 60067, USA" # actually has a flood factor of 5
+
+"1505117011" = "100 S Roberta AVe Northlake" # parcel boundary touches SFHA but not house
+
+"1504117057" = "1642 N 39th Ave Stone Park" # score of 6, is in SFHA
+
+"1505205013" = "1652 43RD AVE, STONE PARK, IL 60165" # has a flood score of 7! and is in SFHA
+
