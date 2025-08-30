@@ -32,18 +32,17 @@ library(did)
 
 ```{r}
 
-pin_muni_key <- read_csv("./data/raw/pin_muni_key.csv")
-
 df_prep <- read_rds("./data/processed/df_prep.RDS")  
 
 
 df_prep <- df_prep |>
   filter(sale_year > 2011) |>
+  mutate(placebo_event = ifelse(sale_year > 2017, "2. Post", "1. Pre")) |>
 
   mutate(
     pin_num = as.numeric(pin),
     log_price = log(sale_price),
-    placebo_event = ifelse(sale_year >2015, "2. Post", "1. Pre"),
+    
     # sale_year = ifelse(sale_date <= new_info_released & sale_year == 2020 & event == "1. Pre", 2019.5, 
     #                   ifelse(sale_date > new_info_released & sale_year == 2020 & event == "2. Post", 2020.5 , sale_year
     #                    )),
@@ -86,22 +85,44 @@ if the building touches the floodplain, the whole building has flood insurance
 
 table(df_prep$sale_year, df_prep$event, df_prep$in_eff_sfha)
 ```
+## Pre Event Trends
+
+I want a non significant result for sale_year x in_eff_sfha & sale_year x high_ff_score x in_eff_sfha coefficient in the pre-event data. 
+
+Luckily I find that!
+
+```{r}
+#| label: tbl-pretrendstest-informal
+#| tbl-cap: "Pre-trend tests to see if groups had parallel trends. Not the formal hard core way that Roth & Santana use."
+
+predata <- df_prep |> filter(sale_date < new_info_released)
+m <- lm(log_price ~ sale_year * in_eff_sfha, data = predata)
+
+m2 <- lm(log_price ~ sale_year * high_ff_score * in_eff_sfha, data = predata)
+modelsummary::modelsummary(list(m, m2), stars = TRUE)
+```
+
+The coefficient on sale_year is the baseline slope.
+
+The sale_year:in_eff_sfha term tells you whether the slope differs between properties in an SFHA vs not within the SFHA (within the baseline event period).
+
+The sale_year:event term tells you whether slopes differ pre vs post (within the baseline SFHA group).
+
+The three-way sale_year:in_eff_sfha:event term tells you whether the slope difference across SFHA groups itself changes pre vs post.
+
 
 
 
 ```{r}
+#| label: fig-ffrisk-trends
+#| fig-label: "Trends for high and low flood risk properties over time."
+#| layout-ncol: 2
+
 # summarize data
 df_summary <- df_prep |>
   filter(!is.na(high_ff_score) & sale_year > 2012)  |>
   group_by(sale_year, high_ff_score, event) |> 
   summarize(median_log_price = median(log_price, na.rm = TRUE), .groups = "drop")
-
-# # fit slopes by group
-# slopes <- df_summary |> 
-#   group_by(high_ff_score, event) |> 
-#   do(tidy(lm(median_log_price ~ sale_year, data = .))) |> 
-#   filter(term == "sale_year") |> 
-#   mutate(slope_label = paste0("Slope = ", round(estimate, 3)))
 
 slopes <- df_summary |>
   group_by(high_ff_score, event) |>
@@ -134,83 +155,92 @@ ggplot(df_summary, aes(x = sale_year, y = median_log_price,
                                color = high_ff_score, linetype = NULL), 
            hjust = 1, vjust = 2, 
             show.legend = FALSE) +
-  ggtitle("By Flood Factor Risk - Median Values with Slopes")
+  labs(title = "By Flood Factor Risk - Median Values with Slopes",
+       x = "Sale Year", y = "Median Log Sale Price") + 
+  theme_classic() +
+  scale_x_continuous(breaks = c(2013, 2017, 2020, 2024))
+
+
+
+## And switch the variables
+# summarize data
+df_summary <- df_prep |>
+  filter(!is.na(high_ff_score) & sale_year > 2012)  |>
+  group_by(sale_year, in_eff_sfha, event) |> 
+  summarize(median_log_price = median(log_price, na.rm = TRUE), .groups = "drop")
+
+slopes <- df_summary |>
+  group_by(in_eff_sfha, event) |>
+  group_modify(~ {
+    model <- lm(median_log_price ~ sale_year, data = .x)
+    broom::tidy(model)
+  }) |>
+  filter(term == "sale_year") |>
+  mutate(slope_label = paste0("Slope = ", round(estimate, 3)))
+
+
+# pick label positions (e.g., at the max year of each line)
+label_positions <- df_summary |> 
+  group_by(in_eff_sfha, event) |> 
+  summarize(
+    x = max(sale_year), 
+    y = median(median_log_price), 
+    .groups = "drop"
+  )
+
+slopes <- left_join(slopes, label_positions, by = c("in_eff_sfha", "event"))
+
+# plot
+ggplot(df_summary, aes(x = sale_year, y = median_log_price, 
+                       color = in_eff_sfha, linetype = event)) +
+  geom_line() +
+  geom_vline(xintercept=2020) +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_text(data = slopes, aes(x = x, y = y, label = slope_label, 
+                               color = in_eff_sfha, linetype = NULL), 
+           hjust = 1, vjust = 2, 
+            show.legend = FALSE) +
+  labs(title = "By FEMA SFHA Status",
+       x = "Sale Year", y = "Median Log Sale Price") + 
+  theme_classic() +
+  scale_x_continuous(breaks = c(2013, 2017, 2020, 2024))
 
 ```
 
-The coefficient on sale_year is the baseline slope.
-
-The sale_year:in_eff_sfha term tells you whether the slope differs between proprtis in an SFHA vs not within the SFHA (within the baseline event period).
-
-The sale_year:event term tells you whether slopes differ pre vs post (within the baseline SFHA group).
-
-The three-way sale_year:in_eff_sfha:event term tells you whether the slope difference across SFHA groups itself changes pre vs post.
-
-```{r}
-m <- lm(median_log_price ~ sale_year * high_ff_score * event, data = df_summary)
-modelsummary::modelsummary(m, stars = TRUE)
-```
 
 
-
-If you only care about testing parallel slopes between groups, run an F-test with anova():
-
-If p < 0.05, then at least one slope is statistically different.
-
-If not significant, you can say slopes are statistically parallel.
-
-Since sale_year is included in the anova() below, there will be slopes that are statistically significantly different.
-
-```{r}
-m1 <- lm(median_log_price ~ sale_year + high_ff_score + event, data = df_summary)
-m2 <- lm(median_log_price ~ sale_year * high_ff_score * event, data = df_summary)
-
-anova(m1, m2)
-```
 
 **Wald statistic with car::linearHypothesis() which gives you the Wald chi-square statistic, degrees of freedom, and p-value.**
 
 This lets you calculate the linear model with interactions and then only pull and test specific slopes!
 
-```{r preevent-tests, message = FALSE}
+```{r preevent-tests, message = FALSE, eval=FALSE}
 library(car)
 
+
 # joint test of slope differences
-car::linearHypothesis(m2, 
+car::linearHypothesis(m, 
                       c(  
 # pretrend for sale_year and high risk properties (even before they know their flood factor score):
-                        "sale_year:high_ff_scoreTRUE = 0",
-                        
-                        "sale_year = 0"#,
-                        #"sale_year:high_ff_scoreTRUE:event2. Post = 0"
+          
+                        "sale_year:in_eff_sfhaSFHA = 0"
                         ))
-# 
-# 
-# # joint test of slope differences
-# car::linearHypothesis(m, c("sale_year:in_eff_sfhaSFHA = 0",
-#                       "sale_year:event2. Post = 0",
-#                       "sale_year:in_eff_sfhaSFHA:event2. Post = 0"))
 
 ```
 
 
-
+### Quarter 3 Sales 
 
 ```{r}
 #| label: fig-quarter3-only
+#| fig-cap: "Uses Quarter 3 Sales Only!"
+#| layout-ncol: 2
 
 # summarize data
 df_summary <- df_prep |> 
-  filter(!is.na(high_ff_score) & sale_quarter == 3& sale_year > 2012) |> 
+  filter(!is.na(high_ff_score) & sale_quarter == 3 & sale_year > 2012) |> 
   group_by(sale_year, in_eff_sfha, high_ff_score, event) |> 
   summarize(median_log_price = median(log_price, na.rm = TRUE), .groups = "drop")
-
-# fit slopes by group
-# slopes <- df_summary |> 
-#   group_by(in_eff_sfha, high_ff_score, event) |> 
-#   do(tidy(lm(median_log_price ~ sale_year, data = .))) |> 
-#   filter(term == "sale_year") |> 
-#   mutate(slope_label = paste0("Slope = ", round(estimate, 3)))
 
 slopes <- df_summary |>
   group_by(high_ff_score, event, in_eff_sfha) |>
@@ -236,14 +266,18 @@ slopes <- left_join(slopes, label_positions, by = c("in_eff_sfha", "high_ff_scor
 ggplot(df_summary, aes(x = sale_year, y = median_log_price, 
                        color = in_eff_sfha, linetype = event)) +
   geom_line() +
-  geom_vline(xintercept=2020,5) +
+  geom_vline(xintercept=2020) +
   geom_smooth(method = "lm", se = FALSE) +
   geom_text(data = slopes, aes(x = x, y = y, label = slope_label, 
                                color = in_eff_sfha, linetype = NULL), 
            hjust = 1, vjust = 2, 
             show.legend = FALSE) +
   ggtitle("By SFHA Status - Median Values with Slopes") +
-  facet_wrap(~high_ff_score)
+  facet_wrap(~high_ff_score)+
+  labs(title = "By Flood Factor Risk - Median Values with Slopes",
+       x = "Sale Year", y = "Median Log Sale Price") + 
+  theme_classic() +
+  scale_x_continuous(breaks = c(2013, 2017, 2020, 2024))
 
 # plot
 ggplot(df_summary, aes(x = sale_year, y = median_log_price, 
@@ -255,15 +289,23 @@ ggplot(df_summary, aes(x = sale_year, y = median_log_price,
                                color = high_ff_score, linetype = NULL), 
            hjust = 1, vjust = 2, 
             show.legend = FALSE) +
-  ggtitle("By Flood Factor Risk & SFHA Status - Median Values with Slopes") +  facet_wrap(~in_eff_sfha)
+  ggtitle("By Flood Factor Risk & SFHA Status - Median Values with Slopes") +  facet_wrap(~in_eff_sfha) +
+  labs(title = "By SFHA Status - Median Values with Slopes",
+       x = "Sale Year", y = "Median Log Sale Price") + 
+  theme_classic() +
+  scale_x_continuous(breaks = c(2013, 2017, 2020, 2024))
 
 ```
 
+### All Sales in a year
+
 ```{r}
+#| label: fig-allsales-only
+#| fig-cap: "All sales in a year!"
 
 # 1. Summarize data by year, high_ff_score, event, and SFHA status
 df_summary <- df_prep |>
-    filter(!is.na(high_ff_score) #& sale_quarter == 3
+    filter(!is.na(high_ff_score)
            ) |> 
 
   filter(!is.na(high_ff_score) & sale_year > 2012) |>
@@ -309,44 +351,14 @@ ggplot(df_summary, aes(x = sale_year, y = median_log_price,
     show.legend = FALSE
   ) +
   facet_wrap(~in_eff_sfha) +
-  ggtitle(#"Q3 Only!! 
-          "By Flood Factor Risk & SFHA Status - Median Values with Slopes") +
-  theme_minimal()
+  labs(title = "By SFHA Status - Median Values with Slopes",
+       x = "Sale Year", y = "Median Log Sale Price") + 
+  theme_classic() +
+  scale_x_continuous(breaks = c(2013, 2017, 2020, 2024))
+
 
 ```
 
-```{r preevent-test-withsfha, message = FALSE}
-
-m <- lm(median_log_price ~ sale_year * high_ff_score *in_eff_sfha* event, data = df_summary)
-
-
-# joint test of slope differences
-car::linearHypothesis(m, 
-                      c(  
-# pretrend for sale_year and high risk properties (even before they know their flood factor score):
-                        "sale_year:high_ff_scoreTRUE = 0",
-                                    "sale_year:high_ff_scoreTRUE:in_eff_sfhaSFHA = 0",
-            
-                        "sale_year:in_eff_sfhaSFHA = 0"
-                        ))
-
-```
-
-```{r}
-m <- lm(median_log_price ~ sale_year * in_eff_sfha * high_ff_score* event, data = df_summary)
-modelsummary::modelsummary(m, stars = TRUE)
-```
-
-```{r}
-m1 <- lm(median_log_price ~ sale_year + in_eff_sfha + high_ff_score + event, data = df_summary)
-m2 <- lm(median_log_price ~ sale_year * in_eff_sfha * high_ff_score * event, data = df_summary)
-
-anova(m1, m2)
-```
-
-
-
-::: panel-tabset
 
 ## Placebo Test 1: 2017 Fake Event
 
@@ -355,6 +367,10 @@ Shifts the definition of the event year by -1 or -2.
 If your slope test results completely change depending on the cutoff, that’s a red flag.
 
 ```{r}
+#| label: tbl-q3sales-placebo
+#| tbl-cap: "Placebo Year 2017, Q3 Sales only."
+
+
 # summarize data
 df_summary <- df_prep |> 
   
@@ -399,34 +415,27 @@ ggplot(df_summary |> filter(sale_year > 2012),
             show.legend = FALSE) +
   ggtitle("Placebo Test: Q3 sales only", subtitle = "By SFHA Status - Median Values with Slopes")
 
+
 ```
+
+
 ```{r}
-m <- lm(median_log_price ~ sale_year * in_eff_sfha * placebo_event, data = df_summary)
+#| label: tbl-lm-placebo1
+#| tbl-cap: "Placebo 1 pretrends. (don't need this, right?"
+
+m <- lm(log_price ~ sale_year * in_eff_sfha, 
+        data = (df_prep |> filter(sale_year <=2017) ))
 modelsummary::modelsummary(m, stars = TRUE)
 ```
 
-```{r}
-m1 <- lm(median_log_price ~ sale_year + in_eff_sfha + placebo_event, data = df_summary)
-m2 <- lm(median_log_price ~ sale_year * in_eff_sfha * placebo_event, data = df_summary)
-
-anova(m1, m2)
-```
 
 ```{r}
-library(car)
+df_prep <- df_prep |>     mutate(placebo_event = ifelse(sale_year > 2017, "2. Post", "1. Pre")) 
 
-# joint test of slope differences
-car::linearHypothesis(m2, c("sale_year:in_eff_sfhaSFHA = 0",
-                      "sale_year:placebo_event2. Post = 0",
-                      "sale_year:in_eff_sfhaSFHA:placebo_event2. Post = 0"))
 
-```
-
-```{r}
 # summarize data
 df_summary <- df_prep |> 
   filter(sale_quarter == 3) |>
-    mutate(placebo_event = ifelse(sale_year > 2017, "2. Post", "1. Pre")) |>
   filter(!is.na(high_ff_score)) |> 
   group_by(sale_year, in_eff_sfha, high_ff_score, placebo_event) |> 
   summarize(median_log_price = median(log_price, na.rm = TRUE), .groups = "drop")
@@ -474,125 +483,34 @@ ggplot(df_summary, aes(x = sale_year, y = median_log_price,
                                color = high_ff_score, linetype = NULL), 
            hjust = 1, vjust = 2, 
             show.legend = FALSE) +
-  ggtitle("!3 sales only by SFHA Status - Median Values with Slopes") +
+  ggtitle("Q3 sales only by SFHA Status - Median Values with Slopes") +
   facet_wrap(~in_eff_sfha)
 
 ```
-```{r}
-m <- lm(median_log_price ~ sale_year * in_eff_sfha * high_ff_score* placebo_event, data = df_summary)
-modelsummary::modelsummary(m, stars = TRUE)
-```
+
+
+### FE model 
 
 ```{r}
-m1 <- lm(median_log_price ~ sale_year + in_eff_sfha + high_ff_score + placebo_event, data = df_summary)
-m2 <- lm(median_log_price ~ sale_year * in_eff_sfha * high_ff_score * placebo_event, data = df_summary)
-
-anova(m1, m2)
-```
-
-```{r}
-
-# joint test of slope differences
-car::linearHypothesis(m2, c("sale_year:in_eff_sfhaSFHA = 0",
-                      "sale_year:placebo_event2. Post = 0",
-                      "sale_year:in_eff_sfhaSFHA:placebo_event2. Post = 0",
-                      "sale_year:in_eff_sfhaSFHA:high_ff_scoreTRUE:placebo_event2. Post=0",
-                      "sale_year:high_ff_scoreTRUE:placebo_event2. Post = 0"
-
-                      ))
-
-```
-
-
-
-```{r}
-feols(log_price ~ in_eff_sfha*high_ff_score*placebo_event | pin + sale_year,
+#| label: tbl-recoded-ffscore-placebo
+#| tbl-cap: "Placebo year is 2017. Pin and sale year fixed effects"
+df_prep <- df_prep |> 
+  group_by(pin) |>  
+  mutate(high_ff_score2 = ifelse(
+    high_ff_score==TRUE & sale_date > 2017, TRUE, FALSE)) |> ungroup()
+  
+feols(log_price ~ in_eff_sfha*high_ff_score2 | pin + sale_year,
      # panel.id = "pin",
       vcov = "hetero", 
-      data = df_prep) |> modelsummary::modelsummary()
+      data = df_prep) |> modelsummary::modelsummary( stars = TRUE)
 ```
 
-
-## Placebo Test 2:2015
 
 Pretend the event happened in an earlier year where nothing actually changed.
 
 Re-run the regression with that placebo cutoff.
 
 If you keep “finding” slope breaks at arbitrary years, your pre-trends aren’t actually parallel.
-
-```{r}
-# summarize data
-df_summary <- df_prep |> 
-  group_by(sale_year, in_eff_sfha, placebo_event) |> 
-  summarize(median_log_price = median(log_price, na.rm = TRUE), .groups = "drop")
-
-# fit slopes by group
-slopes <- df_summary |> 
-  group_by(in_eff_sfha, placebo_event) |> 
-group_modify(~ {
-    model <- lm(median_log_price ~ sale_year, data = .x)
-    broom::tidy(model)
-  }) |>  filter(term == "sale_year") |> 
-  mutate(slope_label = paste0("Slope = ", round(estimate, 3)))
-
-# pick label positions (e.g., at the max year of each line)
-label_positions <- df_summary |> 
-  group_by(in_eff_sfha, placebo_event) |> 
-  summarize(
-    x = max(sale_year), 
-    y = median(median_log_price), 
-    .groups = "drop"
-  )
-
-slopes <- left_join(slopes, label_positions, by = c("in_eff_sfha", "placebo_event"))
-
-# plot
-ggplot(df_summary, aes(x = sale_year, y = median_log_price, 
-                       color = in_eff_sfha, linetype = placebo_event)) +
-  geom_line() +
-  geom_vline(xintercept=2015.5) +
-  geom_smooth(method = "lm", se = FALSE) +
-  geom_text(data = slopes, aes(x = x, y = y, label = slope_label, 
-                               color = in_eff_sfha, linetype = NULL), 
-           hjust = 1, vjust = 2, 
-            show.legend = FALSE) +
-  ggtitle("Placebo Test", subtitle = "By SFHA Status - Median Values with Slopes")
-
-```
-```{r}
-m <- lm(median_log_price ~ sale_year * in_eff_sfha * placebo_event, data = df_summary)
-modelsummary::modelsummary(m, stars = TRUE)
-```
-
-```{r}
-m1 <- lm(median_log_price ~ sale_year + in_eff_sfha + placebo_event, data = df_summary)
-m2 <- lm(median_log_price ~ sale_year * in_eff_sfha * placebo_event, data = df_summary)
-
-anova(m1, m2)
-```
-
-```{r}
-library(car)
-
-m <- lm(median_log_price ~ sale_year * in_eff_sfha * placebo_event, data = df_summary)
-
-# joint test of slope differences
-car::linearHypothesis(m, c("sale_year:in_eff_sfhaSFHA = 0",
-                      "sale_year:placebo_event2. Post = 0",
-                      "sale_year:in_eff_sfhaSFHA:placebo_event2. Post = 0"))
-
-```
-
-
-```{r}
-feols(log_price ~ in_eff_sfha*high_ff_score*placebo_event | pin + sale_year,
-     # panel.id = "pin",
-      vcov = "hetero", 
-      data = df_prep) |> summary()
-```
-
-:::
 
 ## Event Study style test
 
@@ -601,7 +519,6 @@ If they bounce around zero without a clear trend, you’ve got support for paral
 
 If they slope up/down before the event, that’s evidence of violation
 
-::: panel-tabset
 
 ### Model results
 
@@ -703,7 +620,7 @@ ggplot(plot_data, aes(x = rel_num, y = estimate, color = treatment_group)) +
 
 ```{r}
 #| label: fig-relativeyeartrends-flipped
-#| fig-cap: "Trends for properties that had high flood factor score information in 2020 for properties in and outside of FEMA floodplaines."
+#| fig-cap: "Trends for properties that had high flood factor score information in 2020 for properties in and outside of FEMA floodplains."
 #| 
 ggplot(plot_data|> filter(rel_num > -6), aes(x = rel_num, y = estimate, color = sfha_group)) +
   geom_point() +
@@ -717,162 +634,8 @@ ggplot(plot_data|> filter(rel_num > -6), aes(x = rel_num, y = estimate, color = 
 
 ```
 
-## Pre-Event trends
-
-In relative years
-
-```{r}
-feols(log_price ~ i(rel_year, ref = -1) * high_ff_score * in_eff_sfha | pin, df_prep) |> modelsummary::modelsummary()
-
-```
-
-# Change in Flood Factor Coding
-
-```{r}
-df_prep <- df_prep |>
-  mutate(
-high_ff_score = ifelse(high_ff_score == TRUE & event == "2. Post", "1", "0")
-        )
-```
 
 
 
-Grouped by relative year and if they had a high flood factor score:
 
-### Models 
-
-```{r}
-df_prep <- df_prep |>
-  mutate(rel_year = sale_year_decimal - 2020.5)
-
-
-df_prep <- df_prep |>
-mutate(
-  rel_year = factor(rel_year),
-    rel_year = relevel(rel_year, ref = "-1")
-       )
-
-# summarize d ata
-df_summary <- df_prep |> 
-  group_by(rel_year, high_ff_score) |> 
-  summarize(median_log_price = median(log_price, na.rm = TRUE), .groups = "drop")
-
-
-m <- lm(median_log_price ~ rel_year * high_ff_score, data = df_summary)
-modelsummary::modelsummary(m)
-```
-
-### Figures
-
-```{r}
-est <- tidy(m, conf.int = TRUE)
-
-# Keep only rel_year × in_eff_sfha terms
-plot_data <- est |>
-  filter(grepl("rel_year", term)) |>
-  mutate(rel_num = as.integer(sub(".*rel_year(-?\\d+).*", "\\1", term)),
-    risk_group = case_when(
-      grepl("high_ff_score", term) ~ "High FF Score",
-      TRUE ~ "Low FF Score"
-    )
-  )
-ggplot(plot_data, aes(x = rel_num, y = estimate, color = risk_group)) +
-  geom_point() +
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_vline(xintercept = -.5) + 
-  labs(x = "Years relative to event", y = "Effect on median log price") +
-  scale_x_continuous(limits = c(-10, 5), breaks = c(-9, -5, 0, 4)) + 
-  theme_minimal()
-
-
-```
-
-
-
-### Both Variables
-
-
-```{r}
-#| label: fig-bothvariables
-#| fig-cap: "If high_ff_score == 1 only after the information release, then coefficients look like this."
-#| 
-# summarize data
-df_summary <- df_prep |> 
-  mutate(rel_year = sale_year - 2020,
-         rel_year  = factor(rel_year),
-         rel_year = relevel(rel_year, ref = "-1")) |>
-  
-  group_by(rel_year, in_eff_sfha, high_ff_score) |> 
-  summarize(avg_log_price = mean(log_price, na.rm=TRUE),
-    median_log_price = median(log_price, na.rm = TRUE), .groups = "drop")
-
-
-m <- lm(median_log_price ~ rel_year*in_eff_sfha*high_ff_score, data = df_summary)
-
-summary(m)
-
-
-est <- tidy(m, conf.int = TRUE)
-
-plot_data <- est |>
-    filter(grepl("rel_year", term) ) |>
-
-  mutate(
-    rel_num = as.integer(sub(".*rel_year(-?\\d+).*", "\\1", term)),
-    treatment_group = case_when(
-      grepl("high_ff_score", term) ~ "High FF Score",
-      TRUE ~ "Low FF Score"
-    ),
-    sfha_group = case_when(
-      grepl("in_eff_sfha", term) ~ "In SFHA",
-      TRUE ~ "Not in SFHA"
-    )
-  )
-
-ggplot(plot_data, aes(x = rel_num, y = estimate, color = treatment_group)) +
-  geom_point() +
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
-    geom_vline(xintercept = -.5) +
-
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(x = "Years relative to event", y = "Effect on median log price") +
- # scale_x_continuous(limits = c(-10, 5), breaks = c(-9, -5, 0, 4)) + 
-  theme_minimal() + facet_wrap(~sfha_group)
-
-
-
-ggplot(plot_data |> filter(rel_num > -6), aes(x = rel_num, y = estimate, color = sfha_group)) +
-  geom_point() +
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
-    geom_vline(xintercept = -.5) +
-
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(x = "Years relative to event", 
-       y = "Effect on median log price") +
- # scale_x_continuous(limits = c(-10, 5), breaks = c(-9, -5, 0, 4)) + 
-  theme_minimal() + facet_wrap(~treatment_group)
-
-```
-
-# Recommended Specification
-
-## Fixed Effects model
-
-If high ff_score only exists after 2020. 
-
-```{r}
-feols(log_price ~ high_ff_score  * in_eff_sfha | pin + sale_year + sale_quarter, df_prep) |> 
-  modelsummary::modelsummary(stars = TRUE)
-
-```
-
-## DiD estimates
-
-```{r}
-feols(log_price ~ i(rel_year, ref = -1) * high_ff_score * in_eff_sfha | pin + sale_quarter, df_prep) |> 
-  modelsummary::modelsummary(stars = TRUE)
-
-
-```
 
