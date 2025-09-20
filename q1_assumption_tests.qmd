@@ -1,0 +1,284 @@
+---
+title: "Assessing Parallel Trends Under Staggered Treatment"
+format:
+  html: default
+execute:
+  echo: true
+  warning: false
+#  eval: false
+---
+
+# Purpose
+
+This document outlines the correct diagnostics for **parallel trends assumptions in staggered treatment designs** using difference-in-differences (DiD). The presence of staggered timing requires different estimators and more careful assumptions.
+
+> **Source**: Baker et al. (2025), esp. pp. 7–10. Staggered designs require cohort-specific diagnostics and can invalidate conventional DiD methods if assumptions are unchecked.
+
+---
+
+```{r}
+library(tidyverse)
+library(didFF)   # for testing if functional form matters for the analysis. Tests if parallel trends assumption is sensitive to functional form (i.e. logged variable vs unlogged variable)
+
+options(scipen = 999)
+
+df_prep <- readRDS("data/processed/df_prep_buildings.rds") |>
+  select(-c(clean_name.x, clean_name.y))
+
+df_prep <- df_prep |> 
+  filter(pin10 != "0710101038") |>
+  mutate(log_price = log(sale_price))
+
+df_prep <- df_prep |>
+  filter(!is.na(high_ff_score) &
+           !is.na(eff_date) &
+           !is.na(clean_name) &
+           !is.na(pre_date) &
+           !is.na(Triad)
+  )
+
+
+# are there pins that sell multiple times 
+df_prep |> group_by(sale_year, pin) |> mutate(n = n()) |> filter(n > 1)
+# yes 
+
+table(df_prep$eff_date)
+
+df_clean <- df_prep |> 
+  mutate(
+    sale_quarter = quarter(sale_date),
+    pin_num = as.numeric(pin)
+  ) |> 
+  ungroup() |>
+  group_by(pin_num, sale_year, eff_date, in_eff_sfha, #addedto_eff_sfha
+           ) |> 
+  summarize(
+    log_price = mean(log_price, na.rm=TRUE), 
+    ) |> ungroup()
+
+
+# are there pins that sell multiple times 
+df_clean |> group_by(sale_year, pin_num) |> mutate(n = n()) |> filter(n > 1) 
+# not any more
+```
+
+# Step 1: Define Treatment Cohorts
+
+```{r}
+#| label: eff-salesdata
+
+# Define cohort based on first year treated
+data <- df_clean |>
+  mutate(
+    c_i = ifelse(eff_date == "2008-08-19", 1, 0 ), # indicator for if never treated group
+  
+         group_name = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated. 
+           eff_date == "2008-08-19" ~ 0,
+           eff_date == "2019-11-01" ~ 2019,
+           eff_date == "2021-09-10" ~ 2021,
+           TRUE~ NA),
+      #   period_g = sale_year-2011    #  recenter sale year to make period variable
+          d_it =   ifelse(sale_year > 2020 & in_eff_sfha == 1 & group_name!=0, 1, 0),  # indicator for if treated by time t
+
+    ) |>
+  ungroup()
+
+table(df_prep$in_eff_sfha)
+
+q3_sales <- df_prep |>    
+  mutate(    
+    pin_num = as.numeric(pin),
+    sale_quarter = quarter(sale_date)) |>
+  filter(sale_quarter == 3) |> 
+  group_by(pin_num, sale_year, eff_date, in_eff_sfha
+  ) |> 
+  summarize(
+    log_price = mean(log_price, na.rm=TRUE), 
+  ) |> 
+  ungroup() |>
+  mutate(
+    group_name = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated. 
+      eff_date == "2008-08-19"  ~ 0,
+      eff_date == "2019-11-01"  ~ 2019,
+      eff_date == "2021-09-10"  ~ 2021,
+      #eff_date == "2019-11-01" & removedfrom_eff_sfha == "MappedOut" ~ 2019,
+     # eff_date == "2021-09-10" & removedfrom_eff_sfha == "MappedOut" ~ 2021,
+      TRUE ~ 0),
+    #   period_g = sale_year-2011    #  recenter sale year to make period variable
+  )
+  
+table(q3_sales$group_name)
+
+```
+
+
+```{r}
+#| label: prelim-salesdata
+
+table(df_prep$pre_date)
+# 2015-02-12 2019-06-26 2021-09-22 
+table(df_prep$in_prelim_sfha)
+
+prelim_q3_sales <- df_prep |>    
+  mutate(    
+    pin_num = as.numeric(pin),
+    sale_quarter = quarter(sale_date)) |>
+  filter(sale_quarter == 3) |> 
+  group_by(pin_num, sale_year, pre_date, in_prelim_sfha) |> 
+  summarize(
+    log_price = mean(log_price, na.rm=TRUE)) |> 
+  ungroup() |>
+  mutate(
+    #d_it =   ifelse(sale_year >= 2020 & in_prelim_sfha == 1,1, 0),  # indicator for if treated by time t
+    
+    group_name = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated. 
+      pre_date == "2015-02-12" ~ 2015,
+      pre_date == "2019-06-26" ~ 2019,
+      pre_date == "2021-09-22" ~ 2021,
+
+      # pre_date == "2015-02-12" & in_prelim_sfha== "SFHA"  ~ 2015,
+      # pre_date == "2019-06-26" & in_prelim_sfha== "SFHA"~ 2019,
+      # pre_date == "2021-09-22" & in_prelim_sfha == "SFHA" ~ 2021,
+      TRUE~ 0),
+  )
+
+table(prelim_q3_sales$group_name)
+```
+
+**Purpose**: Identify the first year each unit enters treatment. This cohort structure is required to estimate group-time ATT or run cohort-specific checks.
+
+---
+
+
+# Step 3: Estimate Group-Time ATT with Staggered Design Tools
+
+group: groups based on FIRM panels that were updated at once
+treated:
+
+
+```{r}
+library(did)
+att_gt_out <- att_gt(yname = "log_price",
+                     tname = "sale_year",
+                     idname = "pin_num",
+                     gname = "group_name",
+                     xformla = ~in_eff_sfha,
+                     
+                     data = q3_sales,
+                     panel = TRUE,
+                     allow_unbalanced_panel = TRUE)
+
+summary(att_gt_out)
+ggdid(att_gt_out)
+
+#saveRDS(out2, file = "outputs/didQ1_model_output.rds")
+#saveRDS(p2, file = "outputs/didQ1_plot_output.rds")
+```
+
+
+```{r eval=FALSE}
+prelim_att_gt_output <- att_gt(yname = "log_price",
+                     tname = "sale_year",
+                     idname = "pin_num",
+                     gname = "group_name",
+                     data = prelim_q3_sales,
+                     allow_unbalanced_panel = TRUE)
+
+summary(prelim_att_gt_output)
+ggdid(prelim_att_gt_output)
+```
+
+**Purpose**: Estimate cohort-specific treatment effects that respect staggered timing using the `did` package.
+
+**Why it matters**: This avoids “forbidden comparisons”—treating already-treated units as controls—and calculates average treatment effects relative to treatment timing, conditional on never-treated or not-yet-treated comparisons.
+
+
+---
+
+# Step 4: Visualize Event Study
+
+Aggregated effect
+
+
+```{r}
+# aggregate the group-time average treatment effects
+agg_output <- aggte(att_gt_out, type = "dynamic")
+summary(agg_output)
+
+ggdid(agg_output)
+
+```
+
+**Purpose**: Plot treatment effects by event time (relative year to treatment) across cohorts.
+
+**Why**: Validates the parallel trends assumption by visually assessing whether pre-treatment coefficients hover around zero.
+
+> Baker et al. (2025, p. 9): "Pre-treatment effects should be statistically indistinguishable from zero."
+
+---
+
+# Step 5: Interpret Pre-Treatment Periods
+
+```{markdown}
+Review the event study plot:
+- Are the estimates for periods prior to treatment flat and centered around zero?
+- Are the confidence intervals wide or tight?
+- Do any of the pre-treatment estimates appear significantly different from zero?
+```
+
+**Why**: Significant pre-trends violate the key identifying assumption of DiD.
+
+---
+
+# Step 6: Run Placebo Tests (Optional but Recommended)
+
+```{r eval=FALSE}
+placebo_data <- my_data |>
+  filter(year < first_treat_year | is.na(first_treat_year))
+
+placebo_model <- feols(outcome ~ i(relative_time, first_treat_year) + covariates | unit_id + year, 
+                       data = placebo_data)
+```
+
+**Purpose**: Estimate treatment effects in periods before any treatment occurs.
+
+**Why**: If “effects” show up before treatment, you’ve got either model misspecification or anticipation dynamics. Either way, your core assumptions are shaky.
+
+---
+
+# Step 7: Test Sensitivity to Cohort Definition
+
+```{r eval=FALSE}
+
+# Sensitivity by dropping early adopters or redefining cohorts
+att_gt_trimmed <- att_gt(..., gname = first_treat_year, data = my_data |> filter(first_treat_year > 2012))
+```
+
+**Purpose**: Confirm your results are not driven by any specific cohort.
+
+**Why**: Robust results should not depend solely on early or late adopters.
+
+---
+
+# Step 8: Check for Spillovers or Anticipation
+
+```{markdown}
+- Plot or tabulate trends among properties just outside the treated area
+- Include leads in the `att_gt` model to test for anticipatory behavior
+```
+
+**Why**: Treatment effect estimates require no interference or preemptive market reactions.
+
+---
+
+# Step 9: Explicitly State Identification Assumptions
+
+```{markdown}
+In your write-up, clearly state:
+- Parallel trends hold for treated and not-yet-treated units
+- Treatment timing is as-good-as-random conditional on covariates and fixed effects
+- No spillover effects or contamination
+- No anticipatory responses
+```
+
+> Baker et al. (2025, p. 10): "Each assumption must be directly defended."
