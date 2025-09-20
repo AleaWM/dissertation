@@ -53,14 +53,30 @@ df_prep <- readRDS("data/processed/df_prep.rds")
 
 
 
-There are `r n_distinct(ff_pairs$pin)` pins remaining in `ff_pairs`.
 
-
-There are `r print(ff_pairs |> filter(around_event ==TRUE & high_ff_score == TRUE) |> count())` observations that are around_event and have a high flood factor score (greater than 4).
 
 ```{r}
-table(ff_pairs$sale_year_t2, ff_pairs$change_type)
+table(df_prep$sale_year, df_prep$change_type)
 ```
+```{r}
+#| layout-ncol: 2
+
+table(df_prep$sale_year, df_prep$addedto_eff_sfha)
+table(df_prep$sale_year, df_prep$removedfrom_eff_sfha)
+
+```
+
+**Removes missing values until final data cleaning is completed. Dropping them here to see smallest sample sizes in models and graphs.**
+
+```{r remove-missingvalues}
+df_prep <- df_prep |>
+  filter(!is.na(high_ff_score) &
+           !is.na(eff_date) &
+           !is.na(clean_name) &
+           !is.na(pre_date)
+         )
+``` 
+
 
 ## Descriptive Stats
 
