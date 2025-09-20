@@ -1,0 +1,466 @@
+---
+title: "Cook County Parcel Sales"
+format: 
+  html:
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    toc: true
+    toc-location: left
+    tbl-cap-location: margin
+    fig-cap-location: top
+---
+
+# Data Sources and Background Information
+
+Code from [CCAO](https://ccao-data.github.io/assessr/articles/example-ratio-study.html).
+
+Description of functions and [measurements](https://ccao-data.github.io/assessr/reference/index.html).
+
+Parcel shapefile used in ArcGIS Pro is downloaded from CCAO's Archived 2022 parcel dataset [here.](https://datacatalog.cookcountyil.gov/Property-Taxation/ccgisdata-Parcel-2021/77tz-riq7/about_data)
+
+```{r setup, warning=FALSE, message=FALSE}
+library(DescTools)
+library(sf)
+library(tidyverse)
+library(httr)
+library(jsonlite)
+library(glue)
+library(fixest)
+library(skimr)
+library(plm)
+
+```
+
+
+
+> Coding note: sale_price can be winsorized by grouping the year & major class (technically the 1st digit of the class code). Check that this is how you want it to be winsorized. It is currenty commented out and NOT WINSORIZED.
+
+> If property is in SFHA and LOMR, both variables will be coded as 1. I no longer "remove" the SFHA indicator if it is in a LOMR. 
+
+
+> TO DO: Use grepl() to identify properties bought by municipalities? list of Muni names and if they are similar to the buyer name? Useful for flagging buyouts?
+
+```{r}
+df_pairs <- readRDS("data/processed/df_pairs.RDS")
+df_prep <- readRDS("data/processed/df_prep.rds")
+```
+
+
+
+# Research Question 1 
+
+The final dataset represents the between sales growth rate for ___ observations and _____ properties.
+
+
+**Does the value of real estate parcels increase when they are removed from an SFHA?** 
+
+H1: A property removed from a SFHA will increase in value, compared to properties with otherwise shared characteristics.
+
+## Model Info 
+
+To investigate whether the value of real estate parcels increases when they are removed from a Special Flood Hazard Area (SFHA), I used a Fixed Effects on on PINs with repeat sales This approach compares the change in sales price of the same property over time, allowing me to control for fixed, unobservable characteristics of each parcel.
+
+**For repeat sales models:** The dataset was first prepared by filtering out irrelevant parcels and ensuring that each property had at least two recorded sales. For each parcel, I paired consecutive sales and calculated the log change in price between sales (i.e., d_log_price), which serves as the dependent variable in the regression models. I also recorded whether the parcel was in or out of an SFHA at each sale, identifying cases where the floodplain status changed.
+
+"The repeat sales approach is a special case of a matching estimator in which houses are matched to themselves across time periods. For example, a home that sold in both 2000 and 2010 provides direct information on the appreciation rate across these two time periods. Treating 2010 as the treatment and 2000 as the base, a comparison of the sales prices for homes that sold in these two years provides a direct measure of the change in the house price distribution from the beginning to the end of the decade. The distinction between the treatment and control samples is less clear when sales are drawn from many years. However, the point of an index is to compare sales prices over time to a base period. The logical control date is thus the base time period, while each subsequent time becomes a separate form of treatment: how does the fact that a home sells at time t+s rather than time t affect its sales price?" (McMillen 2015)
+
+
+**For Fixed Effect Models:** The dataset was first prepared by filtering out irrelevant parcels and ensuring that each property had at least two recorded sales. There is an indicator variable for if a PIN was in an SFHA at the time of sale or not. In order to include PINs that did not change SFHA status, an additional indicator for post-FIRM update sales was created to interact with SFHA status.
+
+
+
+Additional variables were constructed to measure the timing of sales relative to the date a new Flood Insurance Rate Map (FIRM) took effect, allowing me to distinguish between sales occurring before and after floodplain reclassification. The time between sales was measured in both months and years.
+
+These models tested whether being removed from the SFHA is associated with a statistically significant increase in log sale price (or the annualized log sale price). 
+
+I also explored interaction terms with LOMR status (since people can appeal their flood zone designation and have the map altered. This results in them no longer having mandatory flood insurance if their appeal is accepted) and included alternative specifications, such as directly including binary indicators for whether a parcel was added or removed from an SFHA. 
+
+All models clustered standard errors at the parcel (PIN) level to account for repeated observations of the same property.
+
+
+Notes:
+
+1. Removal from the SFHA is due to the FEMA flood insurance rate maps being updated. Properties are either in or out of the "1-in-100" year flood plain. They can be located in the SFHA and also have a LOMR that "removes" them from the floodplain. This information is represented in multiple variables (`in_eff_sfha` and `in_lomr`). If an observation is coded as `Removed` from an SFHA, it indicates that the floodplain shapefile itself changed that was created by FEMA. If a FIRM is updated and the property previously had a LOMR and FEMA finds that the LOMR still is good. 
+
+- If a property was in an SFHA in a FIRM and had an approved LOMR and then the FIRM is updated years later and the LOMR was still viewed as accurate and valid, then the PIN will appear as "removed from the SFHA" becauese the updated FIRM will incorporate the old LOMR into the updated floodplain.   
+
+2. Treatment window timing: In theory, EFF_DATE would be associated with a change in price due to the capitalization of mandatory flood insurance requirement for homes that have mortgages in floodplains. The knowledge of the risk and the potential loss due to future floods may decrease the amount that buyers are willing to pay for a property that they know see as more risky even if the financial ties to required flood insurance are not effective yet. PRE_DATE is used due to a buyers anticipation of a policy's impact. 
+
+Concerns: 
+
+- Who's included or excluded? Are the properties that are in floodplains different in ways that impact the sales? Are people less willing to buy risky properties in general, resulting in fewer sales? 
+
+ - Inflation? Market trends? Year or regional fixed effects?   
+ 
+ - If parcels were removed from the FEMA flood zone but still at risk, does that say more about information asymmetry or regulatory trust than flood safety?
+ 
+ 
+ - Areas that have received new flood maps are mostly wealthier parts of Cook County. The 800+ pins added to flood plains in the preliminary FIRM are all in Northern Cook County. The FIRMs updated in 2018 and 2021 are along the lake front and include Glencoe/Wilmette areas. Could really influence price trends.
+ 
+ - To log or not to log: Should time between sales be logged? If price growth is a function of compounded time, then yes? BUT if years between sales = 0 (within 12 months apart), then observations are dropped if logged since they become infinite. 
+
+
+
+**Sales around LOMRs* "For example, one could compare properties in the SFHA that obtained LOMRs to similar properties that remained in the SFHA without LOMRs, to see how much value difference the LOMR conferred even before the official map update. Larsen (2012) essentially did this in Ohio and found LOMA properties fetched prices comparable to outside-floodplain properties, implying the only penalty was the insurance mandate. In your case, since ultimately the FIRM update incorporates those LOMRs, you have a before-and-after for LOMR properties too. A triple-difference could be set up where you compare price changes pre vs. post update for three groups: (a) properties removed from SFHA without LOMR, (b) properties “removed” via LOMR (pre-update SFHA with LOMR, post-update out), and (c) a control group (say, properties that were always out). The difference between group (a) and group (b) in their post-minus-pre price appreciation would directly tell you the effect of losing insurance requirement versus already having lost it earlier. This is a bit complex and sample sizes may be small, but it’s a thought if you have enough LOMR cases. At minimum, being aware of which properties had LOMRs allows you to avoid misinterpreting their price signals." - Chat GPT
+
+
+
+```{r}
+library(skimr)
+
+skim(df_prep)
+```
+
+
+## Repeat Sales Models 
+
+
+```{r}
+#| label: tbl-yearsbetweensales-comp
+#| tbl-cap: "Logged years between sales fits better but it should be based on if we think there is a linear trend associated with the years between sales or if we think that sale price increases or decreases with the number of years between sales. Logged years not used in these models."
+
+all_models <- list(
+  # Run the repeat‐sales regression
+  # "Logged Years btwn Sales" <- feols(
+  #   d_log_price ~ log(years_btwn) + change_type,
+  #   data = df_pairs,
+  #   cluster = ~pin
+  #   
+  # ),
+  # 
+  "DV = d_log_price" = list(
+    "Years btwn Not Logged" <- feols(
+      d_log_price ~ years_btwn + change_type,
+      data = df_pairs,
+      cluster = ~pin
+    ),
+    
+    
+    "Years btwn w Sale2 Interaction" <- feols(
+      d_log_price ~ change_type + years_btwn + factor(sale_year_t2),
+      
+      data = df_pairs,
+      cluster = ~pin)#,
+    
+    # "Months btwn w Sale2 Interactions " <- feols(
+    #   d_log_price ~ change_type + months_btwn*factor(sale_year_t2),
+    #   
+    #   data = df_pairs,
+    #   cluster = ~pin)
+    ),
+  
+  "DV = Annualized Growth" = list( 
+    "Annualized Growth" <- feols(
+      ann_d_log_price ~ change_type,
+      
+      data = df_pairs,
+      cluster = ~pin),
+    
+    "Ann. Growth with S2 interactions" <- feols(
+      ann_d_log_price ~ change_type + factor(sale_year_t2),
+      
+      data = df_pairs,
+      cluster = ~pin
+    )
+  )
+)
+
+modelsummary::modelsummary(
+  all_models,
+               shape = "cbind",    
+
+  output = "flextable",
+              stars = TRUE
+)
+```
+
+```{r}
+#| column: page
+#| label: tbl-main-models
+#| tbl-cap: "Models that use `change_type` have comparison group of properties that never were in a FEMA floodplain (aka SFHA)."
+
+
+  all_models <- list(
+    
+      "I" = feols(ann_d_log_price ~ change_type | 0,       
+                  data = df_pairs,
+                  cluster = ~pin
+      ),
+       "IV2" = feols(ann_d_log_price ~ change_type+Triad | 0,       
+                  data = df_pairs,
+                  cluster = ~pin
+      ),
+      
+      "II" = feols(ann_d_log_price ~ change_type +in_lomr + Triad | 0,       
+                   data = df_pairs,
+                   cluster = ~pin
+                   
+      ),
+      "III" = feols(ann_d_log_price ~ change_type + in_lomr + Triad + years_btwn | 0,
+                    data = df_pairs,
+                    cluster = ~pin
+                    
+      ),
+       "IV" = feols(ann_d_log_price ~ change_type + in_lomr + Triad + years_btwn + factor(sale_year_t2),
+                    data = df_pairs,
+                    cluster = ~pin
+                    
+      )
+    )
+  
+all_models_formatted <- modelsummary::modelsummary(all_models,
+          #   shape = "cbind",    
+               output = "flextable",
+             fmt = function(x) round(x, 2),
+           #  gof_omit = "AIC|BIC",
+             #RMSE|Std.Errors|FE",
+             stars = TRUE)
+
+all_models_formatted
+
+
+
+```
+
+
+
+## Fixed Effects on PINs with Repeat Sales
+
+
+
+
+### Models with Policy Rollout Subsets
+
+> FIRMs are updated in different years!! Fixed Effects is not great with this! 
+
+
+
+
+```{r}
+df_prep <- df_prep |> 
+  mutate(year = as.factor(sale_year))
+
+df_prep |> group_by(pin, sale_year) |> filter(n() > 1)
+
+df_prep |> group_by(pin, sale_year) |> filter(n() > 1) |> distinct(pin)
+
+```
+
+```{r}
+#| label: tbl-plmmodels-fixedeffects
+
+table(df_prep$change_type)
+
+library(jtools)
+all_models <- list(
+  
+  "Eff SFHA" = plm(log(sale_price) ~ in_eff_sfha,   
+                   index = c("pin", "sale_year"),
+                   model = "within",
+                   effect = "twoway",
+                   data = df_prep
+  ),
+  
+  "Prelim SFHA" = plm(log(sale_price) ~ in_prelim_sfha,
+                      index = c("pin", "sale_year"),
+                      model = "within",
+                      
+                      effect = "twoway",
+                      data = df_prep
+  ),
+  
+  "With LOMRs" = plm(log(sale_price) ~ in_eff_sfha + in_lomr,
+                     index  =c ("pin", "sale_year"),
+                     model = "within",
+                     
+                     effect = "twoway",
+                     data = df_prep 
+  ),
+  
+  
+  "Prelim With LOMRs" = plm(log(sale_price) ~ in_prelim_sfha + in_lomr,
+                     index  =c ("pin", "sale_year"),
+                     model = "within",
+                     
+                     effect = "twoway",
+                     data = df_prep 
+  )
+) 
+
+
+all_models_formatted <- modelsummary::modelsummary(all_models,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+
+export_summs(all_models )
+
+all_models_formatted
+
+
+
+plm(log(sale_price) ~ in_prelim_sfha + in_lomr,
+                     index  =c ("pin", "sale_year"),
+                     model = "within",
+                     effect = "twoway",
+                     data = df_prep 
+  ) |> summary()
+```
+
+
+```{r}
+#| label: tbl-addedremoved-fixedeffects
+
+
+table(df_prep$addedto_eff_sfha)
+table(df_prep$removedfrom_eff_sfha)
+
+all_models <- list(
+  
+  "Added or Removed SFHA" = plm(log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha,   
+                   index = c("pin", "sale_year"),
+                   model = "within",
+                   effect = "twoway",
+                   data = df_prep
+
+  ),
+  
+    "Added or Removed Effective" = plm(log(sale_price) ~ addedto_eff_sfha + in_eff_sfha + removedfrom_eff_sfha,   
+                   index = c("pin", "sale_year"),
+                   model = "within",
+                   effect = "twoway",
+                   data = df_prep
+
+  ),
+      "Change Type" = plm(log(sale_price) ~ change_type*addedto_eff_sfha + change_type*removedfrom_eff_sfha,
+                     index  =c ("pin", "sale_year"),
+                     model = "within",
+
+                     effect = "twoway",
+                     data = df_prep
+  )
+) 
+
+
+
+
+export_summs(all_models )
+
+
+```
+ 
+```{r}
+#| label: tbl-feolsmodels-fixedeffects
+
+df_prep <- df_prep |> mutate(sale_year = as.factor(sale_year))
+
+all_models <- list(
+  
+  "Eff SFHA" = feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,   
+                   data = df_prep
+  ),
+  
+  "Prelim SFHA" = feols(log(sale_price) ~ in_prelim_sfha | pin + sale_year,
+                      data = df_prep
+                      
+  ),
+  
+  "With LOMRs" = feols(log(sale_price) ~ in_eff_sfha + in_lomr | pin + sale_year,
+       
+                     data = df_prep
+  )
+  ) 
+
+
+all_models_formatted <- modelsummary::modelsummary(all_models,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+all_models_formatted
+
+```
+
+
+### Subsets for policy rollouts
+
+```{r}
+#| label: tbl-plmmodels-fixedeffects-subsets
+
+table(df_prep$eff_date)
+
+df_prep$eff_date_chr <- as.character(df_prep$eff_date)
+df_prep$pre_date_chr <- as.character(df_prep$pre_date)
+
+table(df_prep$eff_date_chr)
+table(df_prep$pre_date_chr)
+table(df_prep$addedto_eff_sfha)
+table(df_prep$removedfrom_eff_sfha)
+
+
+
+all_models <- list(
+
+  "2019 FIRM Update" = plm(log(sale_price) ~ in_eff_sfha*in_lomr,
+                   index = c("pin", "sale_year"),
+                   subset = eff_date_chr=="2019-11-01",
+                   model = "within",
+                   effect = "twoway",
+                   data = df_prep
+  ),
+  
+  "2021 FIRM Update" = plm(log(sale_price) ~ in_eff_sfha,
+                      index = c("pin", "sale_year"),
+                      model = "within",
+                      effect = "twoway",
+                      data = df_prep,
+                      subset = eff_date_chr == "2021-09-10"
+
+  )
+) 
+
+
+export_summs(all_models )
+
+
+```
+
+
+```{r}
+all_models <- list(
+
+  "2015 PreFIRM Update" = plm(log(sale_price) ~ in_prelim_sfha*in_lomr,
+                   index = c("pin", "sale_year"),
+                   subset = pre_date_chr=="2015-02-12",
+                   model = "within",
+                   effect = "twoway",
+                   data = df_prep
+  ),
+
+  "2019 PreFIRM Update" = plm(log(sale_price) ~ in_prelim_sfha,
+                      index = c("pin", "sale_year"),
+                      model = "within",
+                      effect = "twoway",
+                      data = df_prep,
+                      subset = pre_date_chr == "2019-06-26"
+
+  ),
+    "2021 PreFIRM Update" = plm(log(sale_price) ~ in_prelim_sfha,
+                      index = c("pin", "sale_year"),
+                      model = "within",
+                      effect = "twoway",
+                      data = df_prep,
+                      subset = pre_date_chr == "2021-09-22"
+
+  )
+) 
+
+
+export_summs(all_models )
+
+```
+
