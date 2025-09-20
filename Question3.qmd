@@ -15,6 +15,15 @@ Data sources:
 
 Areas flagged as damaged from individual assistance grants, PTAX245 appeal forms, potentially from permits that indicate flood damage. 
 
+Printed article that uses FEMA disaster aid to identify "treated" census tracts, similar to what Io was going to do. (Doerner et al., 2025)
+
+I anticipate the largest capitalization of risk information to be in areas previously affected by significant flooding events.  I merge disaster damage data from OpenFEMA's Individual Assistance Program dataset. Many authors use FEMA's Federal Insurance and Mitigation Administration (FIMA) National Flood Insurance Program (NFIP) Redacted Claims data for identifying impacted areas, but since I am studying inland areas with very few NFIP policies, I cannot use the Redacted Claims data set. See descriptive stats in a different quarto document for the number of policies / claims in Cook County compared to the number of individual aid grants after a disaster. Individual Assistance applications have some fields redacted to protect personally idnetifiable information, but they are geolocated to the _____  level.
+
+
+Because this event happens to all properties in an area at once, there is not a need for a staggered rollout design. 
+
+
+
 ```{r setup, warning=FALSE, message=FALSE}
 library(DescTools)
 library(sf)
@@ -86,7 +95,7 @@ Variable `flooded` indicates that the 1st sale was before the flood event and th
 
 **Is lived experience capitalized into sales prices? is this effect (if any) moderated by other existing sources of increased flood risk?**
 
-H4: Experiencing a flood event conveys new risk information. Properties damaged by a flood event that were not in an SFHA expereince a decrease in value larger than damaged properties that were in an SFHA. 
+H4: Experiencing a flood event conveys new risk information. Properties damaged by a flood event that were not in an SFHA experience a decrease in value larger than damaged properties that were in an SFHA. 
 
 
 > treated zipcodes file! or treated census blocks? from Individual Assistance version updated by FEMA.
