@@ -70,9 +70,10 @@ if the building touches the floodplain, the whole building has flood insurance
 | `high_ff_score x event` |  Main treatment interaction     |
 |`event` | Pre or Post data release. It is NOT the treatment. Just the additional extra value in homes after 2020 above and beyond the sale year fixed effects. | 
 | `sale_year`       | Year of sale                    |
-| `sale_quarter`       | Quarter of sale                       |
-| `change_type`     | SFHA transition category (e.g., Added, Removed) |
+| `sale_quarter`    |  Quarter of sale                       |
+| `change_type`     | SFHA transition category (e.g., Added, Removed) (not used) |
 | `eff_date`        | Flood map effective date (treatment timing)     |
+| `in_eff_sfha`     | Indicator for if property is in a FEMA SFHA at time of sale |
 | `clean_name`      | Municipality                                    |
 | `Triad`           | Subregional identifier (potential FE subgroup)  |
 
@@ -87,9 +88,15 @@ table(df_prep$sale_year, df_prep$event, df_prep$in_eff_sfha)
 ```
 ## Pre Event Trends
 
-I want a non significant result for sale_year x in_eff_sfha & sale_year x high_ff_score x in_eff_sfha coefficient in the pre-event data. 
+I want a non-significant result for sale_year x in_eff_sfha & sale_year x high_ff_score x in_eff_sfha coefficient in the pre-event data. 
 
-Luckily I find that!
+
+The coefficient on sale_year is the baseline slope.
+
+The sale_year:in_eff_sfha term tells you whether the slope differs between properties in an SFHA vs not within the SFHA (within the baseline event period).
+
+
+
 
 ```{r}
 #| label: tbl-pretrendstest-informal
@@ -102,16 +109,12 @@ m2 <- lm(log_price ~ sale_year * high_ff_score * in_eff_sfha, data = predata)
 modelsummary::modelsummary(list(m, m2), stars = TRUE)
 ```
 
-The coefficient on sale_year is the baseline slope.
 
-The sale_year:in_eff_sfha term tells you whether the slope differs between properties in an SFHA vs not within the SFHA (within the baseline event period).
+
 
 The sale_year:event term tells you whether slopes differ pre vs post (within the baseline SFHA group).
 
 The three-way sale_year:in_eff_sfha:event term tells you whether the slope difference across SFHA groups itself changes pre vs post.
-
-
-
 
 ```{r}
 #| label: fig-ffrisk-trends
@@ -210,26 +213,8 @@ ggplot(df_summary, aes(x = sale_year, y = median_log_price,
 
 
 
-**Wald statistic with car::linearHypothesis() which gives you the Wald chi-square statistic, degrees of freedom, and p-value.**
 
-This lets you calculate the linear model with interactions and then only pull and test specific slopes!
-
-```{r preevent-tests, message = FALSE, eval=FALSE}
-library(car)
-
-
-# joint test of slope differences
-car::linearHypothesis(m, 
-                      c(  
-# pretrend for sale_year and high risk properties (even before they know their flood factor score):
-          
-                        "sale_year:in_eff_sfhaSFHA = 0"
-                        ))
-
-```
-
-
-### Quarter 3 Sales 
+### Robustness Check: Quarter 3 Sales 
 
 ```{r}
 #| label: fig-quarter3-only
@@ -367,8 +352,8 @@ Shifts the definition of the event year by -1 or -2.
 If your slope test results completely change depending on the cutoff, that’s a red flag.
 
 ```{r}
-#| label: tbl-q3sales-placebo
-#| tbl-cap: "Placebo Year 2017, Q3 Sales only."
+#| label: tbl-q3sales-placebo-median
+#| tbl-cap: "Placebo Year 2017, Q3 Sales only. Average MEDIAN sale price."
 
 
 # summarize data
@@ -413,11 +398,72 @@ ggplot(df_summary |> filter(sale_year > 2012),
                                color = in_eff_sfha, linetype = NULL), 
            hjust = 1, vjust = 2, 
             show.legend = FALSE) +
-  ggtitle("Placebo Test: Q3 sales only", subtitle = "By SFHA Status - Median Values with Slopes")
+  theme_classic() + 
+  scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
+  labs(title = "Placebo Test: Q3 sales only", 
+       subtitle = "By SFHA Status - Median Values with Slopes",
+      x = NULL,
+      y = "Avg. Logged Sales Price")
 
 
 ```
 
+```{r}
+#| label: tbl-q3sales-placebo-average
+#| tbl-cap: "Placebo Year 2017, Q3 Sales only. AVERAGE logged sales price."
+
+
+# summarize data
+df_summary <- df_prep |> 
+  
+  filter(sale_quarter == 3) |> 
+  # for fake event in 2017 
+  mutate(placebo_event = ifelse(sale_year > 2017, "2. Post", "1. Pre")) |>
+  
+  group_by(sale_year, in_eff_sfha, placebo_event) |> 
+  summarize(avg_log_price = mean(log_price, na.rm = TRUE), .groups = "drop")
+
+# fit slopes by group
+slopes <- df_summary |> 
+  group_by(in_eff_sfha, placebo_event) |> 
+group_modify(~ {
+    model <- lm(avg_log_price ~ sale_year, data = .x)
+    broom::tidy(model)
+  }) |>
+  filter(term == "sale_year") |> 
+  mutate(slope_label = paste0("Slope = ", round(estimate, 3)))
+
+# pick label positions (e.g., at the max year of each line)
+label_positions <- df_summary |> 
+  group_by(in_eff_sfha, placebo_event) |> 
+  summarize(
+    x = max(sale_year), 
+    y = median(avg_log_price), 
+    .groups = "drop"
+  )
+
+slopes <- left_join(slopes, label_positions, by = c("in_eff_sfha", "placebo_event"))
+
+# plot
+ggplot(df_summary |> filter(sale_year > 2012), 
+       aes(x = sale_year, y = avg_log_price, 
+                       color = in_eff_sfha, linetype = placebo_event)) +
+  geom_line() +
+  geom_vline(xintercept=2017.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_text(data = slopes, aes(x = x, y = y, label = slope_label, 
+                               color = in_eff_sfha, linetype = NULL), 
+           hjust = 1, vjust = 2, 
+            show.legend = FALSE) +
+  theme_classic() + 
+  scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
+  labs(title = "Placebo Test: Q3 sales only - Avg. Logged Price", 
+       subtitle = "By SFHA Status",
+      x = NULL,
+      y = "Avg. Logged Sales Price")
+
+
+```
 
 ```{r}
 #| label: tbl-lm-placebo1
@@ -490,6 +536,13 @@ ggplot(df_summary, aes(x = sale_year, y = median_log_price,
 
 
 ### FE model 
+
+```{r}
+feols(log_price ~ in_eff_sfha*high_ff_score*placebo_event | pin + sale_year,
+     # panel.id = "pin",
+      vcov = "hetero", 
+      data = df_prep) |> modelsummary::modelsummary( stars = TRUE)
+```
 
 ```{r}
 #| label: tbl-recoded-ffscore-placebo
@@ -633,6 +686,7 @@ ggplot(plot_data|> filter(rel_num > -6), aes(x = rel_num, y = estimate, color = 
   theme_minimal() + facet_wrap(~treatment_group)
 
 ```
+
 
 
 
