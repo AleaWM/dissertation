@@ -78,7 +78,7 @@ df_prep |>
 ```
 
 ```{r}
-
+#| fig-height: 10
 
 df_prep |> 
   mutate(period = if_else(sale_date < new_info_released, "1.Pre", "2.Post")) |> 
@@ -94,7 +94,7 @@ df_prep |>
   geom_smooth(aes(linetype = period), method = "lm", se = FALSE) +
   labs(title = "Pre vs Post Slopes by Triad and FEMA SFHA Status",
        x = NULL, y = "Median Logged Price"       ) +
-      scale_y_continuous(limits = c(11, 14)) +
+    #  scale_y_continuous(limits = c(11, 14)) +
 
   scale_x_continuous(breaks = c(2010,2020, 2024), limits = c(2015, 2025))+
     theme_classic()+
@@ -119,6 +119,95 @@ df_prep |> filter(high_ff_score == TRUE & in_eff_sfha == "Not SFHA" & Triad == "
 ::: panel-tabset
 
 ### Not Logged Sales Price
+
+```{r}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+
+df_prep |> 
+  group_by(sale_year, in_eff_sfha, event) |> 
+  summarise(avg_price = mean(sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_price, color = in_eff_sfha, lty = event)) +
+  geom_line() +
+  geom_point() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  scale_y_continuous(labels = scales::dollar) + 
+  geom_vline(xintercept=2020, lty = 2) +
+  theme_classic() + 
+  #    geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  labs(title = "Pre- and Post- Event Treatment Trends",
+       y = "Avg. Sale Price",
+       x = NULL)
+
+
+df_prep |> 
+  group_by(sale_year, in_eff_sfha, Triad, event) |> 
+  summarise(avg_price = mean(sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_price, color = in_eff_sfha, lty = event)) +
+  geom_line() +
+  geom_point() + 
+  theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  #     geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  scale_y_continuous(labels = scales::dollar) + 
+  geom_vline(xintercept=2020, lty = 2) +
+  
+  labs(title = "Pre- and Post-Event Trends by Triad",
+       y = "Avg. Sale Price",
+       x = NULL) +
+  facet_wrap(~Triad)
+
+```
+
+With fewer years pre-trend:
+
+```{r}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+
+df_prep |> 
+  filter(sale_year > 2013) |>
+  group_by(sale_year, in_eff_sfha, event) |> 
+  summarise(avg_price = mean(sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_price, color = in_eff_sfha, lty = event)) +
+  geom_line() +
+  geom_point() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  scale_y_continuous(labels = scales::dollar) + 
+  geom_vline(xintercept=2020, lty = 2) +
+  theme_classic() + 
+  #    geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  labs(title = "Pre- and Post- Event Treatment Trends",
+       y = "Avg. Sale Price",
+       x = NULL)
+
+
+df_prep |> 
+    filter(sale_year > 2013) |>
+  group_by(sale_year, in_eff_sfha, Triad, event) |> 
+  summarise(avg_price = mean(sale_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year , y = avg_price, color = in_eff_sfha, lty = event)) +
+  geom_line() +
+  geom_point() + 
+  theme_classic() + 
+  geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
+  #     geom_text(aes(label = n), vjust = -1, size = 3) +  # or geom_label() for boxes
+  scale_y_continuous(labels = scales::dollar) + 
+  geom_vline(xintercept=2020, lty = 2) +
+  
+  labs(title = "Pre- and Post-Event Trends by Triad",
+       y = "Avg. Sale Price",
+       x = NULL) +
+  facet_wrap(~Triad)
+
+```
+
 
 ```{r}
 #| column: page
@@ -210,7 +299,7 @@ df_prep |>
 #| layout-ncol: 2
 
 df_prep |> 
-    group_by(sale_year, high_ff_score, Triad, event) |> 
+    group_by(sale_year, high_ff_score, event) |> 
   summarise(inverse_price = mean(1/sale_price, na.rm = TRUE),
             n = n()) |> 
   ggplot(aes(x = sale_year , y = inverse_price, color = high_ff_score)) +
@@ -222,10 +311,9 @@ df_prep |>
   geom_vline(xintercept=2020, lty = 2) +
     scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
 
-  labs(title = "Pre- and Post-Event Trends by Triad",
+  labs(title = "Pre- and Post-Event Trends",
        y = "1/Sale Price",
-       x = NULL) +
-  facet_wrap(~Triad)
+       x = NULL) 
 
 df_prep |> 
   group_by(sale_year, high_ff_score, Triad, event) |> 
@@ -287,7 +375,7 @@ df_prep |>
   geom_vline(xintercept=2020, lty = 2) +
     scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
 
-  labs(title = "Pre- and Post-Event Trends by Triad",
+  labs(title = "Pre- and Post-Event Trends by Triad & SFHA Status",
        y = "Avg. Logged Sale Price",
        x = NULL) + 
        facet_wrap(~Triad)
@@ -324,7 +412,6 @@ df_prep |>
   geom_smooth(aes(lty = event), method = "lm", se = FALSE) + 
 
   scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
-  scale_y_continuous(labels = scales::dollar) + 
   geom_vline(xintercept=2020, lty = 2) +
   
   labs(title = "Pre- and Post-Event Trends by Triad and SFHA Status",
@@ -429,6 +516,48 @@ If not statistically significant, then I fail to reject the null hypothesis --> 
 
 **sale_year:event:in_eff_sfha**\
 → If significant, it means the difference in slope between groups changed after the event. That does NOT SUPPORT parallel trends assumptions for difference in differences models.
+
+
+```{r}
+#| layout-ncol: 1
+#| label: tbl-transformedDV-forsfha
+#| tbl-cap: "Sales Price, Logged Sales Price, and asymptotic sine of sale price as the DV."
+
+slopes1 <- lm(sale_price ~ in_eff_sfha*event*sale_year, data = df_prep)
+
+# modelsummary::modelsummary(
+#   slopes1,
+#               output = "flextable",
+#              fmt = function(x) round(x, 2),
+#              stars = TRUE)
+
+
+slopes2 <- lm(log(sale_price) ~ in_eff_sfha*event*sale_year, data = df_prep)
+# 
+# modelsummary::modelsummary(
+#   slopes2,
+#               output = "flextable",
+#              fmt = function(x) round(x, 2),
+#              stars = TRUE)
+
+slopes3 <- lm(asinh(sale_price) ~ in_eff_sfha*event*sale_year, data = df_prep)
+
+# modelsummary::modelsummary(
+#   slopes3,
+#               output = "flextable",
+#              fmt = function(x) round(x, 2),
+#              stars = TRUE)
+
+
+modelsummary::modelsummary(
+  list(slopes1, slopes2, slopes3),
+              output = "flextable",
+             fmt = function(x) round(x, 2),
+             stars = TRUE)
+
+
+
+```
 
 
 :::
