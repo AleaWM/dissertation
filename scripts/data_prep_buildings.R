@@ -62,8 +62,12 @@ sales <- sales |>
     prelimsfha = (ifelse(is.na(prelimsfha), 0, prelimsfha))
   )
 
-
+# excel file had PRE_Date as a POSIXct item and eff_date as a character item
 firm_dates <- readxl::read_xlsx("./data/raw/S_FIRM_PAN.xlsx") |>
+  mutate(PRE_DATE = if_else(is.na(PRE_DATE), as_date("2005-01-01"), PRE_DATE)) |> # newly updated FIRMs originally had no effective date in hopes that they would become effective before dissertation was done. 
+  
+  mutate(EFF_DATE = if_else(is.na(EFF_DATE), "2008-08-19", EFF_DATE)) |> # newly updated FIRMs originally had no effective date in hopes that they would become effective before dissertation was done. 
+  
   mutate(PRE_DATE = as_date(PRE_DATE),
          EFF_DATE = as_date(EFF_DATE)) |>
   select(FIRM_PAN, old_panel, PRE_DATE, EFF_DATE)
@@ -75,7 +79,6 @@ sales <- sales |>
   mutate(PRE_DATE = ifelse(old_panel %in% c(15, 20, 155) & year >= 2021, as_date("2021-09-22"), as_date(PRE_DATE)),
          PRE_DATE = as_date(PRE_DATE),
   ) |>
-  #left_join(lomrs, by = c("pin","pin10") ) |>
   mutate(
  
     # # CCAO SFHA status post‐2021
@@ -87,7 +90,8 @@ sales <- sales |>
  
 
    # the flood zones that existed in the 2018 state NFHL were last updated in 2008. sfha2018 is the default SFHA status for the observations, then lomrs and future updates will be incorporated
-        in_eff_sfha = ifelse(sfha2018 == 1, "SFHA", "Not SFHA"),
+        in_eff_sfha = ifelse(sfha2018 == 1, "SFHA", "Not SFHA"), # all years get assigned to SFHA if in sfha2018 because FIRM was updated in 2008
+        # so if it was in an SFHA in 2018, it was in an SFHA in earlier years.
 
         in_eff_sfha = ifelse(sfha2024 == 1 & sale_date >= EFF_DATE, "SFHA",
                              ifelse(sale_date >= EFF_DATE & sfha2024 == 0, "Not SFHA", in_eff_sfha)),
@@ -99,11 +103,14 @@ sales <- sales |>
    
         addedto_eff_sfha = ifelse((sfha2018 == 0 & sfha2024 == 1 &
                                      sale_date > EFF_DATE), "MappedIn", "0"),
+        removedfrom_eff_sfha = ifelse((sfha2018 == 1 & sfha2024 == 0 ) &
+                                        sale_date > EFF_DATE, "MappedOut", "0"),    
+
         addedto_prelim_sfha = ifelse((sfha2018 == 0 & prelimsfha == 1 &
                                         sale_date > PRE_DATE), "MappedIn", "0"),
-        
-        removedfrom_eff_sfha = ifelse((sfha2018 == 1 & sfha2024 == 0 ) &
-                                        sale_date > EFF_DATE, "MappedOut", "0"),
+        removedfrom_prelim_sfha = ifelse((sfha2018 == 1 & prelimsfha == 0 &
+                                        sale_date > PRE_DATE), "MappedOut", "0"),       
+
         
         
         
@@ -133,10 +140,14 @@ sales <- sales |>
 res_sales <- sales |>
   filter(class %nin% c(213, 218, 219)) |>
   filter(num_parcels_sale < 6) |>        # drop sales that involved a lot of parcels. Usually involves a CoOp, Condo, or landarea being bought for construction, not a normal residential sale.
-  filter(sale_price > 1000) |>
+  filter(sale_price > 5000) |>
   mutate(
     class = as.numeric(class),
-    res_c2 = class > 200 & class < 300
+    res_c2 = class > 200 & class < 300,
+    condo = ifelse(class %in% c(298, 299), "Condo", "Not Condo"),  # NOTE: there are separate "single family homes" coded as condos because they are share a parcel and havea condo association. 
+    sale_year  = year(sale_date),
+    eff_date = ymd(EFF_DATE),
+    pre_date = ymd(PRE_DATE)
   ) |>
   group_by(pin) |>
   arrange(year) |>
