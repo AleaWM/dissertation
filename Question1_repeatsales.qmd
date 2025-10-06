@@ -138,7 +138,7 @@ all_models <- list(
     
     
     "Years btwn w Sale2 Interaction" <- feols(
-      d_log_price ~ change_type + years_btwn + factor(sale_year_t2),
+      d_log_price ~ change_type + years_btwn | sale_year_t2 + sale_year_t2,
       
       data = df_pairs,
       cluster = ~pin)#,
@@ -158,7 +158,7 @@ all_models <- list(
       cluster = ~pin),
     
     "Ann. Growth with S2 interactions" <- feols(
-      ann_d_log_price ~ change_type + factor(sale_year_t2),
+      ann_d_log_price ~ change_type | sale_year_t1 + sale_year_t2,
       
       data = df_pairs,
       cluster = ~pin
@@ -202,7 +202,7 @@ modelsummary::modelsummary(
                     cluster = ~pin
                     
       ),
-       "IV" = feols(ann_d_log_price ~ change_type + in_lomr + Triad + years_btwn + factor(sale_year_t2),
+       "IV" = feols(ann_d_log_price ~ change_type + in_lomr + Triad + years_btwn | sale_year_t2,
                     data = df_pairs,
                     cluster = ~pin
                     
@@ -225,242 +225,4 @@ all_models_formatted
 
 
 
-## Fixed Effects on PINs with Repeat Sales
-
-
-
-
-### Models with Policy Rollout Subsets
-
-> FIRMs are updated in different years!! Fixed Effects is not great with this! 
-
-
-
-
-```{r}
-df_prep <- df_prep |> 
-  mutate(year = as.factor(sale_year))
-
-df_prep |> group_by(pin, sale_year) |> filter(n() > 1)
-
-df_prep |> group_by(pin, sale_year) |> filter(n() > 1) |> distinct(pin)
-
-```
-
-```{r}
-#| label: tbl-plmmodels-fixedeffects
-
-table(df_prep$change_type)
-
-library(jtools)
-all_models <- list(
-  
-  "Eff SFHA" = plm(log(sale_price) ~ in_eff_sfha,   
-                   index = c("pin", "sale_year"),
-                   model = "within",
-                   effect = "twoway",
-                   data = df_prep
-  ),
-  
-  "Prelim SFHA" = plm(log(sale_price) ~ in_prelim_sfha,
-                      index = c("pin", "sale_year"),
-                      model = "within",
-                      
-                      effect = "twoway",
-                      data = df_prep
-  ),
-  
-  "With LOMRs" = plm(log(sale_price) ~ in_eff_sfha + in_lomr,
-                     index  =c ("pin", "sale_year"),
-                     model = "within",
-                     
-                     effect = "twoway",
-                     data = df_prep 
-  ),
-  
-  
-  "Prelim With LOMRs" = plm(log(sale_price) ~ in_prelim_sfha + in_lomr,
-                     index  =c ("pin", "sale_year"),
-                     model = "within",
-                     
-                     effect = "twoway",
-                     data = df_prep 
-  )
-) 
-
-
-all_models_formatted <- modelsummary::modelsummary(all_models,
-               output = "flextable",
-               fmt = function(x) round(x, 2),
-
-             stars = TRUE)
-
-
-export_summs(all_models )
-
-all_models_formatted
-
-
-
-plm(log(sale_price) ~ in_prelim_sfha + in_lomr,
-                     index  =c ("pin", "sale_year"),
-                     model = "within",
-                     effect = "twoway",
-                     data = df_prep 
-  ) |> summary()
-```
-
-
-```{r}
-#| label: tbl-addedremoved-fixedeffects
-
-
-table(df_prep$addedto_eff_sfha)
-table(df_prep$removedfrom_eff_sfha)
-
-all_models <- list(
-  
-  "Added or Removed SFHA" = plm(log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha,   
-                   index = c("pin", "sale_year"),
-                   model = "within",
-                   effect = "twoway",
-                   data = df_prep
-
-  ),
-  
-    "Added or Removed Effective" = plm(log(sale_price) ~ addedto_eff_sfha + in_eff_sfha + removedfrom_eff_sfha,   
-                   index = c("pin", "sale_year"),
-                   model = "within",
-                   effect = "twoway",
-                   data = df_prep
-
-  ),
-      "Change Type" = plm(log(sale_price) ~ change_type*addedto_eff_sfha + change_type*removedfrom_eff_sfha,
-                     index  =c ("pin", "sale_year"),
-                     model = "within",
-
-                     effect = "twoway",
-                     data = df_prep
-  )
-) 
-
-
-
-
-export_summs(all_models )
-
-
-```
- 
-```{r}
-#| label: tbl-feolsmodels-fixedeffects
-
-df_prep <- df_prep |> mutate(sale_year = as.factor(sale_year))
-
-all_models <- list(
-  
-  "Eff SFHA" = feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,   
-                   data = df_prep
-  ),
-  
-  "Prelim SFHA" = feols(log(sale_price) ~ in_prelim_sfha | pin + sale_year,
-                      data = df_prep
-                      
-  ),
-  
-  "With LOMRs" = feols(log(sale_price) ~ in_eff_sfha + in_lomr | pin + sale_year,
-       
-                     data = df_prep
-  )
-  ) 
-
-
-all_models_formatted <- modelsummary::modelsummary(all_models,
-               output = "flextable",
-               fmt = function(x) round(x, 2),
-
-             stars = TRUE)
-
-all_models_formatted
-
-```
-
-
-### Subsets for policy rollouts
-
-```{r}
-#| label: tbl-plmmodels-fixedeffects-subsets
-
-table(df_prep$eff_date)
-
-df_prep$eff_date_chr <- as.character(df_prep$eff_date)
-df_prep$pre_date_chr <- as.character(df_prep$pre_date)
-
-table(df_prep$eff_date_chr)
-table(df_prep$pre_date_chr)
-table(df_prep$addedto_eff_sfha)
-table(df_prep$removedfrom_eff_sfha)
-
-
-
-all_models <- list(
-
-  "2019 FIRM Update" = plm(log(sale_price) ~ in_eff_sfha*in_lomr,
-                   index = c("pin", "sale_year"),
-                   subset = eff_date_chr=="2019-11-01",
-                   model = "within",
-                   effect = "twoway",
-                   data = df_prep
-  ),
-  
-  "2021 FIRM Update" = plm(log(sale_price) ~ in_eff_sfha,
-                      index = c("pin", "sale_year"),
-                      model = "within",
-                      effect = "twoway",
-                      data = df_prep,
-                      subset = eff_date_chr == "2021-09-10"
-
-  )
-) 
-
-
-export_summs(all_models )
-
-
-```
-
-
-```{r}
-all_models <- list(
-
-  "2015 PreFIRM Update" = plm(log(sale_price) ~ in_prelim_sfha*in_lomr,
-                   index = c("pin", "sale_year"),
-                   subset = pre_date_chr=="2015-02-12",
-                   model = "within",
-                   effect = "twoway",
-                   data = df_prep
-  ),
-
-  "2019 PreFIRM Update" = plm(log(sale_price) ~ in_prelim_sfha,
-                      index = c("pin", "sale_year"),
-                      model = "within",
-                      effect = "twoway",
-                      data = df_prep,
-                      subset = pre_date_chr == "2019-06-26"
-
-  ),
-    "2021 PreFIRM Update" = plm(log(sale_price) ~ in_prelim_sfha,
-                      index = c("pin", "sale_year"),
-                      model = "within",
-                      effect = "twoway",
-                      data = df_prep,
-                      subset = pre_date_chr == "2021-09-22"
-
-  )
-) 
-
-
-export_summs(all_models )
-
-```
 
