@@ -535,41 +535,6 @@ df_prep |> filter(year(pre_date) > 2014) |>
 
 ```
 
-```{r}
-table(df_prep$pre_date)
-
-all_models <- list(
-
-  "2015 PreFIRM Update" = plm(log(sale_price) ~ in_prelim_sfha,
-                   index = c("pin", "sale_year"),
-                   subset = pre_date_chr=="2015-02-12",
-                   model = "within",
-                   effect = "twoway",
-                   data = df_prep
-  ),
-
-  "2019 PreFIRM Update" = plm(log(sale_price) ~ in_prelim_sfha,
-                      index = c("pin", "sale_year"),
-                      model = "within",
-                      effect = "twoway",
-                      data = df_prep,
-                      subset = pre_date_chr == "2019-06-26"
-
-  ),
-    "2021 PreFIRM Update" = plm(log(sale_price) ~ in_prelim_sfha,
-                      index = c("pin", "sale_year"),
-                      model = "within",
-                      effect = "twoway",
-                      data = df_prep,
-                      subset = pre_date_chr == "2021-09-22"
-
-  )
-) 
-
-
-export_summs(all_models )
-
-```
 
 ```{r}
 m1 <- feols(log(sale_price) ~ in_prelim_sfha | pin + sale_year, data = df_prep |> filter(pre_date_chr=="2015-02-12"))
