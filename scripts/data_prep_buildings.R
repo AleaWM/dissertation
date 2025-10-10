@@ -38,7 +38,8 @@ pin10_firms  <- read_csv("./data/processed/parcels_wFIRMS_20250604.csv")   |>
 # only includes parcels that were flagged as having a BUILDING outline in the FEMA flood plain.
 sfha_ind <- read_csv("./data/processed/sfha_indicator_buildings.csv")  
 
-sfha_ind <- sfha_ind |> group_by(pin10) |> 
+sfha_ind <- sfha_ind |> 
+  group_by(pin10) |> 
   summarize(sfha2018 = max(sfha2018),
             sfha2024 = max(sfha2024),
             prelimsfha = max(prelimsfha),
@@ -107,9 +108,13 @@ sales <- sales |>
                                         sale_date > EFF_DATE, "MappedOut", "0"),    
 
         addedto_prelim_sfha = ifelse((sfha2018 == 0 & prelimsfha == 1 &
-                                        sale_date > PRE_DATE), "MappedIn", "0"),
+                                        sale_date > PRE_DATE |
+                                        sfha2018 == 0 & sfha2024 == 1 &
+                                        sale_date > PRE_DATE ), "MappedIn", "0"),
         removedfrom_prelim_sfha = ifelse((sfha2018 == 1 & prelimsfha == 0 &
-                                        sale_date > PRE_DATE), "MappedOut", "0"),       
+                                        sale_date > PRE_DATE |
+                                          sfha2018 == 1 & sfha2024 == 0 &
+                                          sale_date > PRE_DATE), "MappedOut", "0"),       
 
         
         
