@@ -2,7 +2,6 @@
 
 # Load required libraries
 library(tidyverse)
-library(sf)
 library(DescTools)    # for Winsorize(), not currently used
 library(httr)
 library(jsonlite)
@@ -21,21 +20,51 @@ sales <- read_csv("./data/raw/Assessor_-_Parcel_Sales_20250709.csv") |>
     sale_date   = mdy(sale_date)
   )
 
-firm_dates <- readxl::read_xlsx("./data/raw/S_FIRM_PAN.xlsx") |>
-  mutate(
-    PRE_DATE = if_else(old_panel %in% c(15, 20, 155, 168, 186), as_date("2021-09-22"), as_date(PRE_DATE)),
-    PRE_DATE = if_else(is.na(PRE_DATE), as_date("2005-01-01"), PRE_DATE)) |> # newly updated FIRMs originally had no effective date in hopes that they would become effective before dissertation was done. 
+# Bring in FIRM PANELS from FEMA NFIP geodatabase (before the new update that has 2026 effective days)
+prelim_FIRMS <- readxl::read_xlsx("./data/raw/S_FIRM_PAN.xlsx") |>
+  filter(VERSION_ID == "2.6.3.6") |>
+  mutate(old_firm_panel = ifelse(is.na(old_firm_panel), FIRM_PAN, old_firm_panel),
+         )
   
-  mutate(EFF_DATE = if_else(is.na(EFF_DATE), "2008-08-19", EFF_DATE)) |> # newly updated FIRMs originally had no effective date in hopes that they would become effective before dissertation was done. 
-  
-  mutate(PRE_DATE = as_date(PRE_DATE),
-         EFF_DATE = as_date(EFF_DATE)) |>
-  select(FIRM_PAN, old_panel, PRE_DATE, EFF_DATE, Area)
+
+# firm_dates <- readxl::read_xlsx("./data/raw/S_FIRM_PAN.xlsx") |>
+#   mutate(
+#     PRE_DATE = if_else(FIRM_PAN %in% prelim_FIRMS$old_firm_panel, as_date("2021-09-22"), as_date(PRE_DATE)),
+#     PRE_DATE = if_else(is.na(PRE_DATE), as_date("2005-01-01"), PRE_DATE)
+#     ) |> # newly updated FIRMs originally had no effective date in hopes that they would become effective before dissertation was done. 
+#   
+#   mutate(EFF_DATE = if_else(is.na(EFF_DATE), as_date("2008-08-19"), as_date(EFF_DATE))) |> # newly updated FIRMs originally had no effective date in hopes that they would become effective before dissertation was done. 
+#   
+#   mutate(PRE_DATE = as_date(PRE_DATE),
+#          EFF_DATE = as_date(EFF_DATE),
+#          old_firm_panel = ifelse(is.na(old_firm_panel), FIRM_PAN, old_firm_panel)) |>
+#   select(FIRM_PAN, old_firm_panel, PRE_DATE, EFF_DATE)
 
 # 2. Read flood‐related lookup tables
 # includes the PIN and the FIRM_ID/FIRM_Panel that the PIN was in according to the effective NFHL from 2022
+# new FIRM panels from preliminary FIRM and 2026 effective FIRM updates would not be included in this. 
+# Will join to panel from older version (J, not K)
+
 pin10_firms  <- read_csv("./data/processed/parcels_wFIRMS_20250604.csv")   |> 
   select(-c(PRE_DATE, EFF_DATE))
+
+# trial code
+pin10_firms <- pin10_firms |> 
+  mutate(PRE_DATE = case_when(
+   FIRM_PAN %in% prelim_FIRMS$old_firm_panel ~ as_date("2021-09-22"),
+   VERSION_ID == "2.4.3.0" ~ as_date("2015-02-15") ,
+   VERSION_ID == "2.4.3.5" ~ as_date("2019-06-28") ,
+  TRUE ~ as_date("2005-01-01")),
+ 
+   EFF_DATE = case_when(
+    VERSION_ID == "2.4.3.0" ~ as_date("2019-11-01") ,
+    VERSION_ID == "2.4.3.5" ~ as_date("2021-09-10") ,
+    TRUE ~ as_date("2005-01-01"))
+  
+  )
+
+table(pin10_firms$PRE_DATE)
+table(pin10_firms$EFF_DATE)
 
 drop_parcels <- c("2130108012", "2130108032", "2130108033", "2130114015", 
                   "2130114016", "2130108019", 
@@ -47,6 +76,7 @@ pin10_firms <- pin10_firms |>
 
 # only includes parcels that were flagged as having a BUILDING outline in the FEMA flood plain.
 sfha_ind <- read_csv("./data/processed/sfha_indicator_buildings.csv")  
+summary(sfha_ind)
 
 sfha_ind <- sfha_ind |> 
   group_by(pin10) |> 
@@ -80,11 +110,11 @@ stopifnot(is.numeric(sfha_ind$sfha2018), is.numeric(sfha_ind$sfha2024))
 sales <- sales |>
   left_join(pin10_firms,    by = "pin10") |>
   filter(pin10 %nin% drop_parcels) |>
-  mutate(FIRM_PAN = 
+  mutate(FIRM_PAN =
            case_when(
              pin10 == "0427302008" ~ "17031C0229J",
              pin10 == "0427302009" ~ "17031C0229J",
-             pin10 == "0124100056" & is.na(FIRM_PAN) ~ "17031C0157J", 
+             pin10 == "0124100056" & is.na(FIRM_PAN) ~ "17031C0157J",
              pin10 == "0124100056" & is.na(FIRM_PAN) ~ "17031C0157K",
              pin10 == "0316112026" ~ "17031C0202J",
              pin10 == "0323109028" ~ "17031C0206J",
@@ -135,41 +165,35 @@ sales <- sales |>
              pin10 == "2730212015" ~ "17031C0684J", # in lomr, house gone? weird vacant land
              pin10 == "0427302010" ~ "17031C0229J",
              TRUE ~ FIRM_PAN
-           )) |>
+           )
+        ) |>
 
   left_join(sfha_ind, by = "pin10")
 
-stopifnot(is.numeric(sfha_ind$sfha2018), is.numeric(sfha_ind$sfha2024))
+stopifnot(is.numeric(sales$sfha2018), is.numeric(sales$sfha2024))
+stopifnot(!is.na(sales$FIRM_PAN))
 
-# sales: one row per sale
-#   pin, sale_date(Date), FIRM_PAN, sfha2018(0/1), sfha2024(0/1)
-#   optional: prelimsfha(0/1) for special prelim-only patches
-# firm_dates: FIRM_PAN-level dates with PRE_DATE and EFF_DATE
-# lomr_pins (optional): pin, lomr_date(Date) where ins. requirement removed
 
 # ---- 0) assertions ----------------------------------------------------------
 stopifnot(inherits(sales$sale_date, "Date"))
 
-firm_dates <- firm_dates |>
-  mutate(PRE_DATE = as_date(PRE_DATE),
-         EFF_DATE = as_date(EFF_DATE))
-
 
 # ---- 1) join panel dates ----------------------------------------------------
-sales1 <- sales |>
-  left_join(firm_dates, by = "FIRM_PAN")
+sales1 <- sales #|>
+ # left_join(firm_dates, by = c("FIRM_PAN" = "old_firm_panel"))
 
 table(sales1$PRE_DATE)
 table(sales1$EFF_DATE)
+table(sales1$prelimsfha[sales1$PRE_DATE=="2021-09-22"])
+table(sales1$sfha2024[sales1$PRE_DATE=="2021-09-22"])
+table(sales1$sfha2024[sales1$EFF_DATE=="2021-09-10"])
+table(sales1$sfha2018[sales1$EFF_DATE=="2021-09-10"])
 
-
-# allowed_prelim <- as.Date(c("2015-02-12","2019-06-26","2021-09-22"))
-# allowed_eff    <- as.Date(c("2008-08-19","2019-11-01","2021-09-10"))
-# 
-# bad_pre <- setdiff(na.omit(unique(firm_dates$PRE_DATE)), allowed_prelim)
-# if (length(bad_pre)) stop("PRE_DATE outside allowed set: ", paste(format(bad_pre), collapse=", "))
-# bad_eff <- setdiff(na.omit(unique(firm_dates$EFF_DATE)), allowed_eff)
-# if (length(bad_eff)) stop("EFF_DATE outside allowed set: ", paste(format(bad_eff), collapse=", "))
+# correct prelim indicator that was made in shapefile_sfha_changes.R
+# sales1 <- sales1 |> 
+#   mutate(
+#     prelimsfha = ifelse(FIRM_PAN %in% prelim_FIRMS$old_firm_panel & sfha2024 == 1 & is.na(prelimsfha), 0, prelimsfha ),
+#     prelimsfha = ifelse(is.na(prelimsfha), sfha2024, prelimsfha))
 
 
 # sanity: each sale must know its panel’s EFF_DATE (baseline or updated)
@@ -180,8 +204,8 @@ if (any(is.na(sales1$EFF_DATE))) {
 
 
 # flag panels that actually got a 2019/2021 update
-is_updated_panel_eff <- function(d) d %in% as.Date(c("2019-11-01", "2021-09-10"))
-is_updated_panel_prelim <- function(d) d %in% as.Date(c("2015-02-12", "2019-06-26", "2021-09-22"))
+is_updated_panel_eff <- function(d) d %in% as_date(c("2019-11-01", "2021-09-10"))
+is_updated_panel_prelim <- function(d) d %in% as_date(c("2015-02-12", "2019-06-26", "2021-09-22", "2022-11-18"))
 
 sales1 <- sales1 |>
   mutate(
@@ -189,7 +213,7 @@ sales1 <- sales1 |>
     has_prelim_window = is_updated_panel_prelim(PRE_DATE)
   )
 
-table(sales1$panel_updated_2019_2021)
+table(sales1$panel_updated_eff)
 table(sales1$has_prelim_window)
 
 
@@ -201,10 +225,11 @@ table(sales1$has_prelim_window)
 sales1 <- sales1 |>
   mutate(
     in_eff_sfha = case_when(
-      panel_updated_2019_2021 == TRUE & sale_date >= EFF_DATE ~ sfha2024 == 1L,
+      panel_updated_eff == TRUE & sale_date >= EFF_DATE ~ sfha2024 == 1L,
       TRUE                                             ~ sfha2018 == 1L
     )
   )
+
 
 
 
@@ -215,29 +240,23 @@ sales1 <- sales1 |>
 sales1 <- sales1 |>
   mutate(
     in_prelim_sfha = case_when(
-      has_prelim_window == TRUE & PRE_DATE == "2021-09-22" ~ prelimsfha == 1L,
-      has_prelim_window & sale_date >= PRE_DATE   ~ sfha2024 == 1L,
-      TRUE                                                             ~ sfha2018== 1L
+      has_prelim_window == TRUE & sale_date >= PRE_DATE ~ prelimsfha == 1L,
+      TRUE ~ FALSE
     ),
  #   in_prelim_sfha = ifelse(is.na(in_prelim_sfha), FALSE, in_prelim_sfha),
  #   in_eff_sfha = ifelse(is.na(in_eff_sfha), FALSE, in_eff_sfha)
     
   )
+sales1 |> filter(has_prelim_window & prelimsfha == 1)
+sales1 |> filter(has_prelim_window & in_prelim_sfha == 1)
+sales1 |> filter(sfha2024 == 1)
+sales1 |> filter(in_eff_sfha == 1)
 
 table(sales1$in_prelim_sfha)
 table(sales1$in_eff_sfha)
 sum(is.na(sales1$in_eff_sfha))
 sum(is.na(sales1$in_prelim_sfha))
 
-
-# # ---- OPTIONAL: LOMR overrides (removes requirement mid-cycle) ------------
-# # If a PIN has a lomr_date, set effective FALSE on/after lomr_date.
-# if (exists("lomr_pins")) {
-#   stopifnot(inherits(lomr_pins$lomr_date, "Date"))
-#   sales1 <- sales1 |>
-#     left_join(select(lomr_pins, pin, lomr_date), by = "pin") |>
-#     mutate(in_eff_sfha = if_else(!is.na(lomr_date) & sale_date >= lomr_date, FALSE, in_eff_sfha))
-# }
 
 # ----  transitions by PIN --------------------------------------------------
 sales1 <- sales1 |>
@@ -250,45 +269,25 @@ sales1 <- sales1 |>
     
     
     addedto_prelim_sfha = if_else(dplyr::lag(in_prelim_sfha) == FALSE & in_prelim_sfha == TRUE, TRUE, FALSE),
-    removedfrom_prelim_sfha = if_else(dplyr::lag(in_prelim_sfha ) == TRUE & in_prelim_sfha == FALSE, TRUE, FALSE))       
+   # removedfrom_prelim_sfha = if_else(dplyr::lag(in_prelim_sfha ) == TRUE & in_prelim_sfha == FALSE, TRUE, FALSE)
+    )       
 
 table(sales1$addedto_eff_sfha)
 table(sales1$addedto_prelim_sfha)
 table(sales1$removedfrom_eff_sfha)
-table(sales1$removedfrom_prelim_sfha)
+#table(sales1$removedfrom_prelim_sfha)
 
-
-# # ---- 6) diagnostics (optional but recommend keeping) ------------------------
-# # Effective flips should happen (a) at 2019/2021 EFF_DATE for updated panels or (b) at lomr_date.
-# viol_eff <- sales1 |>
-#   group_by(FIRM_PAN) |>
-#   summarize(
-#     flip_before_update = any(
-#       !lag(is.na(in_eff_sfha)) &
-#         lag(in_eff_sfha) != in_eff_sfha &
-#         !panel_updated_2019_2021,   # panel never updated (so flips need a LOMR)
-#       na.rm = TRUE
-#     ),
-#     .groups = "drop"
-#   ) |>
-#   filter(flip_before_update)
-# 
-# if (nrow(viol_eff)) {
-#   warning("Effective flips on panels that never updated in 2019/2021. Check LOMRs or data: ",
-#           paste(viol_eff$FIRM_PAN, collapse = ", "))
-# }
-
-
+# LOMR and insurance requirement indicators
 sales1 <- sales1 |>
   ungroup() |>
   mutate(
     in_lomr       = if_else(
       (sale_date >= (EFF_DATlomr2018) | sale_date >= (EFF_DATlomr2024) ),
-      "Received LOMR", "Not in LOMR"),
-    in_lomr = if_else(is.na(in_lomr), "Not in LOMR", in_lomr),
+      TRUE, FALSE),
+    in_lomr = if_else(is.na(in_lomr), FALSE, in_lomr),
     
     # properties that potentially have flood insurance requirement
-    ins_req = if_else(in_eff_sfha == TRUE & in_lomr == "Not in LOMR", TRUE, FALSE)
+    ins_req = if_else(in_eff_sfha == TRUE & in_lomr == FALSE, TRUE, FALSE)
   )
 
 table(sales1$in_lomr)
