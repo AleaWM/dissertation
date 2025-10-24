@@ -59,7 +59,7 @@ pin10_firms <- pin10_firms |>
    EFF_DATE = case_when(
     VERSION_ID == "2.4.3.0" ~ as_date("2019-11-01") ,
     VERSION_ID == "2.4.3.5" ~ as_date("2021-09-10") ,
-    TRUE ~ as_date("2005-01-01"))
+    TRUE ~ as_date("2008-08-19"))
   
   )
 
@@ -195,8 +195,44 @@ table(sales1$sfha2018[sales1$EFF_DATE=="2021-09-10"])
 #     prelimsfha = ifelse(FIRM_PAN %in% prelim_FIRMS$old_firm_panel & sfha2024 == 1 & is.na(prelimsfha), 0, prelimsfha ),
 #     prelimsfha = ifelse(is.na(prelimsfha), sfha2024, prelimsfha))
 
+sales1 |> filter(is.na(EFF_DATE) & class_1dig == 2) |> distinct(pin10, neighborhood_code) |> View()
 
-# sanity: each sale must know its panel’s EFF_DATE (baseline or updated)
+missing_dates <- sales1 |> 
+  group_by(neighborhood_code) |> 
+  summarize(n(),
+            EFF_DATE = max(EFF_DATE),
+            PRE_DATE = max(PRE_DATE),
+            max(sfha2018, na.rm=TRUE), max(sfha2024, na.rm=TRUE), max(prelimsfha, na.rm=TRUE))
+
+sales1 <- sales1 |>
+  mutate(
+    EFF_DATE = case_when(
+
+  neighborhood_code %in% c("10024", "19020", "19060", "24032","25160",  "30011", 
+         "38040", "38110", "71074", "74022",  "74030",   "77120", "77131") ~ as_date("2008-08-19"),
+  
+  
+ neighborhood_code %in% c("15907", "23092",  "70010",  "73032", "73041",  "73084", 
+         "73093",  "74013",  "76010", "76011") ~ as_date("2019-11-01"),
+ 
+ neighborhood_code %in% c("28039","28100", "39200") ~ as_date("2021-09-10"),
+  TRUE ~ EFF_DATE),
+ 
+ PRE_DATE = case_when(
+   neighborhood_code %in% c("10024", "19020", "19060", "24032","25160",  "30011", 
+                            "38040", "38110", "71074", "74022",  "74030",   "77120", "77131") ~ as_date("2005-01-01"),
+   
+   
+   neighborhood_code %in% c("15907", "23092",  "70010",  "73032", "73041",  "73084", 
+                           "73093",  "74013",  "76010", "76011") ~ as_date("2015-02-15"),
+   
+   neighborhood_code %in% c("28039","28100", "39200") ~ as_date("2019-06-28"),
+   TRUE ~ PRE_DATE)
+
+  )
+
+
+# sanity: each sale musEFF_DATE# sanity: each sale must know its panel’s EFF_DATE (baseline or updated)
 if (any(is.na(sales1$EFF_DATE))) {
   n <- sum(is.na(sales1$EFF_DATE))
   stop("Missing EFF_DATE for ", n, " sale(s). Fill baseline 2008-08-19 where appropriate.")
@@ -205,7 +241,7 @@ if (any(is.na(sales1$EFF_DATE))) {
 
 # flag panels that actually got a 2019/2021 update
 is_updated_panel_eff <- function(d) d %in% as_date(c("2019-11-01", "2021-09-10"))
-is_updated_panel_prelim <- function(d) d %in% as_date(c("2015-02-12", "2019-06-26", "2021-09-22", "2022-11-18"))
+is_updated_panel_prelim <- function(d) d %in% as_date(c("2015-02-12", "2019-06-26", "2021-09-22"))
 
 sales1 <- sales1 |>
   mutate(
