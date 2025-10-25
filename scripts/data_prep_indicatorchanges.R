@@ -39,25 +39,6 @@ prelim_FIRMS <- readxl::read_xlsx("./data/raw/S_FIRM_PAN.xlsx") |>
   mutate(old_firm_panel = ifelse(is.na(old_firm_panel), FIRM_PAN, old_firm_panel),
          )
   
-
-# firm_dates <- readxl::read_xlsx("./data/raw/S_FIRM_PAN.xlsx") |>
-#   mutate(
-#     PRE_DATE = if_else(FIRM_PAN %in% prelim_FIRMS$old_firm_panel, as_date("2021-09-22"), as_date(PRE_DATE)),
-#     PRE_DATE = if_else(is.na(PRE_DATE), as_date("2005-01-01"), PRE_DATE)
-#     ) |> # newly updated FIRMs originally had no effective date in hopes that they would become effective before dissertation was done. 
-#   
-#   mutate(EFF_DATE = if_else(is.na(EFF_DATE), as_date("2008-08-19"), as_date(EFF_DATE))) |> # newly updated FIRMs originally had no effective date in hopes that they would become effective before dissertation was done. 
-#   
-#   mutate(PRE_DATE = as_date(PRE_DATE),
-#          EFF_DATE = as_date(EFF_DATE),
-#          old_firm_panel = ifelse(is.na(old_firm_panel), FIRM_PAN, old_firm_panel)) |>
-#   select(FIRM_PAN, old_firm_panel, PRE_DATE, EFF_DATE)
-
-# 2. Read flood‐related lookup tables
-# includes the PIN and the FIRM_ID/FIRM_Panel that the PIN was in according to the effective NFHL from 2022
-# new FIRM panels from preliminary FIRM and 2026 effective FIRM updates would not be included in this. 
-# Will join to panel from older version (J, not K)
-
 table(firm_dates$EFF_DATE)
 
 pin10_firms  <- read_csv("./data/processed/parcels_wFIRMS_20250604.csv")   |> 
@@ -316,93 +297,6 @@ table(sales1$addedto_eff_sfha)
 table(sales1$addedto_prelim_sfha)
 table(sales1$removedfrom_eff_sfha)
 table(sales1$removedfrom_prelim_sfha)
-
-# # correct prelim indicator that was made in shapefile_sfha_changes.R
-# sales1 <- sales1 |>
-#   mutate(
-#     # if property was updated in 2021 prelim FIRM and was in SFHA in 2024 and no longer was flagged as in the SFHA,it was removed, so code it as 0, otherwise leave as is
-#     prelimsfha = 
-#       case_when(FIRM_PAN %in% prelim_FIRMS$old_firm_panel & sfha2024 == 1 & is.na(prelimsfha) ~ 0,  # to  help flag removed parcels
-#   
-#                 VERSION_ID != "1.1.1.0" & sfha2024 == 1 ~ 1, # if in SFHA in effective maps and if its not the original version, then 1
-#                 VERSION_ID != "1.1.1.0" & sfha2018 == 1 ~ 1,
-#                  is.na(prelimsfha) ~ 0,
-#                 TRUE ~ prelimsfha
-#                 ))
-# ---- 2) EFFECTIVE SFHA ------------------------------------------------------
-# Logic:
-#  - If panel_updated_eff=true & sale_date >= EFF_DATE -> use sfha2024 indicator
-#  - Else (baseline or pre-update) -> use sfha2018 indicators
-#  - anything that doesn't have an SFHA indicator has NA values. (which is most observations!)
-# what I want: Any property that is in the SFHA to be flagged as such at the preliminary firm date instead of the effective firm date. 
-# sales1 <- sales1 |>
-#   mutate(
-#     in_eff_sfha = case_when(
-#       panel_updated_eff == TRUE & sale_date >= EFF_DATE & sfha2018 == 1 & (sfha2024 == 0 | is.na(sfha2024 )) ~ FALSE,
-#       
-#       panel_updated_eff == TRUE & sale_date >= EFF_DATE & sfha2024 == 1 ~ TRUE,
-#       panel_updated_eff == TRUE & sale_date >= EFF_DATE & sfha2018 == 1 ~ TRUE,
-#       
-#       panel_updated_eff == FALSE & sfha2018 == 1 ~ TRUE,   # if never updated, use whatever the sfha status was in the 2018 geodatabase (where updated FIRMs were not effective yet)
-#       panel_updated_eff == FALSE & (sfha2018 == 0 | is.na(sfha2018))~ FALSE, 
-# 
-#       TRUE  ~ FALSE
-#     )
-#   )
-# table(sales1$in_eff_sfha)
-
-
-# ---- PRELIMINARY SFHA ----------------------------------------------------
-# sales1 <- sales1 |>
-#   mutate(
-#     
-#     in_prelim_sfha= 
-#       case_when(
-#         has_prelim_window == TRUE & sfha2018 == 1 & (prelimsfha == 0 | is.na(prelimsfha) ) &  sale_date >= PRE_DATE ~ FALSE,
-#         has_prelim_window == TRUE & sfha2018 == 1 & (sfha2024 == 0 | is.na(sfha2024) ) & sale_date >= PRE_DATE ~ FALSE,
-#         
-#         has_prelim_window == TRUE & (prelimsfha == 1) &  sale_date >= PRE_DATE ~ TRUE,
-#         
-#         has_prelim_window == TRUE  & sfha2024 == 1 & sale_date >= PRE_DATE ~ TRUE,
-#         
-#         
-#         # take care of PINs that never update
-#         has_prelim_window == FALSE & sfha2018 == 1 ~ TRUE, 
-#         has_prelim_window == FALSE ~ FALSE, 
-#         
-# 
-#         TRUE ~ FALSE
-#       )
-#   )
-# 
-# 
-# table(sales1$in_prelim_sfha)
-# table(sales1$in_eff_sfha)
-# sum(is.na(sales1$in_eff_sfha))
-# sum(is.na(sales1$in_prelim_sfha))
-# 
-# sales1 |>   group_by(pin) |>
-# filter(in_prelim_sfha == T & dplyr::lag(in_prelim_sfha==F))
-# sales1 |>   group_by(pin) |>
-#   filter(in_eff_sfha == F & dplyr::lag(in_eff_sfha==T))
-# 
-# 
-# # ----  transitions by PIN --------------------------------------------------
-# sales1 <- sales1 |>
-#   arrange(pin, sale_date) |>
-#   group_by(pin) |>
-#   mutate(
-#     # directional effect of being added or removed from SFHA
-#     addedto_eff_sfha = if_else(dplyr::lag(in_eff_sfha) == FALSE & in_eff_sfha == TRUE, TRUE, FALSE),
-#     removedfrom_eff_sfha = if_else(dplyr::lag(in_eff_sfha) == TRUE & in_eff_sfha == FALSE, TRUE, FALSE),
-#     addedto_prelim_sfha = if_else(dplyr::lag(in_prelim_sfha) == FALSE & in_prelim_sfha == TRUE, TRUE, FALSE),
-#     removedfrom_prelim_sfha = if_else(dplyr::lag(in_prelim_sfha)== TRUE & in_prelim_sfha == FALSE, TRUE, FALSE),
-#   
-#     # below methods result in all FALSE 
-#    # addedto_prelim_sfha = if_else(dplyr::lag(in_prelim_sfha) == FALSE & in_prelim_sfha == TRUE, TRUE, FALSE),
-#    # removedfrom_prelim_sfha = if_else(dplyr::lag(in_prelim_sfha ) == TRUE & in_prelim_sfha == FALSE, TRUE, FALSE)
-#     )       
-
 
 
 # LOMR and insurance requirement indicators
