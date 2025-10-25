@@ -1,17 +1,16 @@
 # File Info ----
 # Purpose: Pull unique PIN and parcel shapefiles for 2018 and 2023 into one list.
 # identifies which FIRM they are in! (using the 2024 State NFHL - WARNING some FIRMS changed shapes!)
-# Quarto files use the shapefiles downloaded from Cook County Data Portal
-# which have differences in variables and naming convention.
 #
 # Input(s): ptaxsim database
 # Output(s):  
 #             "data/processed/parcels_wFIRMs.csv"
 #             "./data/raw/parcel_shapefiles_ty2023.gpkg" <---  Not used
 #             "./data/raw/parcel_shapefiles_ty2018.gpkg" <--- not used
-#    Stores outputs in the `data/raw/` directory.
+#    Stores outputs in the `data/processed/` directory.
 # Author: AWM
-# Last updated: 2025-05-06
+# Last updated: 2025-10-23
+
 
 
 # Setup --------------------------------------------------
@@ -31,7 +30,9 @@ border <- st_read("inputs/Mapping_FIRMs/Cook_County_Border/Cook_County_Border.sh
   st_transform("EPSG:4326")
 
 common_crs <- st_crs(border)
-st_bbox(border)
+
+st_bbox(border) # look at coordinate "box" of area
+
 # All parcel geometries using SQL db -------------------------------------------
 pin_geoms <- DBI::dbGetQuery(
   ptaxsim_db_conn,
@@ -87,10 +88,14 @@ pin_centroids <- pin_centroids |>
 
 #pin_centroids <- sf_data |> mutate(centroid = st_centroid(geometry))
 
+
+## reads in FIRM layer from statewide geodatabase.
+## clips it to just Cook County with `border` shapefile
 st_clip_firms_2024 <- read_sf("inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NFHL_17_20240628.gdb",
                               layer = "S_FIRM_PAN") |>  
   st_transform(common_crs) |>
   st_intersection(border) |>  
+ # st_within(border) |>
   st_transform(common_crs) #|>
 # 
 #   mutate(
@@ -110,15 +115,14 @@ st_clip_firms_2024 <- st_clip_firms_2024[st_is_valid(st_clip_firms_2024), ]
 
 st_geometry(st_clip_firms_2024) <- "SHAPE"
 
-# FIRMS as of 2024 from State NFHL
+# EFFECTIVE FIRMS as of 2024 from State NFHL
 ggplot() +
-  geom_sf(data = st_clip_firms_2024, 
-          linewidth = 0.3, aes(fill = EFF_DATE ) ) +
+  geom_sf(data = st_clip_firms_2024 |> filter(DFIRM_ID == "17031C"), 
+          linewidth = 0.3, aes(fill = factor(EFF_DATE) ) ) +
   geom_sf(data = border, fill = NA, color = "black", lwd=1)+
   theme_void() +
  #scale_fill_date() +
   labs( title = "FIRM Effective Date" , fill = "" )
-
 
 
 # 1,457,163  distinct pin10 obs
