@@ -344,7 +344,9 @@ pin_indicators <-pin_indicators|>
   mutate(
     sfha2018 = ifelse(!is.na(FLD_ZONE2018), 1, 0),
     sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
-    prelimsfha = ifelse(!is.na(FLD_ZONE_pre), 1, sfha2024),
+    prelimsfha = ifelse(!is.na(FLD_ZONE_pre), 1, 
+                        0),  # if it is not in a preliminary SFHA in the northern part of Cook, then use values for sfha2024.
+    #changed back to 0 ^^
     lomr2018 =  ifelse(!is.na(LOMR_ID2018), 1, 0),
     lomr2024 = ifelse(!is.na(LOMR_ID2024), 1, 0)
          )
@@ -405,11 +407,11 @@ pin_indicators <- pin_indicators |> full_join(lomr_join)
 
 pin_indicators <- pin_indicators|>
   mutate(
-    sfha2018 = ifelse(!is.na(FLD_ZONE), 1, 0),
-    sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
-    prelimsfha = ifelse(!is.na(FLD_ZONEprelim), 1, sfha2024),
-    lomr2018 =  ifelse(!is.na(lomr_yearlomr2018), 1, 0),
-    lomr2024 = ifelse(!is.na(lomr_yearlomr2024) , 1, 0)
+    sfha2018 = ifelse(!is.na(FLD_ZONE), 1, NA),
+    sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, NA),
+    prelimsfha = ifelse(!is.na(FLD_ZONEprelim), 1, NA),
+    lomr2018 =  ifelse(!is.na(lomr_yearlomr2018), 1, NA),
+    lomr2024 = ifelse(!is.na(lomr_yearlomr2024) , 1, NA)
   )
 
 distinct_parcels <- pin_indicators |> distinct(pin10, sfha2018, sfha2024, prelimsfha, lomr2018, lomr2024)
