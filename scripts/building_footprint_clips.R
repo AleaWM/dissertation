@@ -13,8 +13,6 @@ library(beepr)
 #library(geodata)
 
 
-pin_indicators <- read_csv("./data/processed/sfha_indicator_pins.csv")
-
 parcel_indicators <- read_csv("./data/processed/sfha_indicator_parcels.csv")
 
 
@@ -237,7 +235,6 @@ prelimsfha <- st_join(buildings, parcels_2024_prelimdatabase, join = st_intersec
 pin_indicators <- sfha2018 |> full_join(sfha2024, by = c("pin", "pin10", "DFIRM_ID"), suffix = c("2018", "2024"))
 
 pin_indicators <- pin_indicators |> full_join(prelimsfha, by = c("pin", "pin10", "DFIRM_ID"), suffix = c("", "prelim"))
-#lomr_join <- lomrs2018 |> full_join(lomrs2024, by = c("pin", "pin10", "DFIRM_ID"), suffix = c("2018", "2024"))
 
 
 
@@ -247,13 +244,16 @@ pin_indicators <- pin_indicators |> full_join(lomr_join)
 
 n_distinct(pin_indicators$pin) # 33434 unique PINs
 
-pin_indicators <- pin_indicators|>
+pin_indicators <- pin_indicators |>
   mutate(
-    sfha2018 = ifelse(!is.na(FLD_ZON2018), 1, 0),
-    sfha2024 = ifelse(!is.na(FLD_ZON2024), 1, 0),
-    prelimsfha = ifelse(!is.na(FLD_ZONE_prelim), 1, 0),
-    lomr2018 =  ifelse(!is.na(EFF_DATlomr2018), 1, 0),
-    lomr2024 = ifelse(!is.na(EFF_DATlomr2024), 1, 0)
+    sfha2018 = ifelse(!is.na(FLD_ZON2018), 1, NA),
+    sfha2024 = ifelse(!is.na(FLD_ZON2024), 1, NA),
+    prelimsfha = ifelse(!is.na(FLD_ZONE_prelim), 1, NA),
+    # if it has a value from the prelim database, 1, otherwise use 2024 sfha indicator <----wrong logic!!
+    # want coded as 1 if not missing, want coded as 0 if it was in prelim FIRM and no longer in SFHA, and want coded as sfha2024 otherwise for all other parts of cook county
+
+    lomr2018 =  ifelse(!is.na(EFF_DATlomr2018), 1, NA),
+    lomr2024 = ifelse(!is.na(EFF_DATlomr2024), 1, NA)
   )
 pin_indicators |> write_csv("./data/processed/sfha_indicator_buildings.csv")
 
