@@ -60,6 +60,7 @@ sales <- sales |>
 
 
 firm_dates <- readxl::read_xlsx("./data/raw/S_FIRM_PAN.xlsx") |>
+  mutate(EFF_DATE = ifelse(is.na(EFF_DATE), ymd("2008-08-19"), EFF_DATE)) |> # newly updated FIRMs originally had no effective date in hopes that they would become effective before dissertation was done. 
   mutate(PRE_DATE = as_date(PRE_DATE),
          EFF_DATE = as_date(EFF_DATE)) |>
   select(FIRM_PAN, old_panel, PRE_DATE, EFF_DATE)
@@ -99,6 +100,9 @@ sales <- sales |>
         removedfrom_eff_sfha = ifelse((sfha2018 == 1 & sfha2024 == 0 ) &
                                         sale_date > EFF_DATE, "MappedOut", "0"),
         
+        removedfrom_prelim_sfha = ifelse((sfha2018 == 1 & prelimsfha == 0 &
+                                            sale_date > PRE_DATE), "MappedOut", "0"),       
+        
         
         
     # create similar variable but for the preliminary date: model must deal with anticipation to change
@@ -112,7 +116,7 @@ sales <- sales |>
       
     in_prelim_sfha = ifelse(prelimsfha == 1 & sale_date >= PRE_DATE, "SFHA", in_prelim_sfha),
     
-    
+
     # LOMR indicator
     in_lomr       = if_else(sale_date >= (lomr_date) ,
                             "Received LOMR", "Not in LOMR"),
