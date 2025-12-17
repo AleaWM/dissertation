@@ -193,7 +193,8 @@ sales <- sales |>
                                                  "73093",  "74013",  "76010", "76011") ~ as_date("2019-11-01"),
       
       is.na(EFF_DATE) & neighborhood_code %in% c("28039","28100", "39200") ~ as_date("2021-09-10"),
-      TRUE ~ EFF_DATE),
+      TRUE ~ as_date(EFF_DATE)),
+    
     
     PRE_DATE = case_when(
       is.na(PRE_DATE) & neighborhood_code %in% c("10024", "19020", "19060", "24032","25160",  "30011", 
@@ -204,7 +205,7 @@ sales <- sales |>
                                                   "73093",  "74013",  "76010", "76011") ~ as_date("2015-02-15"),
       
       is.na(PRE_DATE) & neighborhood_code %in% c("28039","28100", "39200") ~ as_date("2019-06-28"),
-      TRUE ~ PRE_DATE)
+      TRUE ~ as_date(PRE_DATE))
     
   )
 
@@ -215,9 +216,6 @@ if (any(is.na(sales$EFF_DATE))) {
   stop("Missing EFF_DATE for ", n, " sale(s). Fill baseline 2008-08-19 where appropriate.")
 }
 
-
-# flag panels that actually got a 2019/2021 update
-is_updated_panel_eff <- function(d) d %in% as_date(c("2019-11-01", "2021-09-10"))
 
 # 2) After all backfills by neighborhood:
 sales <- sales |>
@@ -242,8 +240,8 @@ sales <- sales |>
     lomr2024   = replace_na(lomr2024, 0L),
     
     # prelimsfha: keep NA outside the prelim coverage window to avoid fabricating zeros countywide
-    # fills in 0s for PINs that were in the preliminary FIRM that were not in the SFHA.
-   # prelimsfha = if_else(PRE_DATE == as_date("2021-09-22") & is.na (prelimsfha), replace_na(prelimsfha, 0L), NA_integer_)
+    # fills in 0s for PINs that were in the preliminary FIRM that were not in the SFHA with values from the effective firm in the 2022 state geodatabase
+    prelimsfha = if_else(PRE_DATE == as_date("2021-09-22") & is.na(prelimsfha), sfha2024, prelimsfha)
   )
 
 sales1 <- sales |>
@@ -306,8 +304,8 @@ sales1 <- sales1 |>
     addedto_eff_sfha        =   (lag_eff != T) & (in_eff_sfha == TRUE),
     removedfrom_eff_sfha    =  (lag_eff != F)  & (in_eff_sfha == FALSE),
     
-    addedto_prelim_sfha     = (lag_pre != T) & (in_prelim_sfha == TRUE),
-    removedfrom_prelim_sfha = (lag_pre != F)  & (in_prelim_sfha == FALSE)
+    addedto_prelim_sfha     = (lag_eff != T) & (in_prelim_sfha == TRUE),
+    removedfrom_prelim_sfha = (lag_eff != F)  & (in_prelim_sfha == FALSE)
   ) |>
   ungroup()
 
