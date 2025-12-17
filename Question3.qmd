@@ -17,7 +17,7 @@ Areas flagged as damaged from individual assistance grants, PTAX245 appeal forms
 
 Printed article that uses FEMA disaster aid to identify "treated" census tracts, similar to what Io was going to do. (Doerner et al., 2025)
 
-I anticipate the largest capitalization of risk information to be in areas previously affected by significant flooding events.  I merge disaster damage data from OpenFEMA's Individual Assistance Program dataset. Many authors use FEMA's Federal Insurance and Mitigation Administration (FIMA) National Flood Insurance Program (NFIP) Redacted Claims data for identifying impacted areas, but since I am studying inland areas with very few NFIP policies, I cannot use the Redacted Claims data set. See descriptive stats in a different quarto document for the number of policies / claims in Cook County compared to the number of individual aid grants after a disaster. Individual Assistance applications have some fields redacted to protect personally idnetifiable information, but they are geolocated to the _____  level.
+I anticipate the largest capitalization of risk information to be in areas previously affected by significant flooding events.  I merge disaster damage data from OpenFEMA's Individual Assistance Program dataset. Many authors use FEMA's Federal Insurance and Mitigation Administration (FIMA) National Flood Insurance Program (NFIP) Redacted Claims data for identifying impacted areas, but since I am studying inland areas with very few NFIP policies, I cannot use the Redacted Claims data set. See descriptive stats in a different quarto document for the number of policies / claims in Cook County compared to the number of individual aid grants after a disaster. Individual Assistance applications have some fields redacted to protect personally identifiable information, but they are geolocated to the _____  level.
 
 
 Because this event happens to all properties in an area at once, there is not a need for a staggered rollout design. 
@@ -37,15 +37,33 @@ library(skimr)
 
 
 ```{r warning = FALSE, message = FALSE}
-df_pairs <- readRDS("data/processed/df_pairs.RDS")
-ff_pairs <- readRDS("data/processed/ff_pairs.rds")
-df_prep <- readRDS("data/processed/df_prep.rds")
+df_prep <- readRDS("data/processed/df_prep_buildings_TEST.rds") |>
+  mutate(
+      sale_label = paste0(year(sale_date), " Q", quarter(sale_date)),
+    sale_quarter = quarter(sale_date),  # values 1–4 
+    )
 
-res_pins_permuni = read_csv("../Merriman RA/ptax/Output/ptaxsim_muni_level_2006to2023_new.csv") |>
+
+blockgroups <- read_csv("./data/raw/census_blockgroups.csv") 
+
+tr_blocks <- read_csv("./data/processed/treated_census_blocks.csv") |> select(-residenceType) |> filter(censusGeoid !="NULL") |> distinct()
+
+table(tr_blocks$disasterNumber)
+
+notused_blockgroups <- blockgroups |>
+  filter(!census_block_group_geoid %in% tr_blocks$censusGeoid) |> distinct(census_block_group_geoid)
+
+n_distinct(blockgroups$pin)
+# still has duplicates but fine for now
+```
+
+
+```{r warning = FALSE, message = FALSE}
+res_pins_permuni = read_csv("../Merriman RA/ptax/Output/ptaxsim_muni_level_2006to2023.csv") |>
   select(year, clean_name, muni_parcels, muni_PC_residential, muni_PC_total, mean_av_c2, muni_fmv, muni_fmv_c2_res, muni_fmv_residential, muni_c2_taxed, muni_res_taxed, muni_eav_taxed ) #|>
 #filter(year %in% c(2006, 2023) )
 
-mc_pins_permuni = read_csv("../Merriman RA/ptax/Output/ptaxsim_muni_MC_2006to2023_new.csv") |>
+mc_pins_permuni = read_csv("../Merriman RA/ptax/Output/ptaxsim_muni_MC_2006to2023.csv") |>
   rename_with(~ str_remove(., "muni_mc_"), starts_with("muni_mc_"))|>
   select(year, clean_name, parcels, major_class_code, PC_residential, PC_major_class, fmv, fmv_c2_res, fmv_residential, eav_taxed ) |>
   filter(year %in% c(2006, 2023) &
@@ -86,7 +104,7 @@ Create variable that calculates the % of residential pins in an area that have s
 # Research Question 3
 
 
-> Beltran et al. uses repeat sales for an post flood event study.
+> Beltran et al. uses repeat sales for a post-flood event study.
 
 Treatment group is distinguished with a dummy variable for floodplain location (`in_eff_sfha`) and the treatment refers to the occurrence of a flood. The timing is the date of the sale in relation to the flood event. 
 
@@ -98,23 +116,10 @@ Variable `flooded` indicates that the 1st sale was before the flood event and th
 H4: Experiencing a flood event conveys new risk information. Properties damaged by a flood event that were not in an SFHA experience a decrease in value larger than damaged properties that were in an SFHA. 
 
 
-> treated zipcodes file! or treated census blocks? from Individual Assistance version updated by FEMA.
+> treated zipcodes file! or treated census blocks from Individual Assistance version updated by FEMA.
+
 
 **Areas impacted:** can use pins near the pins that submitted PTAX 245 forms or use the zipcodes or census blocks from the individual assistance post disaster aid data from FEMA. 
-
-## Flood Event 2013
-
-```{r}
-# areas impacted by 2013 flood events
-tr_zips <- read_csv("./data/processed/treated_zipcodes.csv") |>
-  filter( year == 2010 
-         # | year == 2013
-          )
-
-tr_zips|> arrange(desc(claimcount))
-
-df_pairs |> group_by(zip_code) |> summarise(n = n_distinct(pin)) |> arrange(desc(n))
-```
 
 
 ## Flood Event 2023 - Disaster Declarations / Lived Experience
@@ -125,21 +130,147 @@ Cicero and Berwyn had lots of damage during DR 4728. Cicero had 25,836 housing u
 
 Dolton and Calumet City were damaged during DR 4749.
 
+
+### Census Block Groups
+
+
 ```{r}
+tr_blocks_4728 <- tr_blocks |>
+  filter( year == 2023 & disasterNumber == 4728 & 
+            censusGeoid !="NULL" & 
+            #   owners > 40
+            claimcount > 150
+  ) |> 
+  distinct()
 
-# areas impacted by 2013 flood events
-tr_zips <- read_csv("./data/processed/treated_zipcodes.csv") |>
-  filter( year == 2023)
+df_prep2 <- df_prep |> left_join(blockgroups)|>
+  group_by(pin)|>
+  filter(any(sale_year >= 2023)) |> 
+ # filter(first(sale_year) > 2017) |> 
+  ungroup() |>
+  mutate(treated = ifelse(census_block_group_geoid %in% tr_blocks_4728$censusGeoid,
+                          #   & sale_year > 2023, 
+                          "Treated", "Not Treated"),
+         post_event = ifelse(sale_date > as_date("2023-07-03"), TRUE, FALSE))
 
-df_flooded <- df_pairs |>
-  filter(sale_date_t1 < as_date("2023-06-29") & sale_date_t2 > as_date("2023-06-29") )
+table(df_prep2$treated)
 
-df_flooded <- df_flooded |>
-  mutate(treated = ifelse(zip_code %in% tr_zips$damagedZipCode, "Treated", "Not Treated"))
+df_prep2 |># filter(clean_name %in% c("Cicero", "Berwyn","Oak Park", "Forest Park")) |> 
+  group_by(treated, post_event, Triad, sale_year) |> 
+  summarize(n_sales = n()) |> 
+  ggplot() + 
+  geom_vline(xintercept = 2023.5) +  
+  geom_line(aes(x=sale_year, y = n_sales, color = treated, lty = post_event
+                           )) + #+ labs(title = "Cicero, Berwyn, and Oak Park Sales")
+  facet_wrap(~Triad)
 
-table(df_flooded$treated)
+df_prep2 |> filter(treated == "Treated" & post_event == TRUE & times_sold > 1) |> arrange(pin)
 ```
 
+
+```{r}
+feols(log(sale_price) ~ treated*post_event*change_type | pin + sale_year , 
+     cluster = ~ pin + clean_name,
+      data = df_prep2) |> modelsummary::modelsummary(stars = TRUE)
+```
+
+```{r}
+tr_blocks_4749 <- tr_blocks |>
+  filter( year == 2023 & disasterNumber == 4749 & censusGeoid!="NULL" & owners > 40) |> distinct()
+
+df_prep2 <- df_prep |> left_join(blockgroups)|>
+  group_by(pin)|>
+ filter(any(sale_year >= 2023)) |> 
+   filter(first(sale_year) > 2017) |> 
+
+  ungroup() |>
+  mutate(treated = ifelse(census_block_group_geoid %in% tr_blocks_4749$censusGeoid,
+                         # & sale_year > 2023, 
+                          "Treated", "Not Treated"),
+         post_event = ifelse(sale_date > as_date("2023-09-15"), TRUE, FALSE))
+
+df_prep2 |> filter(clean_name %in% c("Calumet City", "Dolton","Burnham")) |> group_by(sale_year, treated) |> summarize(n_sales = n()) |> 
+  ggplot() + geom_vline(xintercept = 2023.6) + geom_line(aes(x=sale_year, y = n_sales, group = treated, color = treated
+                           ))
+
+table(df_prep2$treated) 
+
+feols(log(sale_price) ~ treated*post_event | pin + sale_year , 
+     cluster = ~ pin,
+      data = df_prep2) |> summary()
+```
+
+
+### By Zipcodes
+
+```{r}
+
+# areas impacted by 2023 flood events
+tr_zips_4728 <- read_csv("./data/processed/treated_zipcodes.csv") |>
+  filter( year == 2023 & disasterNumber == 4728 & flood_damaged > 200)
+
+
+df_prep2 <- df_prep |>
+    group_by(pin)|>
+ filter(any(sale_year >= 2023)) |> 
+   filter(first(sale_year) > 2017) |> 
+
+  ungroup() |>
+  mutate(treated = ifelse(zip_code %in% tr_zips_4728$damagedZipCode,
+                        #  & sale_year > 2023, 
+                          "Treated", "Not Treated"),
+         post_event = ifelse(sale_year > 2023, TRUE, FALSE))
+
+table(df_prep2$treated)
+
+
+df_prep2 |> # filter(clean_name %in% c("Cicero", "Berwyn","Oak Park")) |> 
+  group_by(sale_year, treated) |> summarize(n_sales = n()) |> 
+  ggplot() + 
+  geom_vline(xintercept = 2023) +
+  geom_line(aes(x=sale_year, y = n_sales, group = treated, color = treated
+                           ))
+
+feols(log(sale_price) ~ treated*post_event | pin + sale_year , 
+     cluster = ~ pin,
+      data = df_prep2) |> summary()
+```
+
+```{r}
+
+# areas impacted by 2023 flood events
+tr_zips_4749 <- read_csv("./data/processed/treated_zipcodes.csv") |>
+  filter( year == 2023 & disasterNumber == 4749 & flood_damaged > 200)
+
+
+df_prep2 <- df_prep |>
+    group_by(pin)|>
+ filter(any(sale_year >= 2023)) |> 
+   filter(first(sale_year) > 2017) |> 
+
+  ungroup() |>
+  mutate(treated = ifelse(zip_code %in% tr_zips_4749$damagedZipCode,
+                        #  & sale_year > 2023, 
+                          "Treated", "Not Treated"),
+         post_event = ifelse(sale_year > 2023, TRUE, FALSE))
+
+table(df_prep2$treated)
+
+
+df_prep2 |> # filter(clean_name %in% c("Cicero", "Berwyn","Oak Park")) |> 
+  group_by(sale_year, treated) |> summarize(n_sales = n()) |> 
+  ggplot() + 
+  geom_vline(xintercept = 2023.5) +
+  geom_line(aes(x=sale_year, y = n_sales, group = treated, color = treated
+                           ))
+
+feols(log(sale_price) ~ treated*post_event*change_type | pin + sale_year , 
+     cluster = ~ pin,
+      data = df_prep2) |> summary()
+```
+
+
+### PTAX245 forms
 
 ```{r}
  
@@ -164,7 +295,7 @@ ptax245 <- ptax245 %>%
 
 ptax_pins <- ptax245 |> select(pin) |> pull()
 
-df_pairs <- df_pairs |> mutate(flood2023 = ifelse(pin %in% ptax245, 1, 0))
+df_prep <- df_prep|> mutate(flood2023 = ifelse(pin %in% ptax245, 1, 0))
 
 ```
 
@@ -174,7 +305,7 @@ df_pairs <- df_pairs |> mutate(flood2023 = ifelse(pin %in% ptax245, 1, 0))
 #| include: false
 #| eval: false
 
-df_pairs %>% filter(pin %in% ptax245)
+df_prep %>% filter(pin %in% ptax245)
 
 ```
 
@@ -188,10 +319,49 @@ Cook County also had disaster declarations in 1993, 1996, 1997, 2007, 2009, 2010
 
 
 
+
+
+
+## Flood Event 2013
+
+
+
+
 ```{r}
-flooded_pairs <- df_pairs |>  
-  mutate(
-    flooded = ifelse(sale_date_t1 < as_date(2023-07-01) & sale_date_t2 >= as_date(2023-07-01), TRUE, FALSE),
-  ) 
+# areas impacted by 2013 flood events
+tr_zips <- read_csv("./data/processed/treated_zipcodes.csv") |>
+  filter( ( year == 2013  
+          ) & flood_damaged > 200)
+
+tr_zips|> arrange(desc(claimcount))
+
+df_prep |> group_by(zip_code) |> summarise(n = n_distinct(pin)) |> arrange(desc(n))
+
+
+
+df_prep2 <- df_prep |>
+    group_by(pin)|>
+ filter(any(sale_year < 2013)) |> 
+
+  ungroup() |>
+  mutate(treated = ifelse(zip_code %in% tr_zips$damagedZipCode,
+                        #  & sale_year > 2023, 
+                          "Treated", "Not Treated"),
+         post_event = ifelse(sale_year > 2013, TRUE, FALSE))
+
+table(df_prep2$treated)
+
+
+df_prep2 |> # filter(clean_name %in% c("Cicero", "Berwyn","Oak Park")) |> 
+  group_by(sale_year, treated) |> summarize(n_sales = n()) |> 
+  ggplot() + 
+  geom_vline(xintercept = 2012.5) +
+  geom_line(aes(x=sale_year, y = n_sales, group = treated, color = treated
+                           ))
+
+feols(log(sale_price) ~ treated*post_event*change_type | pin + sale_year , 
+     cluster = ~ pin,
+      data = df_prep2) |> summary()
 ```
+
 
