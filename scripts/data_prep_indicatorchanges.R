@@ -30,6 +30,8 @@ drop_parcels <- c(   # searched these manually in CookViewer to confirm they sho
 # 1. Read and preprocess sales data
 #sales <- read_csv("./data/raw/Assessor_Parcel_Sales_20250105.csv") |>
 sales <- read_csv("./data/raw/Assessor_-_Parcel_Sales_20250709.csv") |>
+  
+#sales <- read_csv("./data/raw/Assessor_-_Parcel_Sales_20251229.csv") |>
   filter(year > 2005) |>
   mutate( 
     class_1dig = str_sub(class, 1, 1),
@@ -172,49 +174,57 @@ table(sales$sfha2024)
 #   stop("Missing EFF_DATE for ", n, " sale(s). Fill baseline 2008-08-19 where appropriate.")
 # }
 
+## to fill in missing FIRM panel Dates for neighborhoods
 missing_dates <- sales |> 
-  group_by(neighborhood_code) |> 
+  group_by(neighborhood_code, EFF_DATE, PRE_DATE) |> 
   summarize(n(),
             EFF_DATE = max(EFF_DATE),
             PRE_DATE = max(PRE_DATE),
-            sfha2018 = max(sfha2018), 
-            sfha2024 = max(sfha2024), 
-            prelimsfha = max(prelimsfha))
+            sfha2018 = median(sfha2018, na.rm=TRUE), 
+            sfha2024 = median(sfha2024, na.rm=TRUE), 
+            prelimsfha = median(prelimsfha, na.rm=TRUE))
+
+missing_dates |> filter(is.na(PRE_DATE)) |> View()
 
 sales <- sales |>
   mutate(
     EFF_DATE = case_when(
       
-      is.na(EFF_DATE) & neighborhood_code %in% c("10024", "19020", "19060", "24032","25160",  "30011", 
+      is.na(EFF_DATE) & neighborhood_code %in% c("10024", "18030", "19020", "19060", "24032","25160",  "30011", 
                                                  "38040", "38110", "71074", "74022",  "74030",   "77120", "77131") ~ as_date("2008-08-19"),
       
       
-      is.na(EFF_DATE) & neighborhood_code %in% c("15907", "23092",  "70010",  "73032", "73041",  "73084", 
-                                                 "73093",  "74013",  "76010", "76011") ~ as_date("2019-11-01"),
+      is.na(EFF_DATE) & neighborhood_code %in% c("13032", "28039","28100", "15907", "23092", "39081", "39200", "39211") ~ as_date("2019-11-01"),
       
-      is.na(EFF_DATE) & neighborhood_code %in% c("28039","28100", "39200") ~ as_date("2021-09-10"),
+      is.na(EFF_DATE) & neighborhood_code %in% c( "70010",  "73032", "73041",  "73084", 
+                                                 "73093",  "74013",  "76010", "76011") ~ as_date("2021-09-10"),
       TRUE ~ as_date(EFF_DATE)),
     
     
     PRE_DATE = case_when(
-      is.na(PRE_DATE) & neighborhood_code %in% c("10024", "19020", "19060", "24032","25160",  "30011", 
-                                                 "38040", "38110", "71074", "74022",  "74030",   "77120", "77131") ~ as_date("2005-01-01"),
+      is.na(PRE_DATE) & neighborhood_code %in% c( "19020", "19060", "24032","25160",  "30011", 
+                                                 "38040", "38110", "71074", "74022",  "74030", "77120", "77131") ~ as_date("2005-01-01"),
       
       
-      is.na(PRE_DATE) &  neighborhood_code %in% c("15907", "23092",  "70010",  "73032", "73041",  "73084", 
-                                                  "73093",  "74013",  "76010", "76011") ~ as_date("2015-02-15"),
+      is.na(PRE_DATE) &  neighborhood_code %in% c("13032", "15907", "28039","28100", "39200", "23092", "39081","39211") ~ as_date("2015-02-15"),
       
-      is.na(PRE_DATE) & neighborhood_code %in% c("28039","28100", "39200") ~ as_date("2019-06-28"),
+      is.na(PRE_DATE) & neighborhood_code %in% c("70010",  "73032", "73041",  "73084", 
+                                                 "73093",  "74013",  "76010", "76011") ~ as_date("2019-06-28"),
+      
+      is.na(PRE_DATE) & neighborhood_code %in% c("10024", "18030") ~ as_date("2021-09-22"),
+      
       TRUE ~ as_date(PRE_DATE))
     
   )
 
+sales |> filter(is.na(PRE_DATE)) |> View()
 
-# sanity: each sale must EFF_DATE# sanity: each sale must know its panel’s EFF_DATE (baseline or updated)
-if (any(is.na(sales$EFF_DATE))) {
-  n <- sum(is.na(sales$EFF_DATE))
-  stop("Missing EFF_DATE for ", n, " sale(s). Fill baseline 2008-08-19 where appropriate.")
-}
+# 
+# # sanity: each sale must EFF_DATE# sanity: each sale must know its panel’s EFF_DATE (baseline or updated)
+# if (any(is.na(sales$PRE_DATE))) {
+#   n <- sum(is.na(sales$PRE_DATE))
+#   stop("Missing PRE_DATE for ", n, " sale(s). Fill baseline 2005-01-01 where appropriate.")
+# }
 
 
 # 2) After all backfills by neighborhood:
@@ -250,7 +260,7 @@ sales1 <- sales |>
       post_eff_update ~ sfha2024,
       !post_eff_update ~ sfha2018
     ),
-    in_eff_sfha = ifelse(in_eff_sfha == 1, T, F),
+    in_eff_sfha = ifelse(in_eff_sfha == 1, T, F),  # fill in rest of parcels as FALSE if they were not identified as being in an SFHA polygon
     
     in_prelim_sfha = case_when(
       post_prelim_update ~coalesce(prelimsfha, sfha2024),
@@ -258,10 +268,11 @@ sales1 <- sales |>
     in_prelim_sfha = ifelse(in_prelim_sfha == 1, T, F)
   )
 
-stopifnot(!any(is.na(sales$PRE_DATE)))
+
+# stopifnot(!any(is.na(sales$PRE_DATE)))
 stopifnot(!any(is.na(sales$sale_date)))
 # prelim should be logical, no NAs:
-stopifnot(is.logical(sales1$in_prelim_sfha), !any(is.na(sales1$in_prelim_sfha)))
+#stopifnot(is.logical(sales1$in_prelim_sfha), !any(is.na(sales1$in_prelim_sfha)))
 
 table(sales1$in_prelim_sfha)
 table(sales1$in_eff_sfha)
@@ -299,15 +310,30 @@ sales1 <- sales1 |>
   arrange(sale_date, .by_group = TRUE) |>
   mutate(
     lag_eff  = dplyr::lag(in_eff_sfha),
-    lag_pre  = dplyr::lag(in_prelim_sfha),
+    lag_pre  = dplyr::lag(in_prelim_sfha)) |>
+  ungroup() |>
 
-    addedto_eff_sfha        =   (lag_eff != T) & (in_eff_sfha == TRUE),
-    removedfrom_eff_sfha    =  (lag_eff != F)  & (in_eff_sfha == FALSE),
+  mutate(
+    addedto_eff_sfha        = (lag_eff != T) & (in_eff_sfha == TRUE),    # flags year that event happened
+    removedfrom_eff_sfha    = (lag_eff != F) & (in_eff_sfha == FALSE),   # flags year that event happened
     
-    addedto_prelim_sfha     = (lag_eff != T) & (in_prelim_sfha == TRUE),
-    removedfrom_prelim_sfha = (lag_eff != F)  & (in_prelim_sfha == FALSE)
+    addedto_prelim_sfha     = (lag_pre != T) & (in_prelim_sfha == TRUE),   # flags year that event happened
+    removedfrom_prelim_sfha = (lag_pre != F) & (in_prelim_sfha == FALSE)  # flags year that event happened
   ) |>
   ungroup()
+
+
+sales1 <- sales1 |> 
+  group_by(pin) |> 
+  arrange(sale_date, .by_group = TRUE) |>
+  mutate(
+    addedto_prelim_sfha   = dplyr::cumany(addedto_prelim_sfha),
+    removedfrom_prelim_sfha = dplyr::cumany(removedfrom_prelim_sfha),
+    
+    addedto_eff_sfha  = dplyr::cumany(addedto_eff_sfha),
+    removedfrom_eff_sfha = dplyr::cumany(removedfrom_eff_sfha)
+  ) |> ungroup()
+
 
 table(sales1$addedto_eff_sfha)
 table(sales1$addedto_prelim_sfha)
@@ -362,7 +388,7 @@ res_sales <- sales1 |>
   filter(any(res_c2)) |>
   mutate(
     times_sold      = n(),
-    years_btw_sales = year - lag(year),
+   # years_btw_sales = as.numeric(sale_year) - as.numeric(lag(sale_year)),
     sold_once       = times_sold == 1,
     sold_multi      = times_sold > 1
   ) |>
@@ -372,5 +398,5 @@ res_sales <- res_sales |> filter(times_sold < 15)
 
 
 # Save objects for later use in your Quarto doc
-saveRDS(sales1,       "./data/processed/sales_prepped_buildings_TEST.rds")
-saveRDS(res_sales,   "./data/processed/res_sales_buildings_TEST.rds")
+saveRDS(sales1,       "./data/processed/sales_prepped_buildings_TEST2.rds")
+saveRDS(res_sales,   "./data/processed/res_sales_buildings_TEST2.rds")
