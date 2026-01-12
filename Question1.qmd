@@ -12,6 +12,7 @@ format:
     fig-cap-location: top
     warning: false
     message: false
+  #  error: true
 ---
 
 # Data Sources and Background Information
@@ -32,7 +33,8 @@ library(modelsummary)
 > If property is in SFHA and LOMR, both variables will be coded as 1. I no longer "remove" the SFHA indicator if it is in a LOMR.
 
 ```{r}
-df_prep <- readRDS("data/processed/df_prep_buildings_TEST.rds")
+df_prep <- readRDS("data/processed/df_prep_parcels_20260109.rds") |>
+  filter(pin10 != "1129315024")  # Building on sherwin. Land is in Coastal SFHA for 2018 but building is not. 
 
 res_sales <- readRDS("./data/processed/df_allsales.rds")
 ```
@@ -61,6 +63,7 @@ res_sales <- res_sales |>
            !is.na(Triad)
          )
 
+#res_sales <- res_sales |> distinct(pin, sale_date, sale_price, .keep_all = TRUE)
 
 # remove duplicates
 
@@ -122,23 +125,21 @@ skim(df_prep)
 
 ## Variable Coding
 
-> Note: there are PINs located in LOMRs that are NOT located in SFHAs (like in Wheeling, where nearly the entire area is in one large LOMR.) Because I am looking at the removal of the flood insurance requirement, I only code properties as being in a lomr if they are also in an SFHA. 
-
-
-> Check relative year is calculated. Can it be +.5 and-.5 instead of 0?
 
 ```{r recode-dfpreptest}
-df_prep <- df_prep |>
-  mutate(
-    in_eff_sfha = ifelse(is.na(in_eff_sfha), FALSE, in_eff_sfha),
-    in_prelim_sfha = ifelse(is.na(in_prelim_sfha), FALSE, in_prelim_sfha),
-
-    addedto_eff_sfha = ifelse(is.na(addedto_eff_sfha), FALSE, addedto_eff_sfha),
-    removedfrom_eff_sfha = ifelse(is.na(removedfrom_eff_sfha), FALSE, removedfrom_eff_sfha),
-    addedto_prelim_sfha = ifelse(is.na(addedto_prelim_sfha), FALSE, addedto_prelim_sfha),
-    removedfrom_prelim_sfha = ifelse(is.na(removedfrom_prelim_sfha), FALSE, removedfrom_prelim_sfha)
-
-         )
+table(df_prep$pre_date)
+# df_prep <- df_prep |>
+#   mutate(
+#     in_eff_sfha = ifelse(is.na(in_eff_sfha), FALSE, in_eff_sfha),
+#     in_prelim_sfha = ifelse(is.na(in_prelim_sfha), FALSE, in_prelim_sfha),
+#     
+#     addedto_eff_sfha = ifelse(is.na(addedto_eff_sfha), FALSE, addedto_eff_sfha),
+#     removedfrom_eff_sfha = ifelse(is.na(removedfrom_eff_sfha), FALSE, removedfrom_eff_sfha),
+#     
+#     addedto_prelim_sfha = ifelse(is.na(addedto_prelim_sfha), FALSE, addedto_prelim_sfha),
+#     removedfrom_prelim_sfha = ifelse(is.na(removedfrom_prelim_sfha), FALSE, removedfrom_prelim_sfha)
+# 
+#          )
 
 df_prep <- df_prep |>
   
@@ -152,7 +153,17 @@ df_prep <- df_prep |>
    # removed_out_prelim = removedfrom_prelim_sfha == TRUE,# & in_lomr != TRUE
   ) |>
   group_by(pin) |>
+  arrange(sale_date) |>
   mutate(
+    
+    # 
+    # addedto_prelim_sfha   = dplyr::cumany(addedto_prelim_sfha),
+    # removedfrom_prelim_sfha = dplyr::cumany(removedfrom_prelim_sfha),
+    # 
+    # addedto_eff_sfha  = dplyr::cumany(addedto_eff_sfha),
+    # removedfrom_eff_sfha = dplyr::cumany(removedfrom_eff_sfha),
+    # 
+    # 
     # first year it was mapped IN (per PIN)
     treat_year_add_eff = ifelse((any(addedto_eff_sfha== TRUE) )
                                  & eff_date_chr != "2008-08-19", 
@@ -183,192 +194,122 @@ df_prep <- df_prep |>
     
     
     rel_year_add_prelim    = ifelse(treat_year_add_prelim != 10000,    sale_year - treat_year_add_prelim,    -1000),
-    rel_year_add_prelim = ifelse(rel_year_add_prelim == 0 & sale_date < pre_date, -1, rel_year_add_prelim),
-    rel_year_remove_prelim = ifelse(treat_year_remove_prelim != 10000, sale_year - treat_year_remove_prelim, -1000),
-    rel_year_remove_prelim = ifelse(rel_year_remove_prelim ==0 & sale_date < pre_date, -1, rel_year_remove_prelim)
+        rel_year_remove_prelim = ifelse(treat_year_remove_prelim != 10000, sale_year - treat_year_remove_prelim, -1000),
     
+    # adjustment for if a sale occurs in the same year that it is treated
+    # if sale is before preliminary firm, it is coded as relative year == -1, not yet treated
+    rel_year_add_prelim = ifelse(rel_year_add_prelim == 0 & sale_date < pre_date, -1, rel_year_add_prelim),
+    rel_year_remove_prelim = ifelse(rel_year_remove_prelim == 0 & sale_date < pre_date, -1, rel_year_remove_prelim),
+   
+        rel_year_add_eff = ifelse(rel_year_add_eff == 0 & sale_date < eff_date, -1, rel_year_add_eff),
+    rel_year_remove_eff = ifelse(rel_year_remove_eff == 0 & sale_date < eff_date, -1, rel_year_remove_eff)
+        
   ) |>
   mutate(
-    qtr  = quarter(sale_date),     # 1..4
+    qtr  = quarter(sale_date),     # 1 to 4
     year = year(sale_date),            
     sale_qtr_dec = year + (qtr - 1) / 4,        # 2012.00, .25, .50, .75
     
-    group_name = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated.
+    group_name_eff = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated.
       # used for callaway way I think? Delete soon or move. not needed for S&A method
       eff_date == "2008-08-19" ~ 0,
       eff_date == "2019-11-01" ~ 2019,
       eff_date == "2021-09-10" ~ 2021,
       TRUE ~ NA),
     
-    # delete once checked that code still works if commented out
-   # rel_time = round(lubridate::as.difftime(sale_date - eff_date) / 365), # get it to approximate years from event
-  #  time_to_treat = round((sale_date - eff_date)/365)
-    )
-```
+    # 2005-01-01 2015-02-15 2019-06-28 2021-09-22 
 
-
-```{r recode-df_prep}
-#| eval: false
-
-table(df_prep$addedto_eff_sfha)
-
-df_prep <- df_prep |> 
-  # pin didn't exist in 2018 but did in 2024, so got considered as mapped out?
-  mutate(
-    removedfrom_eff_sfha = ifelse(pin10 == "1729309054", "0", removedfrom_eff_sfha),
-         )
-
-
-
-
-df_prep$removedfrom_eff_sfha
-  
-df_prep <- df_prep |>
-  
-  mutate(
-    # so I can subset by FIRM date in later steps
-    eff_date_chr = as.factor(eff_date),
-    pre_date_chr = as.factor(pre_date),
-    
-    added_in    = addedto_eff_sfha == "MappedIn",
-    removed_out = removedfrom_eff_sfha == "MappedOut" & in_lomr != "Received LOMR",
-    added_in_prelim    = addedto_prelim_sfha == "MappedIn",
-    removed_out_prelim = removedfrom_prelim_sfha == "MappedOut" & in_lomr != "Received LOMR"
-  ) |>
-  group_by(pin) |>
-  mutate(
-    # first year it was mapped IN (per PIN)
-    treat_year_add_eff = ifelse((any(added_in == TRUE) ), 
-                                # & eff_date_chr != "2008-08-19", 
-                                year(eff_date), 10000),  # never treated set to 10,000
-    
-    # first year it was mapped OUT (per PIN)
-    treat_year_remove_eff = ifelse(any(removed_out== TRUE)
-                                   & eff_date_chr != "2008-08-19", 
-                                   year(eff_date), 10000),
-    
-    
-    # Added ore removed from Preliminary FIRMs
-    treat_year_add_prelim = ifelse((any(added_in_prelim == TRUE) ), year(pre_date), 10000),  # never treated set to 10,000
-    
-    # first year it was mapped OUT (per PIN)
-    treat_year_remove_prelim = ifelse(any(removed_out_prelim== TRUE), year(pre_date), 10000)
-    
-    
-  ) |>
-  ungroup() |>
-  mutate(
-    
-    # Event time (relative year) for each outcome
-    # coded to match S&A's method of relative time
-    
-    rel_year_add_eff    = ifelse(treat_year_add_eff != 10000,    sale_year - treat_year_add_eff,    -1000),
-    rel_year_remove_eff = ifelse(treat_year_remove_eff != 10000, sale_year - treat_year_remove_eff, -1000),
-    
-    
-    rel_year_add_prelim    = ifelse(treat_year_add_prelim != 10000,    sale_year - treat_year_add_prelim,    -1000),
-    rel_year_add_prelim = ifelse(rel_year_add_prelim == 0 & sale_date < pre_date, -1, rel_year_add_prelim),
-    rel_year_remove_prelim = ifelse(treat_year_remove_prelim != 10000, sale_year - treat_year_remove_prelim, -1000),
-    rel_year_remove_prelim = ifelse(rel_year_remove_prelim ==0 & sale_date < pre_date, -1, rel_year_remove_prelim)
-    
-  ) |>
-  mutate(
-    qtr  = quarter(sale_date),     # 1..4
-    year = year(sale_date),            
-    sale_qtr_dec = year + (qtr - 1) / 4,        # 2012.00, .25, .50, .75
-    
-    group_name = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated.
+    group_name_prelim = factor(case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated.
       # used for callaway way I think? Delete soon or move. not needed for S&A method
-      eff_date == "2008-08-19" ~ 0,
-      eff_date == "2019-11-01" ~ 2019,
-      eff_date == "2021-09-10" ~ 2021,
+      pre_date == "2005-01-01" ~ 0,
+      pre_date == "2015-02-12" ~ 2015,
+      pre_date == "2019-07-01" ~ 2019,
+      pre_date == "2021-09-22" ~ 2021,
+
       TRUE ~ NA),
-    
-    # delete once checked that code still works if commented out
-   # rel_time = round(lubridate::as.difftime(sale_date - eff_date) / 365), # get it to approximate years from event
-  #  time_to_treat = round((sale_date - eff_date)/365)
+      
+      ),
+    treated_group_prelim = factor(case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated.
+      # used for callaway way I think? Delete soon or move. not needed for S&A method
+      pre_date == "2005-01-01" & (addedto_prelim_sfha|removedfrom_prelim_sfha) ~ 0,
+      pre_date == "2015-02-12" &  (addedto_prelim_sfha|removedfrom_prelim_sfha)~ 2015,
+      pre_date == "2019-07-01" & (addedto_prelim_sfha|removedfrom_prelim_sfha) ~ 2019,
+      pre_date == "2021-09-22" & (addedto_prelim_sfha|removedfrom_prelim_sfha) ~ 2021,
+
+      TRUE ~ NA))
     )
+
+# same concept as grouping by dfirm 
+table(df_prep$group_name_prelim)  # number of sales from each area that was updated in cook county
+table(df_prep$addedto_prelim_sfha, df_prep$group_name_prelim)
+table(df_prep$removedfrom_prelim_sfha, df_prep$group_name_prelim)
+
+
+table(df_prep$treated_group_prelim)
 ```
+
 
 ```{r}
-#| tbl-cap: "Observations per year. Includes the pre and post treatment sales for those that were added or removed from an SFHA"
-#| layout-ncol: 2
+table(df_prep$treat_year_remove_prelim, df_prep$Triad)
+table(df_prep$treat_year_add_prelim, df_prep$Triad)
 
-table(df_prep$sale_year, df_prep$treat_year_add_eff)
-
-table(df_prep$sale_year, df_prep$treat_year_remove_eff)
 ```
+
+
+## Preliminary FIRM descriptive Stats
 
 
 ```{r}
 #| tbl-cap: "Observations per year. Added to (removed from) Effective SFHA"
 #| layout-ncol: 2
 
-table(df_prep$sale_year[df_prep$sale_year>=2016], df_prep$addedto_eff_sfha[df_prep$sale_year>=2016])
+table(df_prep$sale_year[df_prep$sale_year>=2016], df_prep$addedto_prelim_sfha[df_prep$sale_year>=2016])
 
-table(df_prep$sale_year[df_prep$sale_year>=2016], df_prep$removedfrom_eff_sfha[df_prep$sale_year>=2016])
+table(df_prep$sale_year[df_prep$sale_year>=2016], df_prep$removedfrom_prelim_sfha[df_prep$sale_year>=2016])
 ```
 
 
-```{r}
-df_prep  |> 
-  group_by(sale_year, in_eff_sfha, in_lomr) |> summarize(n = n())
-
-df_prep  |> 
-  group_by(sale_year, removedfrom_eff_sfha, in_lomr) |> summarize(n = n())
-
-
-df_prep  |> group_by(sale_year, ins_req) |> summarize(n=n())
-table(df_prep$sale_year, df_prep$ins_req)
-```
-
-```{r}
-#| eval: false
-
-# groups by PIN and year and calculates the average sale price (PLM does not like duplicate observations per id-time unit in its panel regressions).
-
-df_prep |> group_by(pin, sale_year) |> 
-  mutate(n = n()) |>
-  filter(n() > 1) |>
-  select(pin, n, sale_year, flood_factor_score, sale_price) |> arrange(desc(n))
-
-df_prep |> group_by(pin, sale_year) |> filter(n() > 1) |> ungroup() |> distinct(pin)
-
-df_prep |> group_by(pin, sale_year) |>  
-  filter(n() > 1) |> # keep only PINs that sold multiple times within a year
-  mutate(parcel = str_sub(pin, 1, 10) ) |>
-  mutate(pins_in_pacel = n_distinct(pin)) |>
-  arrange(desc(pins_in_pacel)) |>
-  filter(n() > 1) |> ungroup() |> distinct(parcel)
-
-```
-
-```{r}
-table(df_prep$eff_date_chr)
-table(df_prep$pre_date_chr)
-
-table(df_prep$addedto_eff_sfha)
-table(df_prep$removedfrom_eff_sfha)
-
+```{r} 
+table(df_prep$group_name_prelim)    # treated and nontreated  properties in each group of panels updated
 table(df_prep$addedto_prelim_sfha)
 table(df_prep$removedfrom_prelim_sfha)
 ```
 
 
 ```{r}
-#| include: false
+#| tbl-cap: "Properties in South Triad that were removed from PRELIMINARY SFHA in 2015 and properties in South Triad that were always in the SFHA that were in FIRMs updated in 2015."
 
-df_prep |> filter(addedto_prelim_sfha == TRUE)
-df_prep |> filter(addedto_eff_sfha == TRUE)
 
+df_prep |> filter(Triad == "South" & treat_year_remove_prelim == "2015") # all 2019 treatment pins are in South Triad
+
+df_prep |> filter(Triad == "South" & change_type == "Always SFHA" & pre_date_chr == "2015-02-12") 
+# change type only exists for effective 
 ```
 
+
+```{r}
+#| tbl-cap: "Properties in Chicago that were removed from PRELIMINARY SFHA in 2019 and properties in Chicago that were always in the SFHA that were in FIRMs updated in 2019."
+#| layout-ncol: 2
+
+
+df_prep |> filter(Triad == "City" & treat_year_remove_prelim == "2019") # all 2019 treatment pins are in Chicago Triad
+
+df_prep |> filter(Triad == "City" & change_type == "Always SFHA" & pre_date_chr == "2019-07-01") 
+# change type only exists for effective
+```
+
+## Comparison of Prelim and Eff FIRM Counts
 
 ```{r}
 #| layout-ncol: 2
 
 table(df_prep$treat_year_remove_eff)
 table(df_prep$treat_year_remove_prelim)
+
+
+table(df_prep$treat_year_add_eff)
+table(df_prep$treat_year_add_prelim)
+
 
 table(df_prep$in_eff_sfha)
 table(df_prep$in_prelim_sfha)
@@ -378,18 +319,251 @@ table(df_prep$rel_year_remove_prelim)
 
 ```
 
-```{r}
-#| tbl-cap: "Properties in South Triad that were removed from SFHA in 2019 and properties in South Triad that were always in the SFHA that were in FIRMs updated in 2019."
-
-
-df_prep |> filter(Triad == "South" & treat_year_remove_eff == "2019") # all 2019 treatment pins are in South Triad
-
-df_prep |> filter(Triad == "South" & change_type == "Always SFHA" & eff_date_chr == "2019-11-01") 
-# change type only exists for effective 
-```
 
 
 # Models
+
+
+> Skim this: https://www.bookdown.org/rwnahhas/RMPH/mlr-interaction.html
+
+"Stratification is equivalent to interacting the effect modifier with every other predictor in the model whereas including an interaction only interacts the effect modifier with the predictor of interest"
+
+## New attempt without subsets
+
+need treatment cohort dummies
+
+```{r}
+#| label: tbl-asymeffect-sfha-regional-add
+#| tbl-cap: "Heterogeneity of SFHA location assuming an Asymmetric effect"
+
+m_add_pre <- feols(
+  log(sale_price) ~ group_name_prelim*addedto_prelim_sfha | pin + sale_year,
+  data = df_prep |> filter(treat_year_remove_prelim==10000),  # remove PINs that are removed from SFHA due to FIRM update
+  cluster = ~ pin
+)
+etable(m_add_pre)
+```
+
+
+```{r}
+#| label: tbl-symeffect-sfha-regional
+#| tbl-cap: "Effect of SFHA location assuming an Symmetric effect"
+
+m_add_pre <- feols(
+  log(sale_price) ~ group_name_prelim*in_prelim_sfha | pin + sale_year,
+  data = df_prep |> filter(treat_year_remove_prelim==10000),  # remove PINs that are removed from SFHA due to FIRM update
+  cluster = ~ pin
+)
+etable(m_add_pre)
+```
+
+
+```{r}
+#| label: tbl-symeffect-sfha-regional-remove
+#| tbl-cap: "Heterogeneity in Effect of being Mapped out of SFHA"
+
+m_remove_pre <- feols(
+  log(sale_price) ~ group_name_prelim*removedfrom_prelim_sfha | pin + sale_year,
+  data = df_prep |> filter(treat_year_add_prelim==10000),  # remove PINs that are removed from SFHA due to FIRM update
+  cluster = ~ pin
+)
+etable(m_remove_pre)
+
+
+m_remove_pre$collin.var
+```
+
+
+```{r}
+
+#extended twoway fe?
+
+m_add_pre <- feols(
+  log(sale_price) ~ Triad*addedto_prelim_sfha | pin + sale_year,
+  data = df_prep |> filter(treat_year_remove_prelim==10000),  # remove PINs that are removed from SFHA due to FIRM update
+  cluster = ~ pin
+)
+etable(m_add_pre)
+
+
+m_remove_pre <- feols(
+  log(sale_price) ~ Triad*removedfrom_prelim_sfha | pin + sale_year,
+  data = df_prep |> filter(treat_year_add_prelim==10000),  # remove PINs that are removed from SFHA due to FIRM update
+  cluster = ~ pin
+)
+etable(m_remove_pre)
+
+
+m_remove_pre$collin.var
+```
+
+
+
+```{r}
+# ============================================================
+# Staggered adoption event-studies for:
+#  (1) Added to preliminary SFHA  (cohort = treat_year_add_pre)
+#  (2) Removed from preliminary SFHA (cohort = treat_year_remove_pre)
+# Assumption per you: no unit is both added and removed.
+# ============================================================
+
+table(df_prep$treat_year_remove_prelim)
+table(df_prep$treat_year_remove_prelim)
+table(df_prep$Triad,df_prep$treat_year_remove_prelim)
+
+
+# --- 0) Prep: cohorts (NA = never-treated), and log outcome
+df_es <- df_prep %>%
+  mutate(
+    # Cohorts (your names)
+    g_add_pre = if_else(treat_year_add_prelim == 10000, NA, treat_year_add_prelim),
+    g_rem_pre = if_else(treat_year_remove_prelim == 10000, NA, treat_year_remove_prelim)
+  )
+table(df_es$g_add_pre)
+table(df_es$g_rem_pre)
+
+# --- 1) Risk sets (clean because no unit is both added and removed)
+# Added model: exclude any "removed" units (if they exist at all)
+df_add <- df_es %>% filter(is.na(g_rem_pre))
+
+# Removed model: exclude any "added" units (if they exist at all)
+df_rem <- df_es %>% filter(is.na(g_add_pre))
+
+# --- 2) Staggered event studies (Sun & Abraham) with unit FE + year FE
+m_add_pre <- feols(
+  log(sale_price) ~ sunab(g_add_pre, sale_year, ref.p = -1) | pin + sale_year,
+  data = df_add,
+  cluster = ~ pin
+)
+
+m_rem_pre <- feols(
+  log(sale_price) ~ sunab(g_rem_pre, sale_year,  ref.p = -1) | pin + sale_year,
+  data = df_rem,
+  cluster = ~ pin
+)
+
+# --- 3) Plots (leads/lags around ref period -1)
+iplot(m_add_pre,
+      main = "Event study: Added to preliminary SFHA",
+      xlab = "Event time (years relative to addition)",
+      ylab = "Effect on log price")
+
+iplot(m_rem_pre,
+      main = "Event study: Removed from preliminary SFHA",
+      xlab = "Event time (years relative to removal)",
+      ylab = "Effect on log price")
+
+# --- 4) Table-ready coefficient output
+# (a) Quick regression table
+etable(m_add_pre, m_rem_pre,
+       headers = c("Added (prelim SFHA)", "Removed (prelim SFHA)"),
+       se.below = TRUE)
+
+# (b) Data frame of event-time coefficients (nice for custom tables/ggplot)
+add_coefs <- as.data.frame(coeftable(m_add_pre), stringsAsFactors = FALSE) %>%
+  tibble::rownames_to_column("term")
+
+rem_coefs <- as.data.frame(coeftable(m_rem_pre), stringsAsFactors = FALSE) %>%
+  tibble::rownames_to_column("term")
+
+# --- 5) Joint pre-trends tests (all leads = 0)
+# This tests whether the *pre-treatment* event-time coefficients are jointly zero.
+# Pattern below is conservative: it grabs any sunab term with a negative event time.
+lead_terms_add <- grep("sunab\\(.*\\)::[-][0-9]+", add_coefs$term, value = TRUE)
+lead_terms_rem <- grep("sunab\\(.*\\)::[-][0-9]+", rem_coefs$term, value = TRUE)
+
+if(length(lead_terms_add) > 0) {
+  cat("\nJoint pre-trends test (Added):\n")
+  print(wald(m_add_pre, lead_terms_add))
+}
+
+if(length(lead_terms_rem) > 0) {
+  cat("\nJoint pre-trends test (Removed):\n")
+  print(wald(m_rem_pre, lead_terms_rem))
+}
+```
+
+```{r}
+plot_
+```
+
+
+```{r}
+m_rem_pre <- feols(
+  log(sale_price) ~  + i(sale_year, removedfrom_prelim_sfha, ref = "2021") | pin + sale_year,
+  data = df_prep |> filter(Triad== "North"),
+  cluster = ~ pin
+)
+
+iplot(m_rem_pre,
+      main = "North Cook Event study: Removed from preliminary SFHA",
+      xlab = "Event time (years relative to removal)",
+      ylab = "Effect on log price")
+
+m_rem_pre <- feols(
+  log(sale_price) ~  + i(sale_year, removedfrom_prelim_sfha, ref = "2015") | pin + sale_year,
+  data = df_prep |> filter(Triad== "South"),
+  cluster = ~ pin
+)
+
+iplot(m_rem_pre,
+      main = "South Cook Event study: Removed from preliminary SFHA",
+      xlab = "Event time (years relative to removal)",
+      ylab = "Effect on log price")
+```
+
+
+
+```{r}
+m_rem_pre <- feols(
+  log(sale_price) ~  + i(sale_year, addedto_prelim_sfha, ref = "2021") | pin + sale_year,
+  data = df_prep |> filter(Triad== "North"),
+  cluster = ~ pin
+)
+
+iplot(m_rem_pre,
+      main = "North Cook Event study: Added to preliminary SFHA",
+      ylab = "Effect on log price")
+
+m_rem_pre <- feols(
+  log(sale_price) ~  + i(sale_year, addedto_prelim_sfha, ref = "2015") | pin + sale_year,
+  data = df_prep |> filter(Triad== "South"),
+  cluster = ~ pin
+)
+
+iplot(m_rem_pre,
+      main = "South Cook Event study: Removed from preliminary SFHA",
+      ylab = "Effect on log price")
+```
+
+```{r}
+# --- 6) Optional: add geography-by-year trends instead of subsetting (edit Triad var name)
+m_add_pre_geo <- feols(log(sale_price) ~ sunab(g_add_pre, sale_year, ref.p = -1) | pin + sale_year + Triad^sale_year,
+                       data = df_add, cluster = ~ pin)
+
+
+## Triad FE don't work with removed because the year and triad are collinear
+m_rem_pre_geo <- feols(log(sale_price) ~ sunab(g_rem_pre, sale_year, ref.p = -1) | pin + sale_year,
+                       data = df_rem, cluster = ~ pin)
+
+etable(m_add_pre_geo, m_rem_pre_geo)
+summary(m_add_pre_geo, agg = "att" )
+
+```
+
+
+```{r}
+iplot(m_add_pre_geo,
+      main = "Event study: Added to preliminary SFHA",
+      xlab = "Event time (years relative to addition)",
+      ylab = "Effect on log price")
+
+iplot(m_rem_pre_geo,
+      main = "Event study: Removed from preliminary SFHA",
+      xlab = "Event time (years relative to removal)",
+      ylab = "Effect on log price")
+```
+
 
 ## FIRM updates as Information Events
 
@@ -404,70 +578,69 @@ The “countywide” models average within-parcel response to SFHA status, aggre
 
 ```{r}
 #| label: tbl-feolsmodels-fixedeffects
-#| tbl-cap: "**Average Effect of Effective SFHA Status** Within-parcel effect of SFHA exposure over time. Only identifies the effect if SFHA status changes for a parcel. For always-in or always-out parcels, FE wipe out the variation. Interacting with Triad allows for regioinal heterogeneity in the effect."
+#| tbl-cap: "**Average Effect of EFFECTIVE SFHA Status** Within-parcel effect of SFHA exposure over time. Only identifies the effect if SFHA status changes for a parcel. For always-in or always-out parcels, FE wipe out the variation. Interacting with Triad allows for regioinal heterogeneity in the effect."
 
-# effective_twfe <- list(
-#   
-#   "Eff SFHA -  County ATE" = feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,  
-#                      cluster = ~ pin + nbhd_code,
-#                      
-#                      data = df_prep
-#   ),
-#     "Eff SFHA -  County ATE" = feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,  
-#                      cluster = ~ pin,
-#                      
-#                      data = df_prep
-#   ),
-#       "Eff SFHA -  County ATE" = feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,  
-#                      cluster = ~ clean_name,
-#                      
-#                      data = df_prep
-#   ),
-#         "Eff SFHA -  County ATE" = feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,  
-#                      cluster = ~ FIRM_PAN,
-#                      
-#                      data = df_prep
-#   ),
-#         "Eff SFHA -  County ATE" = feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,  
-#                      cluster = ~ pin+ FIRM_PAN,
-#                      
-#                      data = df_prep
-#   ),
-#   "Eff Countywide - Add or Remove" = feols(log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha  | pin + sale_year,  
-#                             cluster = ~ pin + clean_name,
-#                             
-#                             data = df_prep
-#   ) ,
-#   "Eff Countywide - Add or Remove" = feols(log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha  | pin + sale_year,  
-#                             cluster =  ~ clean_name,
-#                             
-#                             data = df_prep
-#   ),
-#   "Eff Triads - Add or Remove" = feols(log(sale_price) ~ addedto_eff_sfha*Triad + removedfrom_eff_sfha*Triad  | pin + sale_year,  
-#                             cluster =  ~ pin + nbhd_code,
-#                             
-#                             data = df_prep
-#   ),  "Eff Triads - Add or Remove" = feols(log(sale_price) ~ addedto_eff_sfha*Triad + removedfrom_eff_sfha*Triad  | pin + sale_year,  
-#                             cluster =  ~ pin + FIRM_PAN,
-#                             
-#                             data = df_prep
-#   ),  "Eff Triads - Add or Remove" = feols(log(sale_price) ~ addedto_eff_sfha*Triad + removedfrom_eff_sfha*Triad  | pin + sale_year,  
-#                             cluster =  ~ FIRM_PAN,
-#                             
-#                             data = df_prep
-#   )
-# )
+effective_twfe <- list(
+
+  "Eff SFHA -  County ATE" = feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,
+                     cluster = ~ pin + nbhd_code,
+
+                     data = df_prep
+  ),
+    "Eff SFHA -  County ATE" = feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,
+                     cluster = ~ pin,
+
+                     data = df_prep
+  ),
+      "Eff SFHA -  County ATE" = feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,
+                     cluster = ~ clean_name,
+
+                     data = df_prep
+  ),
+        "Eff SFHA -  County ATE" = feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,
+                     cluster = ~ FIRM_PAN,
+
+                     data = df_prep
+  ),
+        "Eff SFHA -  County ATE" = feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,
+                     cluster = ~ pin10,
+
+                     data = df_prep
+  ),
+  "Eff Countywide - Add or Remove" = feols(log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha  | pin + sale_year,
+                            cluster = ~ pin + clean_name,
+
+                            data = df_prep
+  ) ,
+  "Eff Countywide - Add or Remove" = feols(log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha  | pin + sale_year,
+                            cluster =  ~ clean_name,
+
+                            data = df_prep
+  ),
+  "Eff Triads - Add or Remove" = feols(log(sale_price) ~ addedto_eff_sfha*Triad + removedfrom_eff_sfha*Triad  | pin + sale_year,
+                            cluster =  ~ pin + nbhd_code,
+
+                            data = df_prep
+  ),  "Eff Triads - Add or Remove" = feols(log(sale_price) ~ addedto_eff_sfha*Triad + removedfrom_eff_sfha*Triad  | pin + sale_year,
+                            cluster =  ~ pin10,
+
+                            data = df_prep
+  ),  "Eff Triads - Add or Remove" = feols(log(sale_price) ~ addedto_eff_sfha*Triad + removedfrom_eff_sfha*Triad  | pin + sale_year,
+                            cluster =  ~ FIRM_PAN,
+
+                            data = df_prep
+  )
+)
 
 
-# all_models_formatted <- modelsummary::modelsummary(effective_twfe,
-#                output = "flextable",
-#                fmt = function(x) round(x, 2),
-# 
-#              stars = TRUE)
-# 
-# all_models_formatted
+all_models_formatted <- modelsummary::modelsummary(effective_twfe,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+all_models_formatted
 ```
-
 
 
 ```{r}
@@ -514,7 +687,7 @@ prelim_twfe <- list(
                                 
   ),
         "Prelim Countywide - Add or Remove" = feols(log(sale_price) ~ addedto_prelim_sfha + removedfrom_prelim_sfha | pin + sale_year,
-                                cluster=  ~ pin + FIRM_PAN,
+                                cluster=  ~ pin10,
                                 data = df_prep
                                 
   ),
@@ -542,7 +715,7 @@ prelim_twfe <- list(
                                 
   ),
     "Prelim Triads - Add or Remove" = feols(log(sale_price) ~ addedto_prelim_sfha*Triad + removedfrom_prelim_sfha*Triad | pin + sale_year,
-                                cluster =  ~ pin + nbhd_code,
+                                cluster =  ~ pin10,
                                 data = df_prep
                                 
   )
@@ -559,6 +732,64 @@ all_models_formatted <- modelsummary::modelsummary(prelim_twfe,
 all_models_formatted
 ```
 
+```{r}
+#| label: tbl-prelim-ate-restrictedsamples-triad
+#| tbl-cap: "**Average Effect of Preliminary SFHA Status** Within-parcel effect of SFHA exposure over time. Only identifies the effect if SFHA status changes for a parcel. For always-in or always-out parcels, FE wipe out the variation and group them together as the comparison group. Interacting with Triad allows for regional heterogeneity in the effect."
+
+
+
+prelim_twfe <- list(  
+
+  "5" = feols(log(sale_price) ~ addedto_prelim_sfha*Triad  | pin + sale_year,
+                                cluster=  ~ pin,
+                                data = df_prep
+  ),
+  
+  "5" = feols(log(sale_price) ~ addedto_prelim_sfha*Triad | pin + sale_year,
+                                cluster =  ~ clean_name,
+                                data = df_prep
+  ),
+  
+  "6" = feols(log(sale_price) ~  removedfrom_prelim_sfha*Triad | pin + sale_year,
+                                cluster =  ~ pin,
+                                data = df_prep
+                                
+  ),
+      "6" = feols(log(sale_price) ~  removedfrom_prelim_sfha*Triad | pin + sale_year,
+                                cluster =  ~ clean_name,
+                                data = df_prep
+  ),
+      "6-Restricted" = feols(log(sale_price) ~  removedfrom_prelim_sfha*Triad | pin + sale_year,
+                                cluster =  ~ pin,
+                                data = df_prep |> filter(change_type != "Never SFHA" & addedto_prelim_sfha == FALSE)
+                                
+  ),
+      "6-Restricted" = feols(log(sale_price) ~  removedfrom_prelim_sfha*Triad | pin + sale_year,
+                                cluster =  ~ clean_name,
+                                data = df_prep  |> filter(change_type != "Never SFHA" & addedto_prelim_sfha == FALSE)
+  ),
+      "5-Restricted" = feols(log(sale_price) ~  addedto_prelim_sfha*Triad | pin + sale_year,
+                                cluster =  ~ pin,
+                                data = df_prep |> filter(change_type != "Always SFHA" & removedfrom_prelim_sfha == FALSE)
+                                
+  ),
+      "5-Restricted" = feols(log(sale_price) ~  addedto_prelim_sfha*Triad | pin + sale_year,
+                                cluster =  ~ clean_name,
+                                data = df_prep  |> filter(change_type != "Always SFHA" & removedfrom_prelim_sfha == FALSE)
+  )
+  
+) 
+
+
+
+all_models_formatted <- modelsummary::modelsummary(prelim_twfe,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+all_models_formatted
+```
 
 
 ### Subset to just properties Always in SFHA or Changed SFHA (specifically removed from)
@@ -913,7 +1144,7 @@ feols(log(sale_price) ~ sw(addedto_eff_sfha*in_lomr) | pin + sale_year,
 
 ```{r}
 #| label: tbl-mappedin-prelim-fsplit
-#| tbl-cap: "Comparison group is only PINs in same FIRMs that were updated."
+#| tbl-cap: "**Part of Table 6.** Comparison group is only PINs in same FIRMs that were updated that were never in an SFHA."
 
 df_prep |> filter(change_type != "Always SFHA" & 
                            # and properties that are never treated for being removed to the SFHA
@@ -926,6 +1157,29 @@ df_prep |> filter(change_type != "Always SFHA" &
         
   ) |> modelsummary(stars = TRUE)
 
+
+
+basemodel_added_fullsample <- df_prep |> filter(change_type != "Always SFHA" & 
+                           # and properties that are never treated for being removed to the SFHA
+                           treat_year_remove_eff == 10000 & treat_year_remove_prelim == 10000 )  |>
+feols(log(sale_price) ~ addedto_prelim_sfha | pin + sale_year) 
+
+#colnames(modelsummary::get_gof(basemodel_removed_fullsample))
+
+modelsummary(
+  list(
+    "Clustered by PIN" = basemodel_added_fullsample,
+    "Clustered by Muni" = basemodel_added_fullsample
+  ),
+  vcov = list(
+    ~pin,
+    ~clean_name
+  ),
+  gof_map = c("nobs", "r.squared", "adj.r.squared", "rmse"), # Customize which GOF statistics to show
+  stars = TRUE
+)
+
+
 ```
 
 
@@ -934,6 +1188,7 @@ df_prep |> filter(change_type != "Always SFHA" &
 ```{r}
 #| label: tbl-mappedout-prelim-fsplit
 #| tbl-cap: "Comparison group is only PINs in same FIRMs that were updated."
+#| eval: false
 
 
 df_prep |> filter(change_type != "Never SFHA" & 
@@ -950,21 +1205,31 @@ feols(log(sale_price) ~ sw(removedfrom_prelim_sfha*change_type) | pin + sale_yea
 
 
 
-**Removed from preliminary SFHA compared to properties that were still in the SFHA**. Comparison group excludes properties that were never in the SFHA and those that were added to the SFHA at some point. 
+
 
 ```{r}
 #| label: tbl-mappedout-prelim-fsplit2
-#| tbl-cap: "Comparison group is only PINs in same FIRMs that were updated."
+#| tbl-cap: "**Part of Table 5. Full sample, removed from SFHA.**Comparison group is only PINs in same FIRMs that were updated. that were always in SFHA"
 
-df_prep |> filter(change_type != "Never SFHA" & 
+basemodel_removed_fullsample <- df_prep |> filter(change_type != "Never SFHA" & 
                            # and properties that are never treated for being added to the SFHA
                            treat_year_add_eff == 10000 & treat_year_add_prelim == 10000)  |>
-feols(log(sale_price) ~ sw(removedfrom_prelim_sfha*change_type*in_lomr) | pin + sale_year,
-     # data = df_prep,
-   #  subset = ~eff_date_chr != "2008-08-19",
-      cluster = ~pin,
-      fsplit= ~pre_date_chr
-) |> modelsummary(stars = TRUE)
+feols(log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year) 
+
+
+modelsummary(
+  list(
+    "Clustered by PIN" = basemodel_removed_fullsample,
+    "Clustered by Muni" = basemodel_removed_fullsample
+  ),
+  vcov = list(
+    ~pin,
+    ~clean_name
+  ),
+  gof_map = c("nobs", "r.squared", "adj.r.squared", "rmse"), # Customize which GOF statistics to show
+  stars = TRUE
+)
+
 ```
 
 
@@ -972,6 +1237,12 @@ feols(log(sale_price) ~ sw(removedfrom_prelim_sfha*change_type*in_lomr) | pin + 
 
 
 ```{r}
+#| label: tbl-mappedout-prelim-restricteddfirm
+#| tbl-cap: "**Part of Table 5. Restricted sample to DFIRM updated in 2015** Comparison group is only PINs in same FIRMs that were updated. that were always in SFHA"
+#| error: true
+#| warning: true
+#| message: true
+
 df3 <- df_prep |> filter(change_type != "Never SFHA" & 
                            # and properties that are never treated for being added to the SFHA
                            treat_year_add_eff == 10000 & treat_year_add_prelim == 10000) 
@@ -982,17 +1253,17 @@ prelim_twfe <- list(
     subset = ~pre_date_chr == "2015-02-15",
       cluster = ~pin
 ),
+  mod1 <- feols(log(sale_price) ~ sw(removedfrom_prelim_sfha) | pin + sale_year,
+      data = df3,
+    subset = ~pre_date_chr == "2015-02-15",
+      cluster = ~clean_name
+),
   mod1 <- feols(log(sale_price) ~ sw(removedfrom_prelim_sfha*in_lomr) | pin + sale_year,
       data = df3,
     subset = ~pre_date_chr == "2015-02-15",
       cluster = ~pin
 ),
 
-  mod1 <- feols(log(sale_price) ~ sw(removedfrom_prelim_sfha) | pin + sale_year,
-      data = df3,
-    subset = ~pre_date_chr == "2015-02-15",
-      cluster = ~clean_name
-),
   mod1 <- feols(log(sale_price) ~ sw(removedfrom_prelim_sfha) | pin + sale_year,
       data = df3,
     subset = ~pre_date_chr == "2015-02-15",
@@ -1012,6 +1283,139 @@ all_models_formatted_prelim
 
 ## Effect of Insurance Requirement
 
+### Effective FIRM Descriptive Stats
+
+```{r recode-df_prep}
+#| eval: false
+
+table(df_prep$addedto_eff_sfha)
+
+df_prep <- df_prep |> 
+  # pin didn't exist in 2018 but did in 2024, so got considered as mapped out?
+  mutate(
+    removedfrom_eff_sfha = ifelse(pin10 == "1729309054", "0", removedfrom_eff_sfha),
+         )
+
+
+
+
+df_prep$removedfrom_eff_sfha
+  
+df_prep <- df_prep |>
+  
+  mutate(
+    # so I can subset by FIRM date in later steps
+    eff_date_chr = as.factor(eff_date),
+    pre_date_chr = as.factor(pre_date),
+    
+    added_in    = addedto_eff_sfha == "MappedIn",
+    removed_out = removedfrom_eff_sfha == "MappedOut" & in_lomr != "Received LOMR",
+    added_in_prelim    = addedto_prelim_sfha == "MappedIn",
+    removed_out_prelim = removedfrom_prelim_sfha == "MappedOut" & in_lomr != "Received LOMR"
+  ) |>
+  group_by(pin) |>
+  mutate(
+    # first year it was mapped IN (per PIN)
+    treat_year_add_eff = ifelse((any(added_in == TRUE) ), 
+                                # & eff_date_chr != "2008-08-19", 
+                                year(eff_date), 10000),  # never treated set to 10,000
+    
+    # first year it was mapped OUT (per PIN)
+    treat_year_remove_eff = ifelse(any(removed_out== TRUE)
+                                   & eff_date_chr != "2008-08-19", 
+                                   year(eff_date), 10000),
+    
+    
+    # Added ore removed from Preliminary FIRMs
+    treat_year_add_prelim = ifelse((any(added_in_prelim == TRUE) ), year(pre_date), 10000),  # never treated set to 10,000
+    
+    # first year it was mapped OUT (per PIN)
+    treat_year_remove_prelim = ifelse(any(removed_out_prelim== TRUE), year(pre_date), 10000)
+    
+    
+  ) |>
+  ungroup() |>
+  mutate(
+    
+    # Event time (relative year) for each outcome
+    # coded to match S&A's method of relative time
+    
+    rel_year_add_eff    = ifelse(treat_year_add_eff != 10000,    sale_year - treat_year_add_eff,    -1000),
+    rel_year_remove_eff = ifelse(treat_year_remove_eff != 10000, sale_year - treat_year_remove_eff, -1000),
+    
+    
+    rel_year_add_prelim    = ifelse(treat_year_add_prelim != 10000,    sale_year - treat_year_add_prelim,    -1000),
+    rel_year_add_prelim = ifelse(rel_year_add_prelim == 0 & sale_date < pre_date, -1, rel_year_add_prelim),
+    rel_year_remove_prelim = ifelse(treat_year_remove_prelim != 10000, sale_year - treat_year_remove_prelim, -1000),
+    rel_year_remove_prelim = ifelse(rel_year_remove_prelim ==0 & sale_date < pre_date, -1, rel_year_remove_prelim)
+    
+  ) |>
+  mutate(
+    qtr  = quarter(sale_date),     # 1..4
+    year = year(sale_date),            
+    sale_qtr_dec = year + (qtr - 1) / 4,        # 2012.00, .25, .50, .75
+    
+    group_name_eff = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated.
+      # used for callaway way I think? Delete soon or move. not needed for S&A method
+      eff_date == "2008-08-19" ~ 0,
+      eff_date == "2019-11-01" ~ 2019,
+      eff_date == "2021-09-10" ~ 2021,
+      TRUE ~ NA),
+    
+
+    
+    # delete once checked that code still works if commented out
+   # rel_time = round(lubridate::as.difftime(sale_date - eff_date) / 365), # get it to approximate years from event
+  #  time_to_treat = round((sale_date - eff_date)/365)
+    )
+```
+
+```{r}
+#| tbl-cap: "Observations per year. Includes the pre and post treatment sales for those that were added or removed from an EFFECTIVE SFHA"
+#| layout-ncol: 2
+#| include: false
+
+table(df_prep$sale_year, df_prep$treat_year_add_eff)
+
+table(df_prep$sale_year, df_prep$treat_year_remove_eff)
+```
+
+
+```{r}
+#| tbl-cap: "Observations per year. Added to (removed from) Effective SFHA"
+#| layout-ncol: 2
+
+table(df_prep$sale_year[df_prep$sale_year>=2016], df_prep$addedto_eff_sfha[df_prep$sale_year>=2016])
+
+table(df_prep$sale_year[df_prep$sale_year>=2016], df_prep$removedfrom_eff_sfha[df_prep$sale_year>=2016])
+```
+
+
+
+
+```{r}
+# eff_date_chr and group_names should have same number of observations. 
+table(df_prep$eff_date_chr)
+table(df_prep$pre_date_chr)
+table(df_prep$group_name_eff)
+
+table(df_prep$addedto_eff_sfha)
+table(df_prep$removedfrom_eff_sfha)
+```
+
+
+```{r}
+#| tbl-cap: "Properties in South Triad that were removed from SFHA in 2019 and properties in South Triad that were always in the SFHA that were in FIRMs updated in 2019."
+
+
+df_prep |> filter(Triad == "South" & treat_year_remove_eff == "2019") # all 2019 treatment pins are in South Triad
+
+df_prep |> filter(Triad == "South" & change_type == "Always SFHA" & eff_date_chr == "2019-11-01") 
+# change type only exists for effective 
+```
+
+
+
 - Reminder: Cohort should be fixed for each unit and represent the period when the treatment was received.   
 - to get the canonical two-way fixed effects (TWFE) estimates, use interaction command  `i(factor_variable, number variable, reference_period)`    
 
@@ -1019,9 +1423,22 @@ all_models_formatted_prelim
 
 If a PIN is in an SFHA and a LOMR, then the insurance requirement is removed. If measuring capitalization of the flood insurance cost, then whether or not flood insurance would be required for a federally backed mortgage is the key variable. This is what capitalization literature does. 
 
+```{r}
+df_prep  |> 
+  group_by(sale_year, in_eff_sfha, in_lomr) |> summarize(n = n())
+
+df_prep  |> 
+  group_by(sale_year, removedfrom_eff_sfha, in_lomr) |> summarize(n = n())
+
+
+df_prep  |> group_by(sale_year, ins_req) |> summarize(n=n())
+table(df_prep$sale_year, df_prep$ins_req)
+```
+
 
 ```{r}
 lomr_pins <- res_sales |> filter(lomr_date != 0 ) |> select(pin, lomr_date, sfha2024, sfha2018) |> distinct()
+
 
 table(lomr_pins$lomr_date)
 table(df_prep$removedfrom_eff_sfha)
