@@ -41,6 +41,7 @@ ind_assist <- read_csv("./data/raw/indiv_assistance_V2_CookCounty.csv") |>
          tract = str_sub(censusGeoid, 6, 9)
          ) |>
   mutate(tract = str_pad(tract, width = 6, pad = "0", side = "right")) |>
+  # bring in file of dirty names matched with clean names
   left_join(city_names)
 
 # all disasters in Cook County, IL
@@ -219,7 +220,7 @@ walk(years, ~ {
 })
 ```
 
-```{r ZCTAs, warning = FALSE, message=FALSE, results='hide'}
+```{r ZCTA-shapefiles , warning = FALSE, message=FALSE, results='hide'}
 # ZCTA shapefiles
 
 zipsIL2000 <- zctas(starts_with="60", cb=T, year=2000) %>% mutate(year = 2000)
@@ -283,7 +284,7 @@ walk(years, ~ {
 
 ```{r}
 #| label: tbl-recentdisasters-bytract
-#| tbl-cap: "2023 Disaster Declarations: Claims by Track"
+#| tbl-cap: "2023 Disaster Declarations: Claims by Census Tract"
 
 cook_assist |> 
   group_by(year, disasterNumber, tract) %>%
@@ -309,12 +310,13 @@ cook_assist  |>
   )
 
 cook_assist  |> 
-  filter(censusGeoid == "NULL") |> 
+  filter(censusGeoid == "NULL"& year == 2023) |> 
   group_by(clean_name) |> 
   summarize(claimcount = round(n()),
             granted = sum(ihpAmount > 0),
             denied = sum(ihpAmount < 1),
-            ihpAmount = round(sum(ihpAmount, na.rm=TRUE))
+            ihpAmount = round(sum(ihpAmount, na.rm=TRUE)),
+           floodDamageAmount = sum(floodDamageAmount, na.rm=TRUE)
   ) |> 
   arrange(desc(claimcount))
 ```
@@ -326,7 +328,7 @@ cook_assist  |>
 #| fig-cap: "Geography is Census Tract. Applicants that were missing their `censusGeoid` were excluded from totals."
 
 cook_assist |> 
-  filter(censusGeoid != "NULL" ) |>
+  filter(censusGeoid != "NULL" & floodDamage == TRUE) |>
   group_by(joinyear, disasterNumber, tract) %>%
   filter(!is.na(tract)) |>
   summarize(claimcount = round(n()),
@@ -351,14 +353,13 @@ cook_assist |>
   filter(censusGeoid != "NULL" ) |>
   group_by(joinyear, disasterNumber, tract) %>%
   summarize(claimcount = round(n()),
-            ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+            ihpAmount = round(sum(ihpAmount, na.rm=TRUE)),
+            floodDamageAmount = sum(floodDamageAmount, na.rm=TRUE)) |> 
   filter(!is.na(tract)) |>
-  
   left_join(ce_tracts, by = c( "joinyear" = "year", "tract" = "tract")) %>%    
-  
-  ggplot(aes(fill = ihpAmount)) +
+  ggplot(aes(fill = floodDamageAmount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
-  labs(title = "Amount Granted by Census Block Group & Disaster Declaration", caption = element_blank()) +
+  labs(title = "Flood Damage by Census Tract & Disaster Declaration", caption = element_blank()) +
   theme_void() +
   theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
   scale_fill_steps2(
@@ -366,7 +367,7 @@ cook_assist |>
     na.value = "white",
     nice.breaks = FALSE,
     show.limits=TRUE,
-    name = "Count",
+    name = "Dollars",
     labels = scales::comma
   )+
   facet_wrap(~disasterNumber)
@@ -454,7 +455,9 @@ ind_assist %>%
   group_by(declarationDate, disasterNumber) %>% 
   summarize(n = n(),
             ihpAmount = sum(ihpAmount),
-            haAmount = sum(haAmount))
+            haAmount = sum(haAmount), 
+            floodDamageAmount = sum(floodDamageAmount)) |>
+  mutate(flooddam_perperson = floodDamageAmount/n)
 ```
 
 
@@ -627,28 +630,65 @@ cook_assist |>
 
 
 ```{r}
-#| label: tbl-ihpamounts
-#| tbl-cap: "`ihpAmount` includes amount awarded for Housing Assistance (HA) and Other Needs Assistance (ONA). NOTE: ONA values are already included in IHP values."
+#| label: fig-mapzipcodes-ownersgrantedfunds
+#| fig-cap: "FILTERED MORE - Verified Ownership and Flood Damage. All disaster declarations since 2010. Aggregated to zip code. Only includes those that received IHP funds."
+#| layout-ncol: 2
 
-ind_assist %>% 
-  filter(ihpAmount > 0) |> 
-  group_by(declarationDate, disasterNumber) %>% 
-  summarize(n = n(),
-            ihpAmount = sum(ihpAmount),
-            haAmount = sum(haAmount))
+
+cook_assist |> 
+  filter(disasterNumber %in% c(1935, 4116, 4728, 4749) ) |>
+    filter(
+      floodDamage==TRUE &             
+        verifiedOwnership==TRUE & ownRent == "O") |>
+  
+  group_by(joinyear, damagedZipCode, disasterNumber) %>%
+  summarize(claimcount = round(n()),
+            ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  left_join(zips, by = c( "joinyear" = "year", "damagedZipCode" = "ZCTA")) %>%    
+  
+  ggplot(aes(fill = ihpAmount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "Granted Aid by Zip Code & Disaster Declaration", caption = "") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+    #na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Dollars",
+    labels = scales::dollar  )+
+  facet_wrap(~disasterNumber)
+
+cook_assist |> 
+  filter(disasterNumber %in% c(1935,4116, 4728, 4749) ) |>
+  filter(
+    floodDamage==TRUE &             
+      verifiedOwnership==TRUE &
+      ownRent == "O") |>
+  group_by(joinyear, disasterNumber, damagedZipCode) %>%
+  summarize(claimcount = round(n()),
+            
+            ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+  left_join(zips, by = c( "joinyear" = "year", "damagedZipCode" = "ZCTA")) %>%    
+  
+  ggplot(aes(fill = claimcount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "Granted Aid by Zip Code & Disaster Declaration", caption = "") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+    labels = scales::comma)+
+  facet_wrap(~disasterNumber)
 ```
 
 
-```{r}
-#| label: tbl-apps-withinsurance
-#| tbl-cap: "Applications with flood premiums paid from the two disaster declarations (`fipAmount > 0)`. 160 applications did not have flood insurance and had a flood insurance premium greater than $0. (which doesn't make sense?)."
-
-
-ind_assist %>% 
-  filter(fipAmount > 0) |> 
-  group_by(declarationDate, disasterNumber, floodInsurance) %>% 
-  summarize(n = n())
-```
 
 
 ```{r}
@@ -677,14 +717,24 @@ ind_assist %>%
 #| tbl-cap: "Zip Codes that would be considered 'Treated' due to experiencing a flood event. Maybe need to create some kind of threshold for treatment intensity?"
 
 ind_assist |> 
-  filter(ihpAmount > 0) |>
+ # filter(ihpAmount > 0) |>
   group_by(year, disasterNumber, damagedZipCode) |>
   summarize(claimcount = n(),
-           ) |> 
+            granted = sum(ihpAmount > 0, na.rm=TRUE),
+            denied = sum(ihpAmount > 0, na.rm=TRUE),
+            ihpAmount = sum(ihpAmount, na.rm=TRUE),
+            flood_damaged = sum(floodDamage == TRUE),
+            flood_damage_amount = sum(floodDamageAmount, na.rm=TRUE),
+            renters = sum(ownRent == "R", na.rm = TRUE),
+            apartments = sum(residenceType == "A"),
+            homes = sum(residenceType %in% c("H", "TH")),
+            condos = sum(residenceType == "C"),
+            owners = sum(ownRent == "O", na.rm = TRUE),
+            home_damage_amount = sum(homeDamage == TRUE, na.rm=TRUE)) |> 
   write_csv("./data/processed/treated_zipcodes.csv")
 
 ind_assist |> 
-  filter(ihpAmount > 0) |>
+  #filter(ihpAmount > 0 & ) |>
   group_by(year, disasterNumber, censusGeoid) |>
   summarize(claimcount = n(),
             granted = sum(ihpAmount > 0, na.rm=TRUE),
@@ -693,11 +743,12 @@ ind_assist |>
             flood_damage = sum(floodDamageAmount, na.rm=TRUE),
             renters = sum(ownRent == "R", na.rm = TRUE),
             owners = sum(ownRent == "O", na.rm = TRUE),
-            home_damage_amount = sum(homeDamage == TRUE, na.rm=TRUE)
+            home_damaged = sum(homeDamage == TRUE, na.rm=TRUE),
+            residenceType
            ) |> write_csv("./data/processed/treated_census_blocks.csv")
 
 ind_assist %>% 
-  filter(ihpAmount > 0) |>
+  filter(floodDamageAmount > 0) |>
   mutate(DisasterYear = paste(year, " - ", disasterNumber)) |>
   group_by(DisasterYear, damagedZipCode) %>% 
   summarize(claimcount = n(),
@@ -784,6 +835,108 @@ ind_assist |>
 
 
 ```{r}
+#| label: fig-Septemberstorm
+#| fig-cap: "September Disaster Declaration. Number of applicants who were awarded funds and had flood damage."
+#| layout-ncol: 2
+
+
+ind_assist |> 
+  filter(disasterNumber == 4749 & floodDamageAmount > 0 & floodDamage == TRUE) |>
+  group_by(joinyear, damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE)),
+              floodDamageAmount = sum(floodDamageAmount, na.rm=TRUE)
+              ) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+full_join(zips[zips$year==2020, ], by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+  ggplot(aes(fill = claimcount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "September Storm - Claims by Zip Codes", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Count",
+    labels = scales::comma
+  )
+
+ind_assist |> 
+  filter(disasterNumber == 4749 & ihpAmount > 0) |>
+  group_by(joinyear, damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE)),
+          floodDamageAmount = sum(floodDamageAmount, na.rm=TRUE)
+) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+full_join(zips[zips$year==2020, ], by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%
+  ggplot(aes(fill = floodDamageAmount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "September Storm -  Flood Damage by Zip Codes", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Dollars",
+  labels = scales::dollar
+  )
+
+
+ind_assist |> 
+  filter(disasterNumber == 4749 & ihpAmount > 0) |>
+  group_by(joinyear, damagedZipCode) %>%
+    summarize(claimcount = round(n()),
+                ihpAmount = round(sum(ihpAmount, na.rm=TRUE)),
+          floodDamageAmount = sum(floodDamageAmount, na.rm=TRUE)
+) |> 
+  mutate(damagedZipCode = as.character(damagedZipCode))|>
+full_join(zips[zips$year==2020, ], by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%
+  ggplot(aes(fill = ihpAmount)) +
+  geom_sf(aes(geometry = geometry), color = "black") +
+  labs(title = "September Storm -  IHP Funds by Zip Codes", caption = "") +
+    theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
+  scale_fill_steps2(
+    high = "darkblue", low = "black",
+  na.value = "white",
+    nice.breaks = FALSE,
+    show.limits=TRUE,
+    name = "Dollars",
+  labels = scales::dollar
+  )
+
+
+```
+
+
+
+
+
+```{r}
+#| label: tbl-Septstorm
+#| tbl-cap: "2023 September Disaster Declaration. Number of applicants who received funds."
+
+
+ind_assist %>% 
+  filter(disasterNumber == 4749 & ihpAmount > 0) |>
+  group_by(clean_name, residenceType#, floodInsurance
+           ) %>% 
+  summarize(claimcount = n(),
+            awardedfunds = round(sum(ihpAmount, na.rm=TRUE)),
+            funds_forflooddamage = round(sum(floodDamageAmount, na.rm=TRUE)) ) %>% 
+  arrange(desc(claimcount)) |> 
+  DT::datatable(rownames = FALSE)
+```
+
+
+## 2010 Storm
+
+```{r}
 #| label: fig-2010storm
 #| fig-cap: "2010 Disaster Declaration. Number of applicants who were awarded funds and had flood damage."
 #| layout-ncol: 2
@@ -795,10 +948,10 @@ ind_assist |>
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-full_join(zips[zips$year==2010, ], by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+full_join(zips[zips$year==2000, ], by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
   ggplot(aes(fill = claimcount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
-  labs(title = "September Storm - Claims by Zip Codes", caption = "") +
+  labs(title = "2010 Storm - Claims by Zip Codes", caption = "") +
     theme_void() +
   theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
   scale_fill_steps2(
@@ -816,11 +969,11 @@ ind_assist |>
     summarize(claimcount = round(n()),
                 ihpAmount = round(sum(ihpAmount, na.rm=TRUE))) |> 
   mutate(damagedZipCode = as.character(damagedZipCode))|>
-full_join(zips[zips$year==2010, ], by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
+full_join(zips[zips$year==2000, ], by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
 
   ggplot(aes(fill = ihpAmount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
-  labs(title = "September Storm - IHP Grants by Zip Codes", caption = "") +
+  labs(title = "2010 Storm - IHP Grants by Zip Codes", caption = "") +
     theme_void() +
   theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
   scale_fill_steps2(
@@ -839,7 +992,7 @@ full_join(zips[zips$year==2010, ], by = c("damagedZipCode" = "ZCTA", "joinyear" 
 
 ```{r}
 #| label: tbl-2010storm
-#| tbl-cap: "September Disaster Declaration. Number of applicants who received funds."
+#| tbl-cap: "2010 Disaster Declaration. Number of applicants who received funds."
 
 
 ind_assist %>% 
@@ -853,7 +1006,6 @@ ind_assist %>%
 ```
 
 
-## 2010 Storm
 
 
 ## 2013 Storm
@@ -861,7 +1013,7 @@ ind_assist %>%
 
 ```{r}
 #| label: fig-2013storm
-#| fig-cap: "September Disaster Declaration. Number of applicants who were awarded funds and had flood damage."
+#| fig-cap: "2013 Disaster Declaration. Number of applicants who were awarded funds and had flood damage."
 #| layout-ncol: 2
 
 ind_assist |> 
@@ -873,7 +1025,7 @@ ind_assist |>
 full_join(zips[zips$year==2010, ], by = c("damagedZipCode" = "ZCTA", "joinyear" = "year")) %>%    
   ggplot(aes(fill = claimcount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
-  labs(title = "September Storm - Claims by Zip Codes", caption = "") +
+  labs(title = "2013 Storm - Claims by Zip Codes", caption = "") +
     theme_void() +
   theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
   scale_fill_steps2(
@@ -896,7 +1048,7 @@ full_join(zips[zips$year==2010, ], by = c("damagedZipCode" = "ZCTA", "joinyear" 
 
   ggplot(aes(fill = ihpAmount)) +
   geom_sf(aes(geometry = geometry), color = "black") +
-  labs(title = "September Storm - IHP Grants by Zip Codes", caption = "") +
+  labs(title = "2013 Storm - IHP Grants by Zip Codes", caption = "") +
     theme_void() +
   theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
   scale_fill_steps2(
@@ -913,7 +1065,7 @@ full_join(zips[zips$year==2010, ], by = c("damagedZipCode" = "ZCTA", "joinyear" 
 
 ```{r}
 #| label: tbl-2013storm
-#| tbl-cap: "September Disaster Declaration. Number of applicants who received funds."
+#| tbl-cap: "2013 Disaster Declaration. Number of applicants who received funds."
 
 
 ind_assist %>% 
