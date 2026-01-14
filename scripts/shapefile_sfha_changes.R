@@ -217,7 +217,7 @@ write_sf(parcels_sfha_2024, "./data/processed/parcels_sfha_2024.shp")
 beep("coin")
 toc()
 
-# and as a CSV with less variables
+# and turn shapefile into a CSV with less variables
 parcels_sfha_2024 <- sf::read_sf("data/processed/parcels_sfha_2024.shp")
 
 sfha_2024 <- parcels_sfha_2024 |> as.data.frame() |>
@@ -350,39 +350,39 @@ prelim_sfha <- parcels_2024_prelimdatabase |> as.data.frame() |>
 write_sf(prelim_sfha, "./data/processed/parcels_preliminary_sfha_20250822.csv")
 
 
-### Join PIN lists together
+### Join PIN lists together - not used. Focusing only on parcel level indicators!
+#
+# prelim_sfha |> filter(pin %in% lomrs_2024$pin)
+#
+# prelim_sfha |> filter(pin %in% sfha_2024$pin)
+#
+# pin_indicators <- sfha_2018 |> full_join(sfha_2024, by = c("pin", "DFIRM_ID"), suffix = c("2018", "2024"))
+#
+# pin_indicators <- pin_indicators |> full_join(prelim_sfha,
+#   by = c("pin", "DFIRM_ID"),
+# ) |>
+#   rename(FLD_ZONE_pre = FLD_ZONE, ZONE_SUBTY_pre = ZONE_SUBTY, FLD_AR_ID_pre = FLD_AR_ID)
+#
+#
+# lomr_join <- lomrs_2018 |> full_join(lomrs_2024, by = c("pin", "DFIRM_ID"), suffix = c("2018", "2024"))
+# pin_indicators <- pin_indicators |> full_join(lomr_join)
+#
+# n_distinct(pin_indicators$pin) # 58,363 unique PINs
+# # 57,836 as of August 22 2025
 
-prelim_sfha |> filter(pin %in% lomrs_2024$pin)
-
-prelim_sfha |> filter(pin %in% sfha_2024$pin)
-
-pin_indicators <- sfha_2018 |> full_join(sfha_2024, by = c("pin", "DFIRM_ID"), suffix = c("2018", "2024"))
-
-pin_indicators <- pin_indicators |> full_join(prelim_sfha,
-  by = c("pin", "DFIRM_ID"),
-) |>
-  rename(FLD_ZONE_pre = FLD_ZONE, ZONE_SUBTY_pre = ZONE_SUBTY, FLD_AR_ID_pre = FLD_AR_ID)
-
-
-lomr_join <- lomrs_2018 |> full_join(lomrs_2024, by = c("pin", "DFIRM_ID"), suffix = c("2018", "2024"))
-pin_indicators <- pin_indicators |> full_join(lomr_join)
-
-n_distinct(pin_indicators$pin) # 58,363 unique PINs
-# 57,836 as of August 22 2025
-
-pin_indicators <- pin_indicators |>
-  mutate(
-    sfha2018 = ifelse(!is.na(FLD_ZONE2018), 1, 0),
-    sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
-    prelimsfha = ifelse(!is.na(FLD_ZONE_pre), 1,
-      0),  # if it is not in a preliminary SFHA in the northern part of Cook, then use values for sfha2024.
-    # changed back to 0 ^^
-    lomr2018 =  ifelse(!is.na(LOMR_ID2018), 1, 0),
-    lomr2024 = ifelse(!is.na(LOMR_ID2024), 1, 0)
-  )
-pin_indicators |> write_csv("./data/processed/sfha_indicator_pins.csv")
-
-
+# pin_indicators <- pin_indicators |>
+#   mutate(
+#     sfha2018 = ifelse(!is.na(FLD_ZONE2018), 1, 0),
+#     sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
+#     prelimsfha = ifelse(!is.na(FLD_ZONE_pre), 1,
+#       0),  # if it is not in a preliminary SFHA in the northern part of Cook, then use values for sfha2024.
+#     # changed back to 0 ^^
+#     lomr2018 =  ifelse(!is.na(LOMR_ID2018), 1, 0),
+#     lomr2024 = ifelse(!is.na(LOMR_ID2024), 1, 0)
+#   )
+# pin_indicators |> write_csv("./data/processed/sfha_indicator_pins.csv")
+#
+#
 
 
 # Make PARCEL indicator File Below --------------------------------------------
@@ -441,13 +441,13 @@ write_csv(lomr_join, "./data/processed/joined_LOMR_parcels.csv")
 
 pin_indicators <- pin_indicators |> full_join(lomr_join)
 
-pin_indicators <- pin_indicators |>
-  mutate(
-    sfha2018 = ifelse(!is.na(FLD_ZONE), 1, NA),
-    sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, NA),
-    sfha_prelim = ifelse(!is.na(FLD_ZONEprelim), 1, NA),
-    lomr2018 =  ifelse(!is.na(lomr_yearlomr2018), 1, NA),
-    lomr2024 = ifelse(!is.na(lomr_yearlomr2024), 1, NA)) #|>
+# pin_indicators <- pin_indicators |>
+#   mutate(
+#     sfha2018 = ifelse(!is.na(FLD_ZONE), 1, NA),
+#     sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, NA),
+#     sfha_prelim = ifelse(!is.na(FLD_ZONEprelim), 1, NA),
+#     lomr2018 =  ifelse(!is.na(lomr_yearlomr2018), 1, NA),
+#     lomr2024 = ifelse(!is.na(lomr_yearlomr2024), 1, NA)) #|>
 #
 #     dplyr::mutate(
 #       sfha2018 = dplyr::coalesce(as.integer(sfha2018), 0L),
@@ -464,9 +464,9 @@ pin_indicators <- pin_indicators |>
 #  )
 
 
-distinct_parcels <- pin_indicators |> distinct(pin10, sfha2018, sfha2024, prelimsfha, lomr2018, lomr2024)
+# distinct_parcels <- pin_indicators |> distinct(pin10, sfha2018, sfha2024, prelimsfha, lomr2018, lomr2024)
 
-pin_indicators |> write_csv("./data/processed/sfha_indicator_parcels_20260107_V2.csv")
+pin_indicators |> write_csv("./data/processed/sfha_indicator_parcels_20260112.csv")
 
 
 
@@ -483,16 +483,3 @@ ggplot() +
   geom_sf(data = border, aes(geometry = geometry), fill = "gray20", color = "black") +
   geom_sf(data = county_rivers, aes(geometry = SHAPE), color = "white", linewidth = 0.3) +
   theme_void()
-
-
-
-# # Join FIRM data to parcels --------------------------------------------------
-# tic()
-# beep_on_error(
-#   parcels_sfha_2024 <- st_join(parcels_2024, st_clip_firms_2024, join = st_intersects), sound = "wilhelm"  ) # kept all 1.43 million parcels_2024
-# parcels_sfha_2018 <- parcels_sfha_2024 |> filter(!is.na(name))
-# write_sf(parcels_sfha_2024, "./data/processed/parcels_inFIRMs_2024.shp", )
-#
-# beep("coin")
-# toc()
-#
