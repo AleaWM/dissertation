@@ -37,14 +37,14 @@ table(pin10_firms$FIRM_PAN)
 
 # Merge firms & SFHA indicators into sales
 sales <- sales |>
-  left_join(pin10_firms, by = "pin10", relationship = "many-to-one") |>
-  mutate(
-    lomr2018 = ifelse(is.na(lomr2018), 0L, lomr2018),
-    sfha2018 = ifelse(is.na(sfha2018), 0L, sfha2018),
-    lomr2024 = ifelse(is.na(lomr2024), 0L, lomr2024),
-    sfha2024 = ifelse(is.na(sfha2024), 0L, sfha2024),
-    sfha2026 = ifelse(is.na(sfha2026), 0L, sfha2026),
-  )
+  left_join(pin10_firms, by = "pin10", relationship = "many-to-one") # |>
+# mutate(
+#   lomr2018 = ifelse(is.na(lomr2018), 0L, lomr2018),
+#   sfha2018 = ifelse(is.na(sfha2018), 0L, sfha2018),
+#   lomr2024 = ifelse(is.na(lomr2024), 0L, lomr2024),
+#   sfha2024 = ifelse(is.na(sfha2024), 0L, sfha2024),
+#   sfha2026 = ifelse(is.na(sfha2026), 0L, sfha2026),
+# )
 #
 # table(sales$sfha2024)
 # table(sales$sfha2026)
@@ -80,9 +80,6 @@ pin10_firms |> filter(is.na(PRE_DATE)) |> distinct(FIRM_PAN)
 sales <- sales |> mutate(EFF_DATE = ifelse(EFF_DATE == as.Date("2026-01-23"), as.Date("2008-08-19"), as.Date(as.character(EFF_DATE))))
 
 
-## fix this in the FIRM join in earlier steps later ##
-# sales <- sales |>
-
 
 
 sales <- sales |>
@@ -113,22 +110,26 @@ sales <- sales |>
 table(sales$EFF_DATE)
 table(sales$PRE_DATE)
 
+# write_csv(sales, "data/processed/sales_withSFHA_andFIRMdata.csv")
+# sales <- read_csv("data/processed/sales_withSFHA_andFIRMdata.csv")
 
 sales <- sales |>
-  filter(year > 2010) |>
+  filter(year > 2009) |>
   mutate(
     lomr_date = as.Date(lomr_date, format = "%m/%d/%Y"),
 
     # the flood zones that existed in the 2018 state NFHL were last updated in 2008. sfha2018 is the default SFHA status for the observations, then lomrs and future updates will be incorporated
     in_eff_sfha = case_when(
-      sale_date >= EFF_DATE ~ sfha2026,
+      EFF_DATE == as.Date("2008-08-19") ~ sfha2018,
+      sale_date >= EFF_DATE ~ sfha2024,
       sale_date < EFF_DATE ~ sfha2018),
 
 
     # create similar variable but for the preliminary date: model must deal with anticipation to change
     in_prelim_sfha = case_when(
+      PRE_DATE == as.Date("2005-01-01") ~ sfha2018,
       sale_date >= PRE_DATE  ~ sfha2026,
-      sale_date < PRE_DATE ~ sfha2024
+      sale_date < PRE_DATE ~ sfha2018
     ),
 
     # LOMR indicator
@@ -136,58 +137,110 @@ sales <- sales |>
   )
 
 sales1 <- sales |>
+  filter(sale_price > 5000) |>
   group_by(pin) |>
-  arrange(sale_date) |>
+  arrange(sale_date, .by_group = TRUE) |>
   mutate(
     lag_eff  = dplyr::lag(in_eff_sfha),
     lag_pre  = dplyr::lag(in_prelim_sfha)
+  ) |>
+  select(pin, year, sale_date, sale_price, lag_eff, lag_pre, in_eff_sfha, in_prelim_sfha, in_lomr, sfha2018:sfha2026, everything())
+
+# chat gpt recommendation
+sales1 <- sales1 |>
+  mutate(
+    added_eff_thisyear =
+      !is.na(lag_eff) &
+        !is.na(in_eff_sfha) &
+        lag_eff == 0 & in_eff_sfha == 1,
+
+    removed_eff_thisyear =
+      !is.na(lag_eff) &
+        !is.na(in_eff_sfha) &
+        lag_eff == 1 & in_eff_sfha == 0,
+
+    added_pre_thisyear =
+      !is.na(lag_pre) &
+        !is.na(in_prelim_sfha) &
+        lag_pre == 0 & in_prelim_sfha == 1,
+
+    removed_pre_thisyear =
+      !is.na(lag_pre) &
+        !is.na(in_prelim_sfha) &
+        lag_pre == 1 & in_prelim_sfha == 0
   )
 
 
-table(sales1$in_eff_sfha)
 
-table(sales1$in_prelim_sfha)
-table(sales1$lag_pre)
+# table(sales1$in_eff_sfha)
+# table(sales1$in_prelim_sfha)
+# table(sales1$lag_pre)
 
-sales1 <- sales1 |>
-  group_by(pin) |>
-  arrange(sale_date) |>
-  mutate(
-    timessold = n(),
-    lag_eff = ifelse(is.na(lag_eff) & timessold > 1, first(in_eff_sfha), lag_eff),
-    lag_pre = ifelse(is.na(lag_pre) & timessold > 1, first(in_prelim_sfha), lag_pre)) |>
-  select(pin, year, sale_date, sale_price, lag_eff, lag_pre, in_eff_sfha, in_prelim_sfha, in_lomr, everything())
+# sales1 <- sales1 |>
+#   group_by(pin) |>
+#   arrange(sale_date) |>
+#   mutate(
+#     timessold = n(),
+#     lag_eff = ifelse(is.na(lag_eff) & timessold > 1, first(in_eff_sfha), lag_eff),
+#     lag_pre = ifelse(is.na(lag_pre) & timessold > 1, first(in_prelim_sfha), lag_pre)) |>
+#   select(pin, year, sale_date, sale_price, lag_eff, lag_pre, in_eff_sfha, in_prelim_sfha, in_lomr, sfha2018:sfha2026, everything())
 
-# sold_twice <- sales1 |> group_by(pin) |> mutate(n = n()) |>
-#   filter(n > 1) |>
-#   select(pin, year, sale_date, sale_price, lag_eff, lag_pre, in_eff_sfha,
-#     in_prelim_sfha, in_lomr, everything()) |>
+# sold_twice <- sales1 |>
+#   filter(timessold > 1) |>
 #   select(-c(is_mydec_date, AREA, `SFHA Change`, latitude, longitude, SOURCE_CIT,
 #     Shape_Leng, Shape_Area, SHAPE_Leng, SHAPE_Area, row_id, sale_buyer_name, sale_document_num))
 
-sales1 <- sales1 |>
-  ungroup() |>
-  mutate(
-    addedto_eff_sfha        = (lag_eff == F) & (in_eff_sfha == TRUE) & timessold > 1,    # flags year that event happened
-    addedto_prelim_sfha     = (lag_eff == F) & (in_prelim_sfha == TRUE) & timessold > 1,   # flags year that event happened
-    removedfrom_eff_sfha    = (lag_eff == T) & (in_eff_sfha == FALSE) & timessold > 1,   # flags year that event happened
-    removedfrom_prelim_sfha = (lag_eff == T) & (in_prelim_sfha == FALSE) & timessold > 1,  # flags year that event happened
-  )
+# sales1 <- sales1 |>
+#   ungroup() |>
+#   mutate(
+#     addedto_eff_sfha        = ((lag_eff == F) & (in_eff_sfha == TRUE)) & timessold > 1,    # flags year that event happened
+#     addedto_prelim_sfha     = ((lag_eff == F) & (in_prelim_sfha == TRUE)) & timessold > 1,   # flags year that event happened
+#     removedfrom_eff_sfha    = ((lag_eff == T) & (in_eff_sfha == FALSE)) & timessold > 1,   # flags year that event happened
+#     removedfrom_prelim_sfha = ((lag_eff == T) & (in_prelim_sfha == FALSE)) & timessold > 1,  # flags year that event happened
+#   )
 
-table(sales1$addedto_eff_sfha)
-table(sales1$addedto_prelim_sfha)
-table(sales1$removedfrom_eff_sfha)
-table(sales1$removedfrom_prelim_sfha)
 
+### ---- START HERE --- #####
+
+# sales1 <- sales1 |>
+#   ungroup() |>
+#   mutate(
+#     added_eff_thisyear        = ((lag_eff == 0) & (in_eff_sfha == 1)) & timessold > 1,    # flags year that event happened
+#     added_pre_thisyear     = ((lag_eff == 0) & (in_prelim_sfha == 1)) & timessold > 1,   # flags year that event happened
+#     remove_eff_thisyear    = ((lag_eff == 1) & (in_eff_sfha == 0)) & timessold > 1,   # flags year that event happened
+#     remove_pre_thisyear = ((lag_eff == 1) & (in_prelim_sfha == 0)) & timessold > 1,  # flags year that event happened
+#   ) |>
+#   select(pin, year, sale_date, sale_price,
+#     added_eff_thisyear:remove_pre_thisyear,
+#     # addedto_eff_sfha, removedfrom_eff_sfha, addedto_prelim_sfha, removedfrom_prelim_sfha,
+#     lag_eff, lag_pre, in_eff_sfha, in_prelim_sfha, in_lomr, sfha2018:sfha2026, everything())
+#
+
+table(sales1$added_eff_thisyear)
+table(sales1$removed_eff_thisyear)
+table(sales1$added_pre_thisyear)
+table(sales1$removed_pre_thisyear)
+
+# table(sales1$addedto_eff_sfha)
+# table(sales1$addedto_prelim_sfha)
+# table(sales1$removedfrom_eff_sfha)
+# table(sales1$removedfrom_prelim_sfha)
 
 sales2 <- sales1 |>
   group_by(pin) |>
+  arrange(sale_date) |>
   mutate(
-    addedto_prelim_sfha = (cumany(addedto_prelim_sfha)),
-    removedfrom_prelim_sfha = (cumany(removedfrom_prelim_sfha)),
-    addedto_eff_sfha = (cumany(addedto_eff_sfha)),
-    removedfrom_eff_sfha = (cumany(removedfrom_eff_sfha)),
-  ) |> ungroup()
+    addedto_prelim_sfha = (cumany(added_pre_thisyear == T)),
+    removedfrom_prelim_sfha = (cumany(removed_pre_thisyear == T)),
+    addedto_eff_sfha = (cumany(added_eff_thisyear == T)),
+    removedfrom_eff_sfha = (cumany(removed_eff_thisyear == T)),
+  ) |>
+  ungroup() |>
+  arrange(pin, sale_date) |>
+  select(pin, year, sale_date, sale_price, in_eff_sfha, in_prelim_sfha,
+    addedto_eff_sfha, removedfrom_eff_sfha, addedto_prelim_sfha, removedfrom_prelim_sfha,
+    added_eff_thisyear:removed_pre_thisyear,
+    lag_eff, lag_pre, in_eff_sfha, in_lomr, everything())
 
 table(sales2$addedto_eff_sfha)
 table(sales2$addedto_prelim_sfha)
@@ -198,7 +251,7 @@ sales2 <- sales2 |>
   ungroup() |>
   mutate(
     # properties that potentially have flood insurance requirement
-    ins_req = if_else(in_eff_sfha == TRUE & in_lomr == FALSE, TRUE, FALSE)
+    ins_req = if_else(in_eff_sfha == 1 & in_lomr == FALSE, TRUE, FALSE)
   )
 
 
