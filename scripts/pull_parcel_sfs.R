@@ -22,6 +22,8 @@ library(glue)
 library(sf)
 library(beepr)
 library(tictoc)
+library(readxl)
+
 
 # PTAXSIM has parcel centroids
 ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "../Merriman RA/ptax/ptaxsim.db/ptaxsim-2023.0.0.db")
@@ -34,35 +36,35 @@ common_crs <- st_crs(border)
 st_bbox(border) # look at coordinate "box" of area
 
 # All parcel geometries using SQL db -------------------------------------------
-pin_geoms <- DBI::dbGetQuery(
-  ptaxsim_db_conn,
-  glue_sql(
-    "SELECT DISTINCT pin10, start_year, end_year, longitude, latitude, geometry
-  FROM pin_geometry_raw
-  ",
-    .con = ptaxsim_db_conn
-))
-
-class(pin_geoms)
-# Convert character WKT geometry to sf object
-sf_data <- pin_geoms |>
-  st_as_sf(wkt = "geometry", crs = 4326)
-
-class(sf_data)
-# Set the correct CRS if missing (update EPSG code as needed)
-
-sf_data <- st_transform(sf_data, crs = common_crs)
-class(sf_data)
-
-attributes(sf_data)
-
-sf_data <- st_cast(sf_data, to = "POLYGON")
-
-table(st_is_valid(sf_data$geometry))
-
-sf_data <- st_make_valid(sf_data)
-sf_data <- sf_data[st_is_valid(sf_data), ]
-
+# pin_geoms <- DBI::dbGetQuery(
+#   ptaxsim_db_conn,
+#   glue_sql(
+#     "SELECT DISTINCT pin10, start_year, end_year, longitude, latitude, geometry
+#   FROM pin_geometry_raw
+#   ",
+#     .con = ptaxsim_db_conn
+# ))
+#
+# class(pin_geoms)
+# # Convert character WKT geometry to sf object
+# sf_data <- pin_geoms |>
+#   st_as_sf(wkt = "geometry", crs = 4326)
+#
+# class(sf_data)
+# # Set the correct CRS if missing (update EPSG code as needed)
+#
+# sf_data <- st_transform(sf_data, crs = common_crs)
+# class(sf_data)
+#
+# attributes(sf_data)
+#
+# sf_data <- st_cast(sf_data, to = "POLYGON")
+#
+# table(st_is_valid(sf_data$geometry))
+#
+# sf_data <- st_make_valid(sf_data)
+# sf_data <- sf_data[st_is_valid(sf_data), ]
+#
 
 
 # Centroids -------------------------------------------------------
@@ -99,17 +101,8 @@ st_clip_firms_2024 <- st_read("inputs/Cook_2026_download/S_FIRM_Pan.shp")
 st_clip_firms_2024 <- st_clip_firms_2024 |>
   st_transform(common_crs) |>
   st_intersection(border) |>
-  #  st_within(border) |>
-  st_transform(common_crs) #|>
-#
-#   mutate(
-#     pre_date = paste0(year(PRE_DATE), "-",
-#                       str_pad(month(PRE_DATE), width = 2, side = "left", pad = "0"), "-",
-#                       str_pad(day(PRE_DATE), width=2, side = "left", pad = "0")),
-#     eff_date = paste0(year(EFF_DATE), "-",
-#                       str_pad(month(EFF_DATE), width = 2, side = "left", pad = "0"), "-",
-#                       str_pad(day(PRE_DATE), width=2, side = "left", pad = "0"))
-#   )
+  st_transform(common_crs)
+
 
 st_bbox(st_clip_firms_2024)
 
@@ -127,10 +120,6 @@ ggplot() +
   theme_void() +
   # scale_fill_date() +
   labs(title = "FIRM Effective Date", fill = "") +
-  # scale_fill_manual(values = c(
-  #   "#E69F00", "#56B4E9", "#009E73", "#F0E442",
-  #   "#0072B2", "#D55E00", "#CC79A7", "#999999"
-  # ))
   scale_fill_grey(start = 0.85, end = 0.2)
 
 
@@ -160,24 +149,54 @@ pin_centroids_clean <- pin_centroids_clean |> as.data.frame() |> select(-c(PCOMM
 
 pin_centroids_clean <- pin_centroids_clean |> select(-c(SCALE, PANEL_TYP, PNP_REASON, BASE_TYP,  geometry))
 
+# file of parcels and the FIRM panel they are located in, based on Panel data from the 2026 pending maps
+# has all parcels that ever existed, and FIRM panel they would currently be in
 write_csv(pin_centroids_clean, "data/processed/parcels_wFIRMs_2026.csv")
 
 
+### --- Additional step: Add SFHA indicators TO the parcels_wFIRMs file at this stage instead of later: --- ##
 
 parcels_wFIRMs <- read_csv("data/processed/parcels_wFIRMs_2026.csv") |>
-  select(-c(PRE_DATE, EFF_DATE, OBJECTID_1, VERSION_ID, FIRM_ID, DFIRM_ID))
+  select(-c(PRE_DATE, EFF_DATE, OBJECTID_1, VERSION_ID, FIRM_ID, DFIRM_ID)) |>
+  filter(!pin10 %in% drop_parcels)
 
-library(readxl)
+# Manually check parcels missing FIRM panels:
+parcels_wFIRMs |> filter(is.na(FIRM_PAN))  # parcels not in FIRM panels
+
+drop_parcels <- c( # searched these manually in CookViewer to confirm they should be dropped. had missing FIRM information in pin10_firms
+  "0508400001", "0508400002", "0508400003", "0508400004", # pins in lake
+  "1405211017", "1405403020", "1416999001", "1710403001", # not residential parcels, some in water
+  "1715113004", "2130108012", "2130108018", "2130108019", # land and partially in water parcels
+  "2130108028", "2130108030", "2130108031", "2130108032", # land polygons along the lake, no residential buildings in them
+  "2130108033", "2130114012", "2130114013", "2130114014", "2130114015", "2130114016",  # land polygons along the lake, no buildings within them
+  "2130124001", "2130124002", "2130124003", "2130124004",  # almost completely in the lake
+  "2130999001", "2132213002", # actual water canal in calumet area
+  "2608202004", "2608400034", "3017211033" # also water pins.
+)
+
+# recode residential parcel that was perfectly on the line of two FIRM panels:
+parcels_wFIRMs <- parcels_wFIRMs |>
+  mutate(FIRM_PAN = ifelse(pin10 == "2130111028", "17031C0539K", FIRM_PAN))
+parcels_wFIRMs |> filter(is.na(FIRM_PAN))  # parcels not in FIRM panels
+# Success: No more parcels without FIRM panels
+
+
+### --- Join FIRM info (dates, version) to Parcels with FIRM panel --- #
+
+# FIRM_PAN from pending map update was all FIRMs in Cook County, not just the updated ones in Northern Cook
+# NOTE: I took the S_FIRM_PAN shapefile and added the PRE_DATE for all FIRM Panels
+# Panels that were pending and become effective in January 2026 were changed to
+#    the original effective date of 2008 to remain "untreated" in effective FIRM models
 firm_info <- read_xlsx("inputs/Cook_2026_download/S_FIRM_PAN.xlsx") |>
   select(FIRM_PAN, VERSION_ID, FIRM_ID, PRE_DATE, EFF_DATE)
-# select(-c(DFIRM_ID, FID, PCOMM, ST_FIPS, PANEL_TYP, SCALE, ))
+
 
 parcels_wFIRMs <- left_join(parcels_wFIRMs, firm_info, by = "FIRM_PAN")
 
 table(parcels_wFIRMs$PRE_DATE)
 table(parcels_wFIRMs$EFF_DATE)
 
-pin_indicators <-  read_csv("./data/processed/sfha_indicator_parcels_20260107_V2.csv") |>
+pin_indicators <-  read_csv("./data/processed/sfha_indicator_parcels_20260112.csv") |>
   mutate(pin10 = str_pad(pin10, 10, "left", 0))
 
 pin_indicators <- full_join(parcels_wFIRMs, pin_indicators, by = "pin10")
@@ -192,6 +211,8 @@ pin_indicators <- pin_indicators |>
     lomr2018 =  ifelse(!is.na(LOMR_IDlomr2018), 1, 0),
     lomr2024 = ifelse(!is.na(LOMR_IDlomr2024), 1, 0)
   ) |>
+  # fills in sfha2026 areas that were not updated with NFHL sfha indicators from 2024 database
+  # if in prelim panel, documents if it was a truly not in the
   mutate(sfha2026 =
     ifelse(in_prelim_panels == TRUE & !is.na(FLD_ZONEprelim), 1,
       ifelse(in_prelim_panels == TRUE & is.na(FLD_ZONEprelim), 0,
@@ -203,7 +224,7 @@ table(pin_indicators$sfha2024)
 
 table(pin_indicators$sfha2026)
 
-write_csv(pin_indicators, "./data/processed/parcels_withFIRMs_20260108.csv")
+write_csv(pin_indicators, "./data/processed/parcels_withFIRMs_20260112.csv")
 
 
 # ####### The rest is not currently used ##############
