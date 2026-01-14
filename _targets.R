@@ -1,5 +1,6 @@
 # _targets.R
 library(targets)
+library(tarchetypes)
 
 tar_option_set(
   packages = c("sf", "dplyr", "readr", "readxl", "stringr", "tidyr", "lubridate")
@@ -12,6 +13,87 @@ targets_out_dir <- "data/processed/targets"
 sfha_out_dir    <- file.path(targets_out_dir, "sfha")
 
 list(
+  # ---- External inputs (tracked) ----
+
+  tar_file(ptaxsim_db_file, "../Merriman RA/ptax/ptaxsim.db/ptaxsim-2023.0.0.db"),
+
+  # county border for clipping
+  tar_target(
+    cook_border_file,
+    "inputs/Mapping_FIRMs/Cook_County_Border/Cook_County_Border.shp",
+    format = "file"
+  ),
+
+  # county border used for clipping other shapefiles
+  tar_target(
+    border,
+    read_border(cook_border_file, crs_out = 6454)
+  ),
+
+  tar_target(common_crs, sf::st_crs(border)),
+
+
+  # ---- Centroids from PTAXSIM ----
+  tar_target(
+    pin_centroids_raw,
+    {
+      con <- DBI::dbConnect(RSQLite::SQLite(), ptaxsim_db_file)
+      on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+      DBI::dbGetQuery(
+        con,
+        glue::glue_sql(
+          "SELECT DISTINCT pin10, start_year, end_year, longitude, latitude
+           FROM pin_geometry_raw",
+          .con = con
+        )
+      )
+
+
+    }
+  ),
+
+  tar_target(
+    pin_centroids,
+    pin_centroids_raw |>
+      dplyr::group_by(pin10) |>
+      dplyr::summarize(
+        longitude  = dplyr::first(longitude),
+        latitude   = dplyr::first(latitude),
+        start_year = min(start_year, na.rm = TRUE),
+        end_year   = max(end_year,   na.rm = TRUE)
+      ) |>
+      sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326, remove = FALSE)
+  ),
+
+  tar_target(
+    firm_panels_2026,
+
+    read_firm_panels_shp(
+      shp_path = firm_panels_2026_shp,
+      border   = border,
+      crs_out  = sf::st_crs(border))
+  ),
+
+  # ---- Spatial join: which panel each centroid is within ----
+  tar_target(
+    pin_centroids_joined,
+    # crs project matters for centroids to match polygon
+    sf::st_join(pin_centroids, (firm_panels_2026 |> st_transform("EPSG:4326")), join = sf::st_within)
+  ),
+
+  tar_target(
+    pin_centroids_clean,
+    {
+      x <- pin_centroids_joined |>
+        sf::st_drop_geometry() |>
+        dplyr::select(-dplyr::any_of(c("PCOMM", "PANEL", "SUFFIX", "ST_FIPS",
+          "SCALE", "PANEL_TYP", "PNP_REASON", "BASE_TYP",
+          "geometry")))
+      x
+    }
+  ),
+
   # --- output dirs ---
   tar_target(
     targets_dirs,
@@ -26,13 +108,6 @@ list(
   # ============================================================
 
   # --- spatial inputs (adjust paths to your repo) ---
-
-  # county border for clipping
-  tar_target(
-    cook_border_file,
-    "inputs/Mapping_FIRMs/Cook_County_Border/Cook_County_Border.shp",
-    format = "file"
-  ),
 
   # parcel polygons as of tax year 2018
   tar_target(
@@ -62,10 +137,9 @@ list(
     format = "file"
   ),
 
-  # SFHA polygons (include T and F, need to filter it!!)
   tar_target(
     prelim_sfha_shp,
-    "inputs/FIRMDB_11182022_Cook-County_Illinois/S_Fld_Haz_Ar.shp",
+    "inputs/Cook_2026_download/S_Fld_Haz_Ar.shp",
     format = "file"
   ),
 
@@ -76,33 +150,6 @@ list(
     format = "file"
   ),
 
-
-  # --- read base geometries ---
-  tar_target(
-    border,
-    read_border(cook_border_file, crs_out = 6454)
-  ),
-
-  # tar_target(
-  #   firm_panels_2018,
-  #   read_firm_panels(nfhl_2018_gdb, layer = "S_FIRM_PAN", border = border, crs_out = sf::st_crs(border))
-  # ),
-  #
-  # tar_target(
-  #   firm_panels_2024,
-  #   read_firm_panels(nfhl_state_2024_gdb, layer = "S_FIRM_PAN", border = border, crs_out = sf::st_crs(border))
-  # ),
-
-  tar_target(
-    firm_panels_2026,
-    read_firm_panels_shp(
-      shp_path = firm_panels_2026_shp,
-      border   = border,
-      crs_out  = sf::st_crs(border)
-    )
-  ),
-
-
   # --- read in parcel polygons that are used to identify parcels that overlap with SFHA ---
   tar_target(
     parcels_2018,
@@ -110,7 +157,7 @@ list(
   ),
 
   tar_target(
-    parcels_2022,
+    parcels_2022, # Used for 2024 NFHL SFHA areas and 2026 Pending FIRM areas
     read_parcels_2022(parcels_2022_gdb, crs_out = sf::st_crs(border), border = border)
   ),
 
@@ -127,15 +174,11 @@ list(
     read_nfhl_sfha(nfhl_state_2024_gdb, layer = "S_FLD_HAZ_AR", border = border, sfha_tf_field = "SFHA_TF")
   ),
 
+  # pending FIRM changes were not a geodatabase during initial data availability, only shapefile
+
   tar_target(
     sfha_2026_poly,
-    read_prelim_sfha(nfhl_state_2026_gdb, layer = "S_FLD_HAZ_AR",  border = border, sfha_tf_field = "SFHA_TF", crs_out = sf::st_crs(border))
-  ),
-
-  # preliminary FIRM  changes were not a geodatabase during initial data availability, only shapefile
-  tar_target(
-    sfha_prelim_poly,
-    read_prelim_sfha(prelim_sfha_shp, border = border, crs_out = sf::st_crs(border))
+    read_prelim_sfha(prelim_sfha_shp,  border = border, crs_out = sf::st_crs(border))
   ),
 
   tar_target(
@@ -148,35 +191,33 @@ list(
     read_nfhl_lomr(nfhl_state_2024_gdb, layer = "S_LOMR", border = border)
   ),
 
-  # --- spatial joins (expensive) ---
+
+  # --- spatial joins: The big, time consuming ones.  ---
   tar_target(
     parcels_sfha_2018,
-    join_parcels_to_zone(parcels_2018, sfha_2018_poly, id_field = "DFIRM_ID"),
-    cue = tar_cue(mode = "thorough")
+    join_parcels_to_zone(parcels_2018, sfha_2018_poly, id_field = "DFIRM_ID")
   ),
 
   tar_target(
     parcels_sfha_2024,
-    join_parcels_to_zone(parcels_2022, sfha_2024_poly, id_field = "DFIRM_ID"),
-    cue = tar_cue(mode = "thorough")
+    join_parcels_to_zone(parcels_2022, sfha_2024_poly, id_field = "DFIRM_ID")
   ),
 
+  # only identifies parcels in SFHA for the pending FIRMs.
+  # Must back fill other parcels with 2024 NFHL data later
   tar_target(
     parcels_prelim_sfha,
-    join_parcels_to_zone(parcels_2022, sfha_prelim_poly, id_field = "DFIRM_ID"),
-    cue = tar_cue(mode = "thorough")
+    join_parcels_to_zone(parcels_2022, sfha_2026_poly, id_field = "DFIRM_ID")
   ),
 
   tar_target(
     parcels_lomr_2018,
-    join_parcels_to_zone(parcels_2018, lomr_2018_poly, id_field = "LOMR_ID"),
-    cue = tar_cue(mode = "thorough")
+    join_parcels_to_zone(parcels_2018, lomr_2018_poly, id_field = "LOMR_ID")
   ),
 
   tar_target(
     parcels_lomr_2024,
-    join_parcels_to_zone(parcels_2022, lomr_2024_poly, id_field = "LOMR_ID"),
-    cue = tar_cue(mode = "thorough")
+    join_parcels_to_zone(parcels_2022, lomr_2024_poly, id_field = "LOMR_ID")
   ),
 
   # --- rollup to sfha_indicator_pins (this is the “hits-only” file you mean) ---
@@ -191,55 +232,34 @@ list(
     )
   ),
 
-  tar_target(
-    sfha_indicator_pins_csv,
-    {
-      targets_dirs
-      out <- file.path(sfha_out_dir, "sfha_indicator_pins.csv")
-      readr::write_csv(sfha_indicator_pins, out)
-      out
-    },
-    format = "file"
-  ),
+  # tar_target(
+  #   sfha_indicator_pins_csv,
+  #   {
+  #     targets_dirs
+  #     out <- file.path(sfha_out_dir, "sfha_indicator_pins.csv")
+  #     readr::write_csv(sfha_indicator_pins, out)
+  #     out
+  #   },
+  #   format = "file"
+  # ),
+
 
   # tar_target(
-  #   parcels_withFIRMs_2018,
+  #   parcels_withFIRMs_2026,
   #   {
   #     out <- assign_panel_to_parcels(
-  #       parcels   = parcels_2018,
-  #       panels    = firm_panels_2018,
+  #       parcels   = parcels_2022,   # CHANGE THIS TO PTAXSIM CENTROIDS
+  #       panels    = firm_panels_2026,
   #       parcel_id = "pin10"
   #     )
-  #     assert_panel_assignment(out, parcel_id = "pin10")
-  #     out
-  #   }
-  # ),
+  #     # assert_panel_assignment(out, parcel_id = "pin10")
   #
-  # tar_target(
-  #   parcels_withFIRMs_2024,
-  #   {
-  #     out <- assign_panel_to_parcels(
-  #       parcels   = parcels_2022,
-  #       panels    = firm_panels_2024,
-  #       parcel_id = "pin10"
-  #     )
-  #     assert_panel_assignment(out, parcel_id = "pin10")
-  #     out
-  #   }
+  #     out_file <- file.path(sfha_out_dir, "parcels_withFIRMs.csv")
+  #     readr::write_csv(out, out_file)
+  #     out_file
+  #   },
+  #   format = "file"
   # ),
-
-  tar_target(
-    parcels_withFIRMs_2026,
-    {
-      out <- assign_panel_to_parcels(
-        parcels   = parcels_2022,
-        panels    = firm_panels_2026,
-        parcel_id = "pin10"
-      )
-      assert_panel_assignment(out, parcel_id = "pin10")
-      out
-    }
-  ),
 
   # tar_target(
   #   parcels_withFIRMs_csv,
@@ -267,84 +287,78 @@ list(
   #   format = "file"
   # ),
 
-
-
-  # ============================================================
-  # STAGE 2: Apply prelim coverage using parcels_wFIRMs + S_FIRM_PAN.xlsx
-  # ============================================================
+  #  tar_target(
+  #   parcels_withFIRMs_csv,
+  #   {
+  #     targets_dirs
+  #
+  #     out <- parcels_withFIRMs_2026 #|>
+  #         #  dplyr::rename(panel_2026 = PANEL, dfirm_id_2026 = DFIRM_ID),
+  #         #by = "pin10"
+  #      # ),
+  #
+  #     out_file <- file.path(sfha_out_dir, "parcels_withFIRMs.csv")
+  #     readr::write_csv(out, out_file)
+  #     out_file
+  #   },
+  #   format = "file"
+  # ),
 
   tar_target(
     parcels_with_firms,
-    readr::read_csv(parcels_withFIRMs_csv, show_col_types = FALSE) |>
-      dplyr::transmute(
-        pin10 = as.character(pin10),
-        firm_pan = as.character(panel_2024) # or panel_2024, pick one
-      ) |>
-      dplyr::distinct(pin10, .keep_all = TRUE)
-  ),
-
-
-  tar_target(
-    firm_pan_xlsx_file,
-    "data/raw/S_FIRM_PAN.xlsx",
-    format = "file"
-  ),
-
-
-  tar_target(
-    prelim_old_firm_panels,
     {
-      pan <- readxl::read_xlsx(firm_pan_xlsx_file)
+      drop_parcels <- c( # searched these manually in CookViewer to confirm they should be dropped. had missing FIRM information in pin10_firms
+        "0508400001", "0508400002", "0508400003", "0508400004", # pins in lake
+        "1405211017", "1405403020", "1416999001", "1710403001", # not residential parcels, some in water
+        "1715113004", "2130108012", "2130108018", "2130108019", # land and partially in water parcels
+        "2130108028", "2130108030", "2130108031", "2130108032", # land polygons along the lake, no residential buildings in them
+        "2130108033", "2130114012", "2130114013", "2130114014", "2130114015", "2130114016",  # land polygons along the lake, no buildings within them
+        "2130124001", "2130124002", "2130124003", "2130124004",  # almost completely in the lake
+        "2130999001", "2132213002", # actual water canal in calumet area
+        "2608202004", "2608400034", "3017211033" # also water pins.
+      )
 
-      pan |>
-        dplyr::filter(.data$SOURCE_DB == "PreliminaryFIRMDB") |>
-        dplyr::mutate(
-          old_firm_panel = dplyr::coalesce(
-            as.character(.data$old_firm_panel),
-            stringr::str_replace(as.character(.data$FIRM_PAN), "K$", "J")
-          )
-        ) |>
-        dplyr::filter(!is.na(.data$old_firm_panel)) |>
-        dplyr::pull(.data$old_firm_panel) |>
-        unique()
+      firm_info <- readxl::read_xlsx("inputs/Cook_2026_download/S_FIRM_PAN.xlsx") |>
+        select(FIRM_PAN, VERSION_ID, FIRM_ID, PRE_DATE, EFF_DATE)
+
+      pin_centroids_clean |>
+        dplyr::select(-c(DFIRM_ID, EFF_DATE)) |>
+        filter(!pin10 %in% drop_parcels) |>
+        mutate(FIRM_PAN = ifelse(pin10 == "2130111028", "17031C0539K", FIRM_PAN)) |>
+        left_join(firm_info, by = "FIRM_PAN") |>
+        mutate(in_prelim_panels = ifelse(VERSION_ID == "2.6.3.6", TRUE, FALSE))
+
+
     }
   ),
+
+
+  # tar_target(
+  #   firm_pan_xlsx_file,
+  #   read_xlsx("inputs/Cook_2026_download/S_FIRM_PAN.xlsx")
+  # ),
 
   tar_target(
     sfha_indicator_final,
     {
-      # sfha_indicator_pins is "hits-only": missing means 0 for full-county vintages.
-      # For prelim: compute NA/0/1 using prelim_covered.
-      base <- parcels_with_firms |>
-        dplyr::mutate(prelim_covered = as.integer(.data$firm_pan %in% prelim_old_firm_panels))
-
-      base |>
+      parcels_with_firms |>
         dplyr::left_join(sfha_indicator_pins, by = "pin10") |>
-        dplyr::mutate(
-          sfha2018 = dplyr::coalesce(as.integer(sfha2018), 0L),
-          sfha2024 = dplyr::coalesce(as.integer(sfha2024), 0L),
-          lomr2018 = dplyr::coalesce(as.integer(lomr2018), 0L),
-          lomr2024 = dplyr::coalesce(as.integer(lomr2024), 0L),
 
-          prelim_hit = dplyr::coalesce(as.integer(prelimsfha), 0L),
-          prelimsfha = dplyr::case_when(
-            prelim_covered == 0L ~ NA_integer_,
-            prelim_covered == 1L & prelim_hit == 1L ~ 1L,
-            prelim_covered == 1L & prelim_hit == 0L ~ 0L
-          )
+        mutate(
+          sfha2018 = ifelse(!is.na(FLD_ZONE), 1, 0),
+          sfha2024 = ifelse(!is.na(FLD_ZONE.x), 1, 0),
+          lomr2018 =  ifelse(!is.na(lomr_yearlomr2018), 1, 0),
+          lomr2024 = ifelse(!is.na(lomr_yearlomr2024), 1, 0)
         ) |>
-        dplyr::select(-prelim_hit)
-    }
-  ),
+        # fills in sfha2026 areas that were not updated with NFHL sfha indicators from 2024 database
+        # if in prelim panel, documents if it was a truly not in the
+        mutate(sfha2026 =
+          ifelse(in_prelim_panels == TRUE & !is.na(FLD_ZONE.y), 1,
+            ifelse(in_prelim_panels == TRUE & is.na(FLD_ZONE.y), 0,
+              ifelse(in_prelim_panels == FALSE, sfha2024, "CHECKME")))
+        ) |>
+        select(-c(FLD_ZONE.x:lomr_yearlomr2024))
 
-  tar_target(
-    sfha_indicator_final_csv,
-    {
-      targets_dirs
-      out <- file.path(sfha_out_dir, "sfha_indicator_final.csv")
-      readr::write_csv(sfha_indicator_final, out)
-      out
-    },
-    format = "file"
+    }
   )
 )
