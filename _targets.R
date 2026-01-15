@@ -8,6 +8,14 @@ tar_option_set(
 
 # helper functions for the spatial joins + rollups
 source("R/sfha_targets_functions.R")
+source("R/sales_data_functions.R")
+
+targets_out_dir <- "data/processed/targets"
+sfha_out_dir    <- file.path(targets_out_dir, "sfha")
+sales_out_dir   <- file.path(targets_out_dir, "sales")
+
+# helper functions for the spatial joins + rollups
+source("R/sfha_targets_functions.R")
 
 targets_out_dir <- "data/processed/targets"
 sfha_out_dir    <- file.path(targets_out_dir, "sfha")
@@ -232,78 +240,6 @@ list(
     )
   ),
 
-  # tar_target(
-  #   sfha_indicator_pins_csv,
-  #   {
-  #     targets_dirs
-  #     out <- file.path(sfha_out_dir, "sfha_indicator_pins.csv")
-  #     readr::write_csv(sfha_indicator_pins, out)
-  #     out
-  #   },
-  #   format = "file"
-  # ),
-
-
-  # tar_target(
-  #   parcels_withFIRMs_2026,
-  #   {
-  #     out <- assign_panel_to_parcels(
-  #       parcels   = parcels_2022,   # CHANGE THIS TO PTAXSIM CENTROIDS
-  #       panels    = firm_panels_2026,
-  #       parcel_id = "pin10"
-  #     )
-  #     # assert_panel_assignment(out, parcel_id = "pin10")
-  #
-  #     out_file <- file.path(sfha_out_dir, "parcels_withFIRMs.csv")
-  #     readr::write_csv(out, out_file)
-  #     out_file
-  #   },
-  #   format = "file"
-  # ),
-
-  # tar_target(
-  #   parcels_withFIRMs_csv,
-  #   {
-  #     targets_dirs
-  #
-  #     out <- parcels_withFIRMs_2018 |>
-  #
-  #   dplyr::rename(panel_2018 = PANEL, dfirm_id_2018 = DFIRM_ID) |>
-  #   dplyr::full_join(
-  #     parcels_withFIRMs_2024 |>
-  #       dplyr::rename(panel_2024 = PANEL, dfirm_id_2024 = DFIRM_ID),
-  #     by = "pin10"
-  #   ) |>
-  #      dplyr::full_join(
-  #         parcels_withFIRMs_2026 |>
-  #           dplyr::rename(panel_2026 = PANEL, dfirm_id_2026 = DFIRM_ID),
-  #         by = "pin10"
-  #       ),
-  #
-  #     out_file <- file.path(sfha_out_dir, "parcels_withFIRMs.csv")
-  #     readr::write_csv(out, out_file)
-  #     out_file
-  #   },
-  #   format = "file"
-  # ),
-
-  #  tar_target(
-  #   parcels_withFIRMs_csv,
-  #   {
-  #     targets_dirs
-  #
-  #     out <- parcels_withFIRMs_2026 #|>
-  #         #  dplyr::rename(panel_2026 = PANEL, dfirm_id_2026 = DFIRM_ID),
-  #         #by = "pin10"
-  #      # ),
-  #
-  #     out_file <- file.path(sfha_out_dir, "parcels_withFIRMs.csv")
-  #     readr::write_csv(out, out_file)
-  #     out_file
-  #   },
-  #   format = "file"
-  # ),
-
   tar_target(
     parcels_with_firms,
     {
@@ -342,23 +278,101 @@ list(
     sfha_indicator_final,
     {
       parcels_with_firms |>
-        dplyr::left_join(sfha_indicator_pins, by = "pin10") |>
+        dplyr::left_join(sfha_indicator_pins, by = "pin10", relationship = "many-to-one") |>
 
         mutate(
-          sfha2018 = ifelse(!is.na(FLD_ZONE), 1, 0),
-          sfha2024 = ifelse(!is.na(FLD_ZONE.x), 1, 0),
+          sfha2018 = ifelse(!is.na(FLD_ZONE2018), 1, 0),
+          sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
           lomr2018 =  ifelse(!is.na(lomr_yearlomr2018), 1, 0),
-          lomr2024 = ifelse(!is.na(lomr_yearlomr2024), 1, 0)
+          lomr2024 = ifelse(!is.na(lomr_yearlomr2024), 1, 0),
+          lomr_date = as.Date(lomr_date)
         ) |>
         # fills in sfha2026 areas that were not updated with NFHL sfha indicators from 2024 database
         # if in prelim panel, documents if it was a truly not in the
         mutate(sfha2026 =
-          ifelse(in_prelim_panels == TRUE & !is.na(FLD_ZONE.y), 1,
-            ifelse(in_prelim_panels == TRUE & is.na(FLD_ZONE.y), 0,
+          ifelse(in_prelim_panels == TRUE & !is.na(FLD_ZONE), 1,
+            ifelse(in_prelim_panels == TRUE & is.na(FLD_ZONE), 0,
               ifelse(in_prelim_panels == FALSE, sfha2024, "CHECKME")))
         ) |>
-        select(-c(FLD_ZONE.x:lomr_yearlomr2024))
-
+        select(pin10, longitude, latitude, start_year, end_year, FIRM_PAN,
+          VERSION_ID, PRE_DATE, EFF_DATE, in_prelim_panels,
+          sfha2018, sfha2024, sfha2026, lomr2018, lomr2024, lomr_date)
     }
+  ),
+
+
+
+  # ---- Stage 2: Sales + dissertation-ready variables ----
+  # Raw sales input (tracked). Update the path to match your project.
+  tar_target(
+    sales_csv_file,
+    "data/raw/Assessor_-_Parcel_Sales_20250709.csv",
+    format = "file"
+  ),
+
+  tar_target(
+    sales_raw,
+    read_sales_assessor(sales_csv_file, min_year = 2005)
+  ),
+
+  tar_target(
+    sales_joined,
+    merge_sales_sfha(sales_raw, sfha_indicator_final)
+  ),
+
+  tar_target(
+    sales_prepped,
+    make_sfha_timing_vars(sales_joined, min_analysis_year = 2009, min_price = 5000)
+  ),
+
+  tar_target(
+    res_sales,
+    build_res_sales(sales_prepped)
+  ),
+
+  tar_target(
+    repeat_res_sales,
+    build_repeat_res_sales(res_sales)
+  ),
+
+  # Write stable RDS outputs for Quarto + non-targets usage
+  tar_target(
+    sales_prepped_rds,
+    {
+      dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
+      out_file <- file.path(sales_out_dir, "sales_prepped.rds")
+      saveRDS(sales_prepped, out_file)
+      out_file
+    },
+    format = "file"
+  ),
+
+  tar_target(
+    res_sales_rds,
+    {
+      dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
+      out_file <- file.path(sales_out_dir, "res_sales.rds")
+      saveRDS(res_sales, out_file)
+      out_file
+    },
+    format = "file"
+  ), #
+
+  # tar_target(
+  #   repeat_res_sales_rds,
+  #   {
+  #     dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
+  #     out_file <- file.path(sales_out_dir, "repeat_res_sales.rds")
+  #     saveRDS(repeat_res_sales, out_file)
+  #     out_file
+  #   },
+  #   format = "file"
+  # )
+
+
+  # # ---- Stage 3: Render Quarto outputs (optional) ----
+  tarchetypes::tar_render(
+    create_datasets_report,
+    "2_create_datasets.qmd"
   )
 )
