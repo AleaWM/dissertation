@@ -21,7 +21,13 @@ library(skimr)
 ```{r warning = FALSE, message = FALSE}
 #res_sales  <- readRDS("./data/processed/res_sales.rds") |> filter(sale_date > date("2010-01-01"))  
 
-res_sales  <- readRDS("./data/processed/res_sales_buildings.rds") |> filter(sale_date > date("2010-01-01"))
+#res_sales  <- readRDS("./data/processed/res_sales_buildings.rds") |> filter(sale_date > date("2010-01-01"))
+
+#res_sales  <- readRDS("./data/processed/res_sales_buildings_TEST2.rds") |> 
+ # res_sales <- readRDS("data/processed/res_sales_parcels_20260109.rds") |>
+  res_sales <- readRDS("data/processed/targets/sales/res_sales.rds") |>
+
+  filter(sale_date > as.Date("2010-01-01"))
 
 pin_muni_key <- read_csv("./data/raw/pin_muni_key.csv")
 
@@ -71,6 +77,7 @@ repeat_sales <- res_sales |>
 ```
 
 ```{r warning = FALSE, message = FALSE}
+
 puni_pins <- read_csv("data/processed/floodfactor_scores.csv")
 
 pin_muni_key <- left_join(pin_muni_key, puni_pins)
@@ -86,20 +93,21 @@ df_prep <- repeat_sales %>%
   mutate(
     sale_year  = year(sale_date),
     eff_date = ymd(EFF_DATE),
-    pre_date = ymd(PRE_DATE)
+    pre_date = ymd(PRE_DATE),
+        ins_req = if_else(in_eff_sfha == 1 & in_lomr == FALSE, TRUE, FALSE)
+
   ) %>%
   # 2) Keep only the columns we need for repeat‐sales. You can drop geometry, etc.
-  select(pin, sale_date, sale_year, sale_price, in_eff_sfha, in_prelim_sfha, 
+  select(pin, sale_date, sale_year, sale_price, ins_req, in_eff_sfha, in_prelim_sfha,  
+      #   post_prelim_update, post_eff_update, 
          eff_date, pre_date, in_lomr, addedto_eff_sfha, removedfrom_eff_sfha,
-         addedto_prelim_sfha, removedfrom_prelim_sfha, condo, class) %>%
+         addedto_prelim_sfha, removedfrom_prelim_sfha, condo, class, FIRM_PAN) %>%
   # 3) Sort by pin and date
   arrange(pin, sale_date) %>%
   # 4) Tag how many times each PIN sold
   group_by(pin) %>%
   mutate(times_sold = n()) %>%
-  ungroup() %>%
-  # 5) Keep only those with at least two sales
-  filter(times_sold >= 2)
+  ungroup()
 
 
 
@@ -113,18 +121,43 @@ df_prep <- df_prep |>
   ) |>
   select(-c(agency_name, agency_num, short_name, shpfile_name) )
 
+# df_prep <- df_prep |> 
+#   group_by(pin) |>
+#   mutate(change_type =    # for Effective FIRMs
+#            case_when(
+#            sum(in_eff_sfha == "SFHA") == times_sold ~ "Always SFHA",
+#            sum(in_eff_sfha  == "SFHA") == 0 ~ "Never SFHA",
+#            T ~ "Changes SFHA"),
+#          change_type_prelim =
+#            case_when(
+#            sum(in_prelim_sfha == "SFHA") == times_sold ~ "Always SFHA",
+#            sum(in_prelim_sfha  == "SFHA") == 0 ~ "Never SFHA",
+#            T ~ "Changes SFHA"      
+#            ),
+#   change_type = factor(change_type, levels = c("Never SFHA", "Always SFHA", "Changes SFHA"))
+#   ) |>
+#   ungroup()
+
 df_prep <- df_prep |> 
   group_by(pin) |>
-  mutate(change_type = 
+  mutate(change_type =    # for Effective FIRMs
            case_when(
-           sum(in_eff_sfha == "SFHA") == times_sold ~ "Always SFHA",
-           sum(in_eff_sfha  == "SFHA") == 0 ~ "Never SFHA",
-           T ~ "Changes SFHA"
-    
-  ),
-  change_type = factor(change_type, levels = c("Never SFHA", "Always SFHA", "Changes SFHA"))
-  ) |>
-  ungroup()
+           sum(in_eff_sfha) == times_sold ~ "Always SFHA",
+           sum(in_eff_sfha) == 0 ~ "Never SFHA",
+           T ~ "Changes SFHA"),
+         change_type_prelim = 
+              case_when(
+           sum(in_prelim_sfha) == times_sold ~ "Always SFHA",
+           sum(in_prelim_sfha) == 0 ~ "Never SFHA",
+           T ~ "Changes SFHA")) |> 
+  ungroup() |>
+  mutate(
+         change_type = factor(change_type, levels = c("Never SFHA", "Always SFHA", "Changes SFHA")),
+         change_type_prelim = factor(change_type_prelim, levels = c("Never SFHA", "Always SFHA", "Changes SFHA"))
+  )
+
+table(df_prep$change_type)
+table(df_prep$change_type_prelim)
 
 ```
 
@@ -188,7 +221,7 @@ missing_ff <- df_prep |>
          # pin, 
           nbhd_code, zip_code, clean_name
           ) |>
-  arrange(pin10)
+  arrange(pin10) 
 
 # missing_ff  # 4768 distinct pins, over 12K observations
 # 2723 parcels missing flood factor scores
@@ -206,6 +239,7 @@ manual_ff_scores <- readxl::read_xlsx("data/processed/pins_with_some_addresses_f
 
 
 df_prep <- df_prep  |>  
+  mutate(clean_name = ifelse(is.na(clean_name),"Unincorporated", clean_name)) |>
   mutate(pin10 = str_sub(pin, 1, 10)) |>
   left_join(manual_ff_scores, by= "pin10")
 
@@ -224,115 +258,15 @@ df_prep |> filter(is.na(clean_name)) |> count()
 
 ```
 
-```{r make-df_pairs, message = FALSE}
-# 6) Now create the “paired” records: for each pin, pull next‐row info as “t2”
-df_pairs <- df_prep %>%
-  group_by(pin) %>%
-  arrange(sale_date) %>%
-  # Lead‐lag step: each row’s “lag_” is the previous sale
-  mutate(
-    sale_price_t1   = lag(sale_price),
-    sale_date_t1    = lag(sale_date),
-    sale_year_t1    = year(sale_date_t1),
-    in_sfha_t1      = lag(in_eff_sfha),
-  #  in_sfha_t1      = ifelse(is.na(in_sfha_t1), "Not SFHA", in_sfha_t1),
 
-    sale_price_t2   = sale_price,
-    sale_date_t2    = sale_date,
-    sale_year_t2    = sale_year,
-    in_sfha_t2      = in_eff_sfha,
-  ) %>%
-
-  ungroup() |> 
-  mutate(new_info_released = as_date("2020-06-29")) |>
-  # get rid of redundant variables that would be confusing
-  select(-c(sale_price, sale_date, sale_year, in_eff_sfha)) 
-
-
-
-df_pairs <- df_pairs %>%
-  mutate(
-        d_log_price = log(sale_price_t2) - log(sale_price_t1),  # same as log (sale2 / sale1)        
-        # time between sales
-         months_btwn = round(time_length(sale_date_t2 - sale_date_t1, "months")),  # between sales
-         years_btwn = round(time_length(sale_date_t2 - sale_date_t1, "years")),    # between sales
-        years_btwn = ifelse(years_btwn < 1, 1, years_btwn),
-        ann_d_log_price = d_log_price / years_btwn,
-
-    
-    # SFHA change as a factor variable
-    change_type = case_when(
-      in_sfha_t1 == "SFHA" & in_sfha_t2 == "Not SFHA" ~ "Removed",
-      in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "SFHA" ~ "Added",
-      in_sfha_t1 == "SFHA" & in_sfha_t2 == "SFHA" ~ "Both In SFHA",
-      in_sfha_t1 == "Not SFHA" & in_sfha_t2 == "Not SFHA" ~ "Both Out of SFHA",
-      TRUE ~ "OTHER"
-      
-    )
-  ) |>
-  
-  # add additional location variables (Triad, township, municipality, etc)
-  left_join(pin_muni_key)
-
-
-
-df_pairs <- df_pairs |> 
-  mutate(
-    
-    # relative time variables 
-    t_months_eff = round(time_length(sale_date_t1 - eff_date, "months") ), # first sale to FIRM update, in months
-    
-    t_years_eff = round(time_length(sale_date_t1 - eff_date, "years") ),    # first sale to FIRM upd ate, in years
-
-    t_months_prelim = round(time_length(sale_date_t1 - pre_date, "months") ), # first sale to FIRM update, in months
-
-    t_years_prelim = round(time_length(sale_date_t1 - pre_date, "years") ),    # first sale to FIRM update, in years
-
-  )|>
-  # Only keep rows where lag exists (i.e. drop the very first sale for each PIN)
-  filter(!is.na(sale_price_t1))
-
-
-
-df_pairs <- df_pairs |> 
-  select(pin, 
-         ann_d_log_price, d_log_price,
-         sale_year_t1, sale_price_t1, in_sfha_t1, 
-         sale_year_t2, sale_price_t2, in_sfha_t2, 
-         years_btwn, change_type, everything()
-  )
-
-df_pairs <- df_pairs |> 
-  mutate(change_type = factor(change_type, levels = c("Both Out of SFHA", "Both In SFHA", "Added", "Removed")))
-
-
-df_pairs <- df_pairs |> 
-  mutate(ff_factor = factor(env_flood_fs_factor))
-
-
-```
-
-There are `r n_distinct(df_pairs$pin)` pins remaining in `df_pairs`.
-
-```{r}
-## Create event indicators
-
-## if the first sale was before the release and the next sale was after the release, then coded as TRUE, otherwise, FALSE
-ff_pairs <- df_pairs |>  
-  mutate(
-    treated = ifelse(sale_date_t1 < as_date("2020-06-29") & sale_date_t2 >= as_date("2020-06-29"), TRUE, FALSE),
-    high_ff_score = ifelse(env_flood_fs_factor > 4 | flood_factor_score > 4, TRUE, FALSE)
-  )
-```
-
-```{r}
+```{r export-datafiles}
 # saveRDS(df_pairs, file = "./data/processed/df_pairs.RDS")
 # saveRDS(ff_pairs, file = "./data/processed/ff_pairs.RDS")
 # saveRDS(df_prep, file = "./data/processed/df_prep.RDS")
 
-saveRDS(ff_pairs, file = "./data/processed/ff_pairs_buildings.RDS")
-saveRDS(df_prep, file = "./data/processed/df_prep_buildings.RDS")
-saveRDS(df_pairs, file = "./data/processed/df_pairs_buildings.RDS")
+#saveRDS(ff_pairs, file = "./data/processed/ff_pairs_buildings.RDS")
+saveRDS(df_prep, file = "./data/processed/df_prep_parcels_20260109.RDS")
+#saveRDS(df_pairs, file = "./data/processed/df_pairs_buildings.RDS")
 
 
 ```
