@@ -73,46 +73,44 @@ make_sfha_indicator_parcels <- function(sfha2018, sfha2024, prelim, lomr2018, lo
   # create and use 10 digit parcel number for identifying land in sfhas or lomrs
   sfha2018_df <- sfha2018 |>
     as.data.frame() |>
-    select(pin10, FLD_ZONE, FLD_AR_ = FLD_AR_ID, ZONE_SUBTY) |>
+    select(pin10, FLD_ZONE) |>
     distinct()
 
   sfha2024_df <- sfha2024 |>
     as.data.frame() |>
-    select(pin10, FLD_ZONE, FLD_AR_ = FLD_AR_ID, ZONE_SUBTY) |>
+    select(pin10, FLD_ZONE) |>
     distinct()
 
   prelim_df <- prelim |>
     as.data.frame() |>
-    select(pin10, FLD_ZONE, FLD_AR_ = FLD_AR_ID, ZONE_SUBTY) |>
+    select(pin10, FLD_ZONE) |>
     distinct()
 
   lomr2018_df <- lomr2018 |>
     as.data.frame() |>
     mutate(lomr_year = "2018") |>
-    transmute(pin10, lomr_year, EFF_DAT = EFF_DATE, CASE_NO = CASE_NO) |>
-    distinct(pin10, .keep_all = TRUE)
+    select(pin10, lomr_year, EFF_DATE, CASE_NO) |>
+    distinct()
 
   lomr2024_df <- lomr2024 |>
     as.data.frame() |>
     mutate(lomr_year = "2024") |>
-    transmute(pin10, lomr_year, EFF_DAT = EFF_DATE, CASE_NO = CASE_NO) |>
-    distinct(pin10, .keep_all = TRUE)
+    select(pin10, lomr_year, EFF_DATE, CASE_NO) |>
+    distinct()
 
   lomr_join <- lomr2018_df |>
     full_join(lomr2024_df,
-      by = c("pin10", "CASE_NO", "EFF_DAT"),
+      by = c("pin10", "CASE_NO", "EFF_DATE"),
       suffix = c("lomr2018", "lomr2024")
     )  |>
-    group_by(CASE_NO) |>
-    arrange(pin10) |>
-    rename(lomr_date = EFF_DAT)
+    rename(lomr_date = EFF_DATE)
 
 
   # combine parcels flagged as in SFHAs or LOMRs
   out <- sfha2018_df |>
-    full_join(sfha2024_df, by = "pin10") |>
-    full_join(prelim_df, by = "pin10") |>
+    full_join(sfha2024_df, by = "pin10",  suffix = c("2018", "2024")) |>
+    full_join(prelim_df, by = "pin10", suffix = c("_", "prelim")) |>
     full_join(lomr_join, by = "pin10")
 
-  out
+  out |> group_by(pin10) |> slice_head(n = 1) |> ungroup()
 }
