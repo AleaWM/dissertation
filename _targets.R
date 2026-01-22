@@ -440,7 +440,7 @@ list(
         bldg_sfha2018 = dplyr::if_else(!is.na(bldg_FLD_ZONE_2018), 1L, 0L),
         bldg_sfha2024 = dplyr::if_else(!is.na(bldg_FLD_ZONE_2024), 1L, 0L),
         bldg_sfha2026 =
-          ifelse(in_prelim_panels == TRUE  & !is.nabldg_FLD_ZONE_2026, 1,
+          ifelse(in_prelim_panels == TRUE  & !is.na(bldg_FLD_ZONE_2026), 1,
             ifelse(in_prelim_panels == TRUE & is.na(bldg_FLD_ZONE_2026), 0,
               ifelse(in_prelim_panels == FALSE, bldg_FLD_ZONE_2024, NA))),
 
