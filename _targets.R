@@ -3,7 +3,7 @@ library(targets)
 library(tarchetypes)
 
 tar_option_set(
-  packages = c("sf", "dplyr", "readr", "readxl", "stringr", "tidyr", "lubridate")
+  packages = c("sf", "dplyr", "readr", "readxl", "stringr", "tidyr", "lubridate", "tibble")
 )
 
 
@@ -11,6 +11,15 @@ sfha_methods <- tibble::tibble(
   method   = c("land", "bldg", "ptaxsim", "risk500"),
   out_stub = c("land", "bldg", "ptaxsim", "risk500"))
 
+
+sales_versions <- data.frame(
+  sales_label = c("baseline", "updated"),
+  sales_file  = c(
+    "data/raw/Assessor_-_Parcel_Sales_20250709.csv",
+    "data/raw/Assessor_-_Parcel_Sales_20251229.csv"
+  ),
+  stringsAsFactors = FALSE
+)
 
 # helper functions for the spatial joins + rollups
 source("R/sfha_targets_functions.R")
@@ -296,19 +305,19 @@ list(
   ## --- Expanded Risk zone; 1 in 500 year flood area according to FEMA  ----
   tar_target(
     risk500_2018_poly,
-    read_nfhl_sfha(nfhl_2018_gdb, layer = "S_Fld_Haz_Ar", border = border, sfha_tf_field = "SFHA_TF")
+    read_nfhl_1in500(nfhl_2018_gdb, layer = "S_Fld_Haz_Ar", border = border, sfha_tf_field = "SFHA_TF")
   ),
 
   tar_target(
     risk500_2024_poly,
-    read_nfhl_sfha(nfhl_state_2024_gdb, layer = "S_FLD_HAZ_AR", border = border, sfha_tf_field = "SFHA_TF")
+    read_nfhl_1in500(nfhl_state_2024_gdb, layer = "S_FLD_HAZ_AR", border = border, sfha_tf_field = "SFHA_TF")
   ),
 
   # pending FIRM changes were not a geodatabase during initial data availability, only shapefile
 
   tar_target(
     risk500_2026_poly,
-    read_prelim_sfha(prelim_sfha_shp,  border = border, crs_out = sf::st_crs(border))
+    read_prelim_1in500(prelim_sfha_shp,  border = border, crs_out = sf::st_crs(border))
   ),
 
 
@@ -363,11 +372,13 @@ list(
 
   ## ---- Building Polygons for Flag variables  ----
 
+  ### ---- Combine building polygons and parcel polygons so that buildings have Parcel number
   tar_target(
     buildings_with_pin,
     assign_buildings_to_parcels(buildings_raw, parcels_2022, parcel_pin_field = "pin")
   ),
 
+  ### ---- Join buildings to risk polygon: Keep intersecting parcels -------------------------------
   tar_target(
     buildings_sfha_2018,
     join_buildings_to_zone(buildings_with_pin, sfha_2018_poly, id_field = "DFIRM_ID")
@@ -620,24 +631,27 @@ list(
 
 
 
-  # ---- Prep Sales Data ----
+
+
+
+
   # Raw sales input (tracked). Update the path to match your project.
-  tar_target(
-    sales_csv_file,
-    # "data/raw/Assessor_-_Parcel_Sales_20251229.csv",
-    "data/raw/Assessor_-_Parcel_Sales_20250709.csv",
-    format = "file"
-  ),
-
-  tar_target(
-    sales_raw,
-    read_sales_assessor(sales_csv_file, min_year = 2009)
-  ),
-
-  tar_target(
-    res_sales,
-    build_res_sales(sales_raw)
-  ),
+  # tar_target(
+  #   sales_csv_file,
+  #   # "data/raw/Assessor_-_Parcel_Sales_20251229.csv",
+  #   "data/raw/Assessor_-_Parcel_Sales_20250709.csv",
+  #   format = "file"
+  # ),
+  #
+  # tar_target(
+  #   sales_raw,
+  #   read_sales_assessor(sales_csv_file, min_year = 2009)
+  # ),
+  #
+  # tar_target(
+  #   res_sales,
+  #   build_res_sales(sales_raw)
+  # ),
 
 
 
@@ -661,6 +675,7 @@ list(
         risk500_indicator_final_buildings |>
           dplyr::select(pin10, risk500_bldg_2018, risk500_bldg_2024, risk500_bldg_2026),
         by = "pin10") |>
+
       dplyr::mutate(
         diff_land_bldg_2024 = sfha2024 != bldg_sfha2024,
         diff_land_ptax_2024 = sfha2024 != ptax_sfha2024,
@@ -671,59 +686,204 @@ list(
       )
   ),
 
-  # --------Sales Data Joins, Cleaning and Exporting ---------------------------
 
-  # joins residential sales and the indicators for both parcel-based and building-based SFHA indicator variables
-  tar_target(
-    sales_joined, # has residential only sales now
-    merge_sales_sfha(res_sales, sfha_compare_pin10_fourway)
-  ),
-
+  # ---- Prep Sales Data ----
 
   tarchetypes::tar_map(
-    values = sfha_methods,
-    names  = out_stub,   # creates branches named land / bldg / ptaxsim
+    values = sales_versions,
+    names  = sales_label,
     list(
+      # --- Sales ingest (version-specific) ---
       tar_target(
-        sales_prepped,
-        make_sfha_timing_vars(
-          sales_joined,
-          method = method,
-          min_analysis_year = 2009,
-          min_price = 5000
-        )
-      ),
-
-      tar_target(
-        repeat_sales,
-        make_repeat_sales(sales_prepped)
-      ),
-
-      tar_target(
-        df_prep,
-        make_df_prep(repeat_sales, pin_muni_key_tbl)
-      ),
-
-      tar_target(
-        df_prep_filled,
-        fill_missing_muni_by_nbhd_zip(df_prep)
-      ),
-
-      tar_target(
-        df_prep_final,
-        final_df_prep_filters(df_prep_filled)
-      ),
-
-      tar_target(
-        df_prep_final_rds,
-        {
-          dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
-          out_file <- file.path(sales_out_dir, paste0("df_prep_", out_stub, "_final.rds"))
-          saveRDS(df_prep_final, out_file)
-          out_file
-        },
+        sales_csv_file,
+        sales_file,
         format = "file"
+      ),
+
+      tar_target(
+        sales_raw,
+        read_sales_assessor(sales_csv_file, min_year = 2009)
+      ),
+
+      tar_target(
+        res_sales,
+        build_res_sales(sales_raw)
+      ),
+
+      # --- Join sales to SFHA indicators (same indicators, different sales universe) ---
+      tar_target(
+        sales_joined,
+        merge_sales_sfha(res_sales, sfha_compare_pin10_fourway)
+      ),
+
+      # --- Downstream: branch over SFHA measurement method ---
+      tarchetypes::tar_map(
+        values = sfha_methods,
+        names  = out_stub,
+        list(
+          tar_target(
+            sales_prepped,
+            make_sfha_timing_vars(
+              sales_joined,
+              method = method,
+              min_analysis_year = 2009,
+              min_price = 5000
+            )
+          ),
+
+          tar_target(
+            repeat_sales,
+            make_repeat_sales(sales_prepped)
+          ),
+
+          tar_target(
+            df_prep,
+            make_df_prep(repeat_sales, pin_muni_key_tbl)
+          ),
+
+          tar_target(
+            df_prep_filled,
+            fill_missing_muni_by_nbhd_zip(df_prep)
+          ),
+
+          tar_target(
+            df_prep_final,
+            final_df_prep_filters(df_prep_filled)
+          ),
+
+          # --- Write stable, versioned outputs ---
+          tar_target(
+            df_prep_final_rds,
+            {
+              dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
+              out_file <- file.path(
+                sales_out_dir,
+                paste0("df_prep_", out_stub, "_", sales_label, "_final.rds")
+              )
+              saveRDS(df_prep_final, out_file)
+              out_file
+            },
+            format = "file"
+          )
+        )
       )
     )
   )
 )
+
+# ------- Old stuff before branches: delete soon -------------------
+
+#
+# tarchetypes::tar_map(
+#   values = sales_versions,
+#   names  = sales_label,
+#   list(
+#     tar_target(
+#       sales_csv_file,
+#       sales_file,
+#       format = "file"
+#     ),
+#     tar_target(
+#       sales_raw,
+#       read_sales_assessor(sales_csv_file, min_year = 2009)
+#     ),
+#     tar_target(
+#       res_sales,
+#       build_res_sales(sales_raw)
+#     )
+#   ),
+#
+#   ## --------Sales Data Joins, Cleaning and Exporting ---------------------------
+#
+#   # joins residential sales and the indicators for both parcel-based and building-based SFHA indicator variables
+#   tar_target(
+#     sales_joined, # has residential only sales now
+#     merge_sales_sfha(res_sales, sfha_compare_pin10_fourway)
+#   ),
+# tarchetypes::tar_map(
+#   values = sfha_methods,
+#   names  = out_stub,   # creates branches named land / bldg / ptaxsim
+#   list(
+#     tar_target(
+#       sales_prepped,
+#       make_sfha_timing_vars(
+#         sales_joined,
+#         method = method,
+#         min_analysis_year = 2009,
+#         min_price = 5000
+#       )
+#     ),
+#
+#     tar_target(
+#       repeat_sales,
+#       make_repeat_sales(sales_prepped)
+#     ),
+#
+#     tar_target(
+#       df_prep,
+#       make_df_prep(repeat_sales, pin_muni_key_tbl)
+#     ),
+#
+#     tar_target(
+#       df_prep_filled,
+#       fill_missing_muni_by_nbhd_zip(df_prep)
+#     ),
+#
+#     tar_target(
+#       df_prep_final,
+#       final_df_prep_filters(df_prep_filled)
+#     ),
+#
+#     tar_target(
+#       df_prep_final_rds,
+#       {
+#         dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
+#         out_file <- file.path(sales_out_dir, paste0("df_prep_", out_stub, "_final.rds"))
+#         saveRDS(df_prep_final, out_file)
+#         out_file
+#       },
+#       format = "file"
+#     )
+#   )
+# )
+#
+#
+#   tarchetypes::tar_map(
+#     values = sales_versions,
+#     names  = sales_label,
+#     list(
+#       tarchetypes::tar_map(
+#         values = sfha_methods,
+#         names  = out_stub,
+#         list(
+#           tar_target(
+#             sales_prepped,
+#             make_sfha_timing_vars(
+#               sales_joined,
+#               method = method,
+#               min_analysis_year = 2009,
+#               min_price = 5000
+#             )
+#           ),
+#           tar_target(repeat_sales, make_repeat_sales(sales_prepped)),
+#           tar_target(df_prep, make_df_prep(repeat_sales, pin_muni_key_tbl)),
+#           tar_target(df_prep_filled, fill_missing_muni_by_nbhd_zip(df_prep)),
+#           tar_target(df_prep_final, final_df_prep_filters(df_prep_filled)),
+#           tar_target(
+#             df_prep_final_rds,
+#             {
+#               dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
+#               out_file <- file.path(
+#                 sales_out_dir,
+#                 paste0("df_prep_", out_stub, "_", sales_label, "_final.rds")
+#               )
+#               saveRDS(df_prep_final, out_file)
+#               out_file
+#             },
+#             format = "file"
+#           )
+#         )
+#       )
+#     )
+#   )
+# )
