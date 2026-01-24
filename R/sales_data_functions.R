@@ -52,7 +52,7 @@ merge_sales_sfha <- function(sales, sfha_indicator_final) {
 #' @param min_analysis_year Keep records with year > min_analysis_year (default 2009 from your script)
 #' @param min_price Keep sale_price > min_price when building lags (default 5000 from your script)
 #' @return df with in_eff_sfha, in_prelim_sfha, in_lomr, ins_req, lag vars, and added/removed flags
-make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim"),
+make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "risk500"),
                                   min_analysis_year = 2009,
                                   min_price = 5000) {
   method <- match.arg(method)
@@ -79,7 +79,16 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim"),
         sfha2024_col = ptax_sfha2024,
         sfha2026_col = ptax_sfha2026
       )
+  } else if (method == "risk500") {
+
+    df <- df |>
+      rename(
+        sfha2018_col = risk500_bldg_2018,
+        sfha2024_col = risk500_bldg_2024,
+        sfha2026_col = risk500_bldg_2026
+      )
   }
+
 
   out <- df |>
     dplyr::filter(.data$year > min_analysis_year) |>
