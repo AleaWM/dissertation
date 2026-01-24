@@ -285,9 +285,21 @@ make_sfha_indicator_buildings <- function(b2018, b2024, bprelim, blomr2018, blom
     dplyr::full_join(lomr_join, by = "pin10")
 
   out |> group_by(pin10) |> slice_head(n = 1) |> ungroup()
+}
 
 
+read_nfhl_1in500 <- function(gdb_path, layer, border, sfha_tf_field = "SFHA_TF") {
+  sf::read_sf(gdb_path, layer = layer, quiet = TRUE) |>
+    filter(.data[[sfha_tf_field]] == "T" |  ZONE_SUBTY == "0.2 PCT ANNUAL CHANCE FLOOD HAZARD") |>
+    st_transform(st_crs(border)) |>
+    st_intersection(border) |>
+    st_cast("MULTIPOLYGON")
+}
 
-
-
+read_prelim_1in500 <- function(prelim_shp, border, crs_out = sf::st_crs(border)) {
+  st_read(prelim_shp, quiet = TRUE) |>
+    filter(SFHA_TF == "T" |  ZONE_SUBTY == "0.2 PCT ANNUAL CHANCE FLOOD HAZARD") |>
+    st_transform(st_crs(border)) |>
+    st_intersection(border) |>
+    st_cast("MULTIPOLYGON")
 }
