@@ -8,8 +8,8 @@ tar_option_set(
 
 
 sfha_methods <- tibble::tibble(
-  method   = c("land", "bldg", "ptaxsim", "risk500"),
-  out_stub = c("land", "bldg", "ptaxsim", "risk500"))
+  method   = c("land", "bldg", "ptaxsim", "risk500", "risk500_land"),
+  out_stub = c("land", "bldg", "ptaxsim", "risk500", "risk500_land"))
 
 
 sales_versions <- data.frame(
@@ -24,6 +24,8 @@ sales_versions <- data.frame(
 # helper functions for the spatial joins + rollups
 source("R/sfha_targets_functions.R")
 source("R/sales_data_functions.R")
+source("R/indicator_final_functions.R")
+# source()
 
 targets_out_dir <- "data/processed/targets"
 sfha_out_dir    <- file.path(targets_out_dir, "sfha")
@@ -38,6 +40,29 @@ list(
     }
   ),
   # --- External Data Items ----
+  ## --- Manual recode parcels -----
+  tar_target(drop_pins_file, "R/helper_pins_to_drop.R", format = "file"),
+  tar_target(firm_override_file, "R/helper_assign_FIRM_panels.R", format = "file"),
+
+  tar_target(
+    drop_parcels,
+    {
+      source(drop_pins_file, local = TRUE)
+      drop_parcels
+    }
+  ),
+
+  tar_target(
+    firm_overrides,
+    {
+      source(firm_override_file, local = TRUE)
+      # pins is a named character vector: names = pin10, values = FIRM_PAN :contentReference[oaicite:2]{index=2}
+      tibble::tibble(
+        pin10 = names(pins),
+        FIRM_PAN_override = unname(pins)
+      )
+    }
+  ),
 
 
   ## ---- Read/assemble lookup tables ----
@@ -45,6 +70,27 @@ list(
   tar_target(muni_nicknames_file, "../Merriman RA/ptax/Necessary_Files/muni_shortnames.xlsx", format = "file"),
   tar_target(floodfactor_file, "data/processed/floodfactor_scores.csv", format = "file"),
   tar_target(manual_ff_scores_file, "data/processed/pins_with_some_addresses_forgoogle.xlsx", format = "file"),
+
+
+  # file where I manually changed the preliminary date and effective dates (NFHL didn't have preliminary dates)
+  tar_target(
+    firm_dates_file,
+    "inputs/Cook_2026_download/S_FIRM_PAN.xlsx",
+    format = "file"
+  ),
+
+  tar_target(
+    firm_dates,
+    readxl::read_xlsx(firm_dates_file) |>
+      dplyr::select(
+        FIRM_PAN,   # what the join will be based off of
+        VERSION_ID,
+        FIRM_ID,
+        PRE_DATE, # mostly want this variable
+        EFF_DATE
+      )
+  ),
+
 
   tar_target(
     pin_muni_key_tbl,
@@ -222,9 +268,10 @@ list(
     {
       x <- pin_centroids_joined |>
         sf::st_drop_geometry() |>
-        dplyr::select(-dplyr::any_of(c("PCOMM", "PANEL", "SUFFIX", "ST_FIPS",
-          "SCALE", "PANEL_TYP", "PNP_REASON", "BASE_TYP",
-          "geometry")))
+        dplyr::select(-dplyr::any_of(c("PCOMM", "PANEL", "SUFFIX", "ST_FIPS", "VERSION_ID",
+          "SCALE", "PANEL_TYP", "PNP_REASON", "BASE_TYP", "DFIRM_ID", "EFF_DATE", "EFF_DAT",
+          "geometry"))) |>
+        dplyr::filter(!pin10 %in% drop_parcels)
       x
     }
   ),
@@ -232,30 +279,47 @@ list(
   tar_target(
     parcels_with_firms,
     {
-      drop_parcels <- c( # searched these manually in CookViewer to confirm they should be dropped. had missing FIRM information in pin10_firms
-        "0508400001", "0508400002", "0508400003", "0508400004", # pins in lake
-        "1405211017", "1405403020", "1416999001", "1710403001", # not residential parcels, some in water
-        "1715113004", "2130108012", "2130108018", "2130108019", # land and partially in water parcels
-        "2130108028", "2130108030", "2130108031", "2130108032", # land polygons along the lake, no residential buildings in them
-        "2130108033", "2130114012", "2130114013", "2130114014", "2130114015", "2130114016",  # land polygons along the lake, no buildings within them
-        "2130124001", "2130124002", "2130124003", "2130124004",  # almost completely in the lake
-        "2130999001", "2132213002", # actual water canal in calumet area
-        "2608202004", "2608400034", "3017211033" # also water pins.
-      )
+      out <- pin_centroids_clean |>
+        dplyr::left_join(firm_dates) |>
 
-      firm_info <- readxl::read_xlsx("inputs/Cook_2026_download/S_FIRM_PAN.xlsx") |>
-        select(FIRM_PAN, VERSION_ID, FIRM_ID, PRE_DATE, EFF_DATE)
-
-      pin_centroids_clean |>
-        dplyr::select(-c(DFIRM_ID, EFF_DATE)) |>
-        filter(!pin10 %in% drop_parcels) |>
-        mutate(FIRM_PAN = ifelse(pin10 == "2130111028", "17031C0539K", FIRM_PAN)) |>
-        left_join(firm_info, by = "FIRM_PAN") |>
+        dplyr::left_join(firm_overrides, by = "pin10") |>
+        dplyr::mutate(FIRM_PAN = dplyr::coalesce(FIRM_PAN_override, FIRM_PAN)) |>
+        dplyr::select(-FIRM_PAN_override) |>
         mutate(in_prelim_panels = ifelse(VERSION_ID == "2.6.3.6", TRUE, FALSE))
 
 
+      if (any(is.na(out$FIRM_PAN))) {
+        missing <- out |>
+          dplyr::filter(is.na(FIRM_PAN)) |>
+          dplyr::distinct(pin10)
+
+        stop(
+          "Missing FIRM_PAN for ",
+          nrow(missing),
+          " parcels.\nFirst few PINs:\n",
+          paste(head(missing$pin10, 10), collapse = ", "),
+          call. = FALSE
+        )
+      }
+      out
     }
   ),
+
+
+  # tar_target(
+  #   parcels_with_firms2,
+  #   {
+  #
+  #     firm_info <- readxl::read_xlsx("inputs/Cook_2026_download/S_FIRM_PAN.xlsx") |>
+  #       select(FIRM_PAN, VERSION_ID, FIRM_ID, PRE_DATE, EFF_DATE)
+  #
+  #     pin_centroids_clean |>
+  #       filter(!pin10 %in% drop_parcels) |>
+  #       left_join(firm_info, by = "FIRM_PAN") |>
+  #
+  #
+  #   }
+  # ),
 
 
 
@@ -421,6 +485,25 @@ list(
   ),
 
 
+
+  ## ---- Land Parcels that intersect expanded Risk zones ----------------------------
+  tar_target(
+    land_risk500_2018,
+    join_parcels_to_zone(ptaxsim_parcels_sf, risk500_2018_poly, id_field = "DFIRM_ID")
+  ),
+
+  tar_target(
+    land_risk500_2024,
+    join_parcels_to_zone(ptaxsim_parcels_sf, risk500_2024_poly, id_field = "DFIRM_ID")
+  ),
+
+  tar_target(
+    land_risk500_2026,
+    join_parcels_to_zone(ptaxsim_parcels_sf, risk500_2026_poly, id_field = "DFIRM_ID")
+  ),
+
+
+
   # ---------- SFHA indicator files (this is “hits-only”) -------------
   tar_target(
     sfha_indicator_land_parcels,
@@ -467,107 +550,172 @@ list(
     )
   ),
 
+  tar_target(
+    risk500_indicator_land,
+    make_sfha_indicator_parcels(
+      land_risk500_2018,
+      land_risk500_2024,
+      land_risk500_2026,
+      parcels_lomr_2018,
+      parcels_lomr_2024
+    )
+  ),
 
   ## --- Add flag variables ----------------------------
   tar_target(
     sfha_indicator_final_land,
-    {
-      parcels_with_firms |>
-        dplyr::left_join(sfha_indicator_land_parcels, by = "pin10", relationship = "many-to-one") |>
-
-        mutate(
-          sfha2018 = ifelse(!is.na(FLD_ZONE2018), 1, 0),
-          sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
-          lomr2018 =  ifelse(!is.na(lomr_yearlomr2018), 1, 0),
-          lomr2024 = ifelse(!is.na(lomr_yearlomr2024), 1, 0),
-          lomr_date = as.Date(lomr_date)
-        ) |>
-        # fills in sfha2026 areas that were not updated with NFHL sfha indicators from 2024 database
-        # if in prelim panel, documents if it was a truly not in the
-        mutate(sfha2026 =
-          ifelse(in_prelim_panels == TRUE & !is.na(FLD_ZONE), 1,
-            ifelse(in_prelim_panels == TRUE & is.na(FLD_ZONE), 0,
-              ifelse(in_prelim_panels == FALSE, sfha2024, NA)))
-        ) |>
-        select(pin10, longitude, latitude, start_year, end_year, FIRM_PAN,
-          VERSION_ID, PRE_DATE, EFF_DATE, in_prelim_panels,
-          sfha2018, sfha2024, sfha2026, lomr2018, lomr2024, lomr_date)
-    }
+    make_sfha_indicator_final(
+      parcels_with_firms = parcels_with_firms,
+      indicator_df       = sfha_indicator_land_parcels,
+      zone_2018          = "FLD_ZONE_2018",
+      zone_2024          = "FLD_ZONE_2024",
+      zone_2026          = "FLD_ZONE",  # is the 2026 pending firm values
+      lomr_date_col      = "lomr_date",
+      out_prefix         = "land_sfha"
+    )
   ),
-
+  #     dplyr::left_join(sfha_indicator_land_parcels, by = "pin10", relationship = "many-to-one") |>
+  #
+  #       mutate(
+  #         sfha2018 = ifelse(!is.na(FLD_ZONE2018), 1, 0),
+  #         sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
+  #         lomr2018 =  ifelse(!is.na(lomr_yearlomr2018), 1, 0),
+  #         lomr2024 = ifelse(!is.na(lomr_yearlomr2024), 1, 0),
+  #         lomr_date = as.Date(lomr_date)
+  #       ) |>
+  #       # fills in sfha2026 areas that were not updated with NFHL sfha indicators from 2024 database
+  #       # if in prelim panel, documents if it was a truly not in the
+  #       mutate(sfha2026 =
+  #         ifelse(in_prelim_panels == TRUE & !is.na(FLD_ZONE), 1,
+  #           ifelse(in_prelim_panels == TRUE & is.na(FLD_ZONE), 0,
+  #             ifelse(in_prelim_panels == FALSE, sfha2024, NA)))
+  #       ) |>
+  #       select(pin10, longitude, latitude, start_year, end_year, FIRM_PAN,
+  #         VERSION_ID, PRE_DATE, EFF_DATE, in_prelim_panels,
+  #         sfha2018, sfha2024, sfha2026, lomr2018, lomr2024, lomr_date)
+  #   }
+  # ),
 
   tar_target(
     ptaxsim_sfha_indicator_final,
-    {
-      parcels_with_firms |>
-        dplyr::left_join(ptaxsim_sfha_indicator_parcel_polygons, by = "pin10", relationship = "many-to-one") |>
-
-        mutate(
-          sfha2018 = ifelse(!is.na(FLD_ZONE2018), 1, 0),
-          sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
-          lomr2018 =  ifelse(!is.na(lomr_yearlomr2018), 1, 0),
-          lomr2024 = ifelse(!is.na(lomr_yearlomr2024), 1, 0),
-          lomr_date = as.Date(lomr_date)
-        ) |>
-        # fills in sfha2026 areas that were not updated with NFHL sfha indicators from 2024 database
-        # if in prelim panel, documents if it was a truly not in the
-        mutate(sfha2026 =
-          ifelse(in_prelim_panels == TRUE  & !is.na(FLD_ZONE), 1,
-            ifelse(in_prelim_panels == TRUE & is.na(FLD_ZONE), 0,
-              ifelse(in_prelim_panels == FALSE, sfha2024, NA)))
-        ) |>
-        select(pin10, longitude, latitude, start_year, end_year, FIRM_PAN,
-          VERSION_ID, PRE_DATE, EFF_DATE, in_prelim_panels,
-          sfha2018, sfha2024, sfha2026, lomr2018, lomr2024, lomr_date)
-    }
+    make_sfha_indicator_final(
+      parcels_with_firms = parcels_with_firms,
+      indicator_df       = sfha_indicator_land_parcels,
+      zone_2018          = "FLD_ZONE_2018",
+      zone_2024          = "FLD_ZONE_2024",
+      zone_2026          = "FLD_ZONE",  # is the 2026 pending firm values
+      lomr_date_col      = "lomr_date",
+      out_prefix         = "ptax_land_sfha"
+    )
   ),
 
+  # tar_target(
+  #   ptaxsim_sfha_indicator_final,
+  #   {
+  #     parcels_with_firms |>
+  #       dplyr::left_join(ptaxsim_sfha_indicator_parcel_polygons, by = "pin10", relationship = "many-to-one") |>
+  #
+  #       mutate(
+  #         sfha2018 = ifelse(!is.na(FLD_ZONE2018), 1, 0),
+  #         sfha2024 = ifelse(!is.na(FLD_ZONE2024), 1, 0),
+  #         lomr2018 =  ifelse(!is.na(lomr_yearlomr2018), 1, 0),
+  #         lomr2024 = ifelse(!is.na(lomr_yearlomr2024), 1, 0),
+  #         lomr_date = as.Date(lomr_date)
+  #       ) |>
+  #       # fills in sfha2026 areas that were not updated with NFHL sfha indicators from 2024 database
+  #       # if in prelim panel, documents if it was a truly not in the
+  #       mutate(sfha2026 =
+  #         ifelse(in_prelim_panels == TRUE  & !is.na(FLD_ZONE), 1,
+  #           ifelse(in_prelim_panels == TRUE & is.na(FLD_ZONE), 0,
+  #             ifelse(in_prelim_panels == FALSE, sfha2024, NA)))
+  #       ) |>
+  #       select(pin10, longitude, latitude, start_year, end_year, FIRM_PAN,
+  #         VERSION_ID, PRE_DATE, EFF_DATE, in_prelim_panels,
+  #         sfha2018, sfha2024, sfha2026, lomr2018, lomr2024, lomr_date)
+  #   }
+  # ),
 
   tar_target(
     sfha_indicator_final_buildings,
-    parcels_with_firms |>
-      dplyr::left_join(sfha_indicator_buildings, by = "pin10", relationship = "many-to-one") |>
-      dplyr::mutate(
-        bldg_sfha2018 = dplyr::if_else(!is.na(bldg_FLD_ZONE_2018), 1, 0),
-        bldg_sfha2024 = dplyr::if_else(!is.na(bldg_FLD_ZONE_2024), 1, 0),
-        bldg_sfha2026 =
-          ifelse(in_prelim_panels == TRUE  & !is.na(bldg_FLD_ZONE_2026), 1,
-            ifelse(in_prelim_panels == TRUE & is.na(bldg_FLD_ZONE_2026), 0,
-              ifelse(in_prelim_panels == FALSE, bldg_sfha2024, NA))),
-
-        bldg_lomr2018 = dplyr::if_else(!is.na(.data$lomr_yearlomr2018), 1L, 0L),
-        bldg_lomr2024 = dplyr::if_else(!is.na(.data$lomr_yearlomr2024), 1L, 0L)
-      ) |>
-      dplyr::select(
-        pin10, longitude, latitude, start_year, end_year,
-        FIRM_PAN, VERSION_ID, PRE_DATE, EFF_DATE, in_prelim_panels,
-        bldg_sfha2018, bldg_sfha2024, bldg_sfha2026, bldg_lomr2018, bldg_lomr2024
-      )
+    make_sfha_indicator_final(
+      parcels_with_firms = parcels_with_firms,
+      indicator_df       = sfha_indicator_buildings,
+      zone_2018          = "bldg_FLD_ZONE_2018",
+      zone_2024          = "bldg_FLD_ZONE_2024",
+      zone_2026          = "bldg_FLD_ZONE_2026",
+      lomr_date_col      = "lomr_date",
+      out_prefix         = "bldg_sfha"
+    )
   ),
 
+  #   parcels_with_firms |>
+  #     dplyr::left_join(sfha_indicator_buildings, by = "pin10", relationship = "many-to-one") |>
+  #     dplyr::mutate(
+  #       bldg_sfha2018 = dplyr::if_else(!is.na(bldg_FLD_ZONE_2018), 1, 0),
+  #       bldg_sfha2024 = dplyr::if_else(!is.na(bldg_FLD_ZONE_2024), 1, 0),
+  #       bldg_sfha2026 =
+  #         ifelse(in_prelim_panels == TRUE  & !is.na(bldg_FLD_ZONE_2026), 1,
+  #           ifelse(in_prelim_panels == TRUE & is.na(bldg_FLD_ZONE_2026), 0,
+  #             ifelse(in_prelim_panels == FALSE, bldg_sfha2024, NA))),
+  #
+  #       bldg_lomr2018 = dplyr::if_else(!is.na(.data$lomr_yearlomr2018), 1L, 0L),
+  #       bldg_lomr2024 = dplyr::if_else(!is.na(.data$lomr_yearlomr2024), 1L, 0L)
+  #     ) |>
+  #     dplyr::select(
+  #       pin10, longitude, latitude, start_year, end_year,
+  #       FIRM_PAN, VERSION_ID, PRE_DATE, EFF_DATE, in_prelim_panels,
+  #       bldg_sfha2018, bldg_sfha2024, bldg_sfha2026, bldg_lomr2018, bldg_lomr2024
+  #     )
+  # ),
 
 
   tar_target(
     risk500_indicator_final_buildings,
-    parcels_with_firms |>
-      dplyr::left_join(risk500_indicator_buildings, by = "pin10", relationship = "many-to-one") |>
-      dplyr::mutate(
-        risk500_bldg_2018 = dplyr::if_else(!is.na(bldg_FLD_ZONE_2018), 1, 0),
-        risk500_bldg_2024 = dplyr::if_else(!is.na(bldg_FLD_ZONE_2024), 1, 0),
-        risk500_bldg_2026 =
-          ifelse(in_prelim_panels == TRUE  & !is.na(bldg_FLD_ZONE_2026), 1,
-            ifelse(in_prelim_panels == TRUE & is.na(bldg_FLD_ZONE_2026), 0,
-              ifelse(in_prelim_panels == FALSE, risk500_bldg_2024, NA))),
-
-        bldg_lomr2018 = dplyr::if_else(!is.na(.data$lomr_yearlomr2018), 1L, 0L),
-        bldg_lomr2024 = dplyr::if_else(!is.na(.data$lomr_yearlomr2024), 1L, 0L)
-      ) |>
-      dplyr::select(
-        pin10, longitude, latitude, start_year, end_year,
-        FIRM_PAN, VERSION_ID, PRE_DATE, EFF_DATE, in_prelim_panels,
-        risk500_bldg_2018, risk500_bldg_2024, risk500_bldg_2026, bldg_lomr2018, bldg_lomr2024
-      )
+    make_sfha_indicator_final(
+      parcels_with_firms,
+      risk500_indicator_buildings,
+      zone_2018 = "bldg_FLD_ZONE_2018",
+      zone_2024 = "bldg_FLD_ZONE_2024",
+      zone_2026 = "bldg_FLD_ZONE_2026",
+      out_prefix = "risk500_bldg_"
+    )
   ),
+
+
+
+  tar_target(
+    risk500_indicator_final_land,
+    make_sfha_indicator_final(
+      parcels_with_firms,
+      risk500_indicator_land,
+      zone_2018 = "FLD_ZONE_2018",
+      zone_2024 = "FLD_ZONE_2024",
+      zone_2026 = "FLD_ZONE",
+      out_prefix = "risk500_land_"
+    )
+  ),
+
+  # tar_target(
+  #   risk500_indicator_final_buildings,
+  #   parcels_with_firms |>
+  #     dplyr::left_join(risk500_indicator_buildings, by = "pin10", relationship = "many-to-one") |>
+  #     dplyr::mutate(
+  #       risk500_bldg_2018 = dplyr::if_else(!is.na(bldg_FLD_ZONE_2018), 1, 0),
+  #       risk500_bldg_2024 = dplyr::if_else(!is.na(bldg_FLD_ZONE_2024), 1, 0),
+  #       risk500_bldg_2026 =
+  #         ifelse(in_prelim_panels == TRUE  & !is.na(bldg_FLD_ZONE_2026), 1,
+  #           ifelse(in_prelim_panels == TRUE & is.na(bldg_FLD_ZONE_2026), 0,
+  #             ifelse(in_prelim_panels == FALSE, risk500_bldg_2024, NA))),
+  #
+  #       bldg_lomr2018 = dplyr::if_else(!is.na(.data$lomr_yearlomr2018), 1L, 0L),
+  #       bldg_lomr2024 = dplyr::if_else(!is.na(.data$lomr_yearlomr2024), 1L, 0L)
+  #     ) |>
+  #     dplyr::select(
+  #       pin10, longitude, latitude, start_year, end_year,
+  #       FIRM_PAN, VERSION_ID, PRE_DATE, EFF_DATE, in_prelim_panels,
+  #       risk500_bldg_2018, risk500_bldg_2024, risk500_bldg_2026, bldg_lomr2018, bldg_lomr2024
+  #     )
+  # ),
 
   ## --- Checking Work ----
 
@@ -629,12 +777,6 @@ list(
   #   join_parcels_to_zone(parcels_2022, risk500_2026_poly, id_field = "DFIRM_ID")
   # ),
 
-
-
-
-
-
-
   # Raw sales input (tracked). Update the path to match your project.
   # tar_target(
   #   sales_csv_file,
@@ -653,36 +795,37 @@ list(
   #   build_res_sales(sales_raw)
   # ),
 
-
-
-
   # ----- Make combined indicator file -------------------------------
   tar_target(
     sfha_compare_pin10_fourway,
     sfha_indicator_final_land |>
-      dplyr::select(pin10, sfha2018, sfha2024, sfha2026, lomr2018, lomr2024, lomr_date, PRE_DATE, EFF_DATE, FIRM_PAN, VERSION_ID) |>
+      dplyr::select(pin10, land_sfha2018, land_sfha2024, land_sfha2026, lomr_date, PRE_DATE, EFF_DATE, FIRM_PAN, VERSION_ID) |>
       dplyr::left_join(
         sfha_indicator_final_buildings |>
-          dplyr::select(pin10, bldg_sfha2018, bldg_sfha2024, bldg_sfha2026, bldg_lomr2018, bldg_lomr2024),
+          dplyr::select(pin10, bldg_sfha2018, bldg_sfha2024, bldg_sfha2026, bldg_lomr_date = lomr_date),
         by = "pin10"
       ) |>
       dplyr::left_join(
         ptaxsim_sfha_indicator_final |>
-          dplyr::select(pin10, ptax_sfha2018 = sfha2018, ptax_sfha2024 = sfha2024, ptax_sfha2026 = sfha2026),
+          dplyr::select(pin10, ptax_land_sfha2018, ptax_land_sfha2024, ptax_land_sfha2026),
         by = "pin10"
       ) |>
       dplyr::left_join(
         risk500_indicator_final_buildings |>
           dplyr::select(pin10, risk500_bldg_2018, risk500_bldg_2024, risk500_bldg_2026),
         by = "pin10") |>
+      dplyr::left_join(
+        risk500_indicator_final_land |>
+          dplyr::select(pin10, risk500_land_2018, risk500_land_2024, risk500_land_2026),
+        by = "pin10") |>
 
       dplyr::mutate(
-        diff_land_bldg_2024 = sfha2024 != bldg_sfha2024,
-        diff_land_ptax_2024 = sfha2024 != ptax_sfha2024,
-        diff_bldg_ptax_2024 = bldg_sfha2024 != ptax_sfha2024,
-        diff_land_bldg_2026 = sfha2026 != bldg_sfha2026,
-        diff_land_ptax_2026 = sfha2026 != ptax_sfha2026,
-        diff_bldg_ptax_2026 = bldg_sfha2026 != ptax_sfha2026
+        diff_land_bldg_2024 = land_sfha2024 != bldg_sfha2024,
+        diff_land_ptax_2024 = land_sfha2024 != ptax_land_sfha2024,
+        diff_bldg_ptax_2024 = bldg_sfha2024 != ptax_land_sfha2024,
+        diff_land_bldg_2026 = land_sfha2026 != bldg_sfha2026,
+        diff_land_ptax_2026 = land_sfha2026 != ptax_land_sfha2026,
+        diff_bldg_ptax_2026 = bldg_sfha2026 != ptax_land_sfha2026
       )
   ),
 
@@ -710,16 +853,15 @@ list(
         build_res_sales(sales_raw)
       ),
 
-      # --- Join sales to SFHA indicators (same indicators, different sales universe) ---
+      # joins residential sales and the indicators for both parcel-based and building-based SFHA indicator variables
       tar_target(
-        sales_joined,
+        sales_joined, # has residential only sales now
         merge_sales_sfha(res_sales, sfha_compare_pin10_fourway)
       ),
 
-      # --- Downstream: branch over SFHA measurement method ---
       tarchetypes::tar_map(
         values = sfha_methods,
-        names  = out_stub,
+        names  = out_stub,   # creates branches named land / bldg / ptaxsim
         list(
           tar_target(
             sales_prepped,
@@ -751,7 +893,6 @@ list(
             final_df_prep_filters(df_prep_filled)
           ),
 
-          # --- Write stable, versioned outputs ---
           tar_target(
             df_prep_final_rds,
             {
@@ -766,124 +907,6 @@ list(
             format = "file"
           )
         )
-      )
-    )
+    ))
   )
 )
-
-# ------- Old stuff before branches: delete soon -------------------
-
-#
-# tarchetypes::tar_map(
-#   values = sales_versions,
-#   names  = sales_label,
-#   list(
-#     tar_target(
-#       sales_csv_file,
-#       sales_file,
-#       format = "file"
-#     ),
-#     tar_target(
-#       sales_raw,
-#       read_sales_assessor(sales_csv_file, min_year = 2009)
-#     ),
-#     tar_target(
-#       res_sales,
-#       build_res_sales(sales_raw)
-#     )
-#   ),
-#
-#   ## --------Sales Data Joins, Cleaning and Exporting ---------------------------
-#
-#   # joins residential sales and the indicators for both parcel-based and building-based SFHA indicator variables
-#   tar_target(
-#     sales_joined, # has residential only sales now
-#     merge_sales_sfha(res_sales, sfha_compare_pin10_fourway)
-#   ),
-# tarchetypes::tar_map(
-#   values = sfha_methods,
-#   names  = out_stub,   # creates branches named land / bldg / ptaxsim
-#   list(
-#     tar_target(
-#       sales_prepped,
-#       make_sfha_timing_vars(
-#         sales_joined,
-#         method = method,
-#         min_analysis_year = 2009,
-#         min_price = 5000
-#       )
-#     ),
-#
-#     tar_target(
-#       repeat_sales,
-#       make_repeat_sales(sales_prepped)
-#     ),
-#
-#     tar_target(
-#       df_prep,
-#       make_df_prep(repeat_sales, pin_muni_key_tbl)
-#     ),
-#
-#     tar_target(
-#       df_prep_filled,
-#       fill_missing_muni_by_nbhd_zip(df_prep)
-#     ),
-#
-#     tar_target(
-#       df_prep_final,
-#       final_df_prep_filters(df_prep_filled)
-#     ),
-#
-#     tar_target(
-#       df_prep_final_rds,
-#       {
-#         dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
-#         out_file <- file.path(sales_out_dir, paste0("df_prep_", out_stub, "_final.rds"))
-#         saveRDS(df_prep_final, out_file)
-#         out_file
-#       },
-#       format = "file"
-#     )
-#   )
-# )
-#
-#
-#   tarchetypes::tar_map(
-#     values = sales_versions,
-#     names  = sales_label,
-#     list(
-#       tarchetypes::tar_map(
-#         values = sfha_methods,
-#         names  = out_stub,
-#         list(
-#           tar_target(
-#             sales_prepped,
-#             make_sfha_timing_vars(
-#               sales_joined,
-#               method = method,
-#               min_analysis_year = 2009,
-#               min_price = 5000
-#             )
-#           ),
-#           tar_target(repeat_sales, make_repeat_sales(sales_prepped)),
-#           tar_target(df_prep, make_df_prep(repeat_sales, pin_muni_key_tbl)),
-#           tar_target(df_prep_filled, fill_missing_muni_by_nbhd_zip(df_prep)),
-#           tar_target(df_prep_final, final_df_prep_filters(df_prep_filled)),
-#           tar_target(
-#             df_prep_final_rds,
-#             {
-#               dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
-#               out_file <- file.path(
-#                 sales_out_dir,
-#                 paste0("df_prep_", out_stub, "_", sales_label, "_final.rds")
-#               )
-#               saveRDS(df_prep_final, out_file)
-#               out_file
-#             },
-#             format = "file"
-#           )
-#         )
-#       )
-#     )
-#   )
-# )
