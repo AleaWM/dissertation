@@ -18,13 +18,19 @@ library(lubridate)
 
 
 # 1. Read and preprocess sales data
-sales <- read_csv("./data/raw/Assessor_-_Parcel_Sales_20250709.csv") |> # 1,838,476
+sales <- read_csv("./data/raw/Assessor_-_Parcel_Sales_20251229.csv") |> # 1,838,476
+  # sales <- read_csv("./data/raw/Assessor_-_Parcel_Sales_20250709.csv") |> # 1,838,476
   filter(year > 2005) |>
   mutate(
     class_1dig = str_sub(class, 1, 1),
     pin10       = str_sub(pin, 1, 10),
-    sale_date   = mdy(sale_date)
+    sale_date   = mdy(sale_date),
+    # Remove the currency symbol and commas, then convert to numeric
+    numeric_price =  as.numeric(gsub("[$,]", "", sale_price))
   )
+
+sales <- sales |> mutate(sale_price = numeric_price)
+
 
 pin10_firms  <- read_csv("./data/processed/parcels_withFIRMS_20260108.csv")  # |>
 
