@@ -35,9 +35,9 @@ read_sales_assessor <- function(sales_csv, min_year = 2005) {
 #' @param sales Sales tibble.
 #' @param sfha_indicator_final Output from Stage 1. Must contain pin10 and SFHA/FIRM columns.
 #' @return Sales with SFHA/FIRM fields attached.
-merge_sales_sfha <- function(sales, sfha_indicator_final) {
+merge_sales_sfha <- function(sales, sfha_compare_pin10_fourway) {
   sales |>
-    dplyr::left_join(sfha_indicator_final, by = "pin10")
+    dplyr::left_join(sfha_compare_pin10_fourway, by = "pin10", relationship = "many-to-one")
 }
 
 #' Create SFHA timing variables, LOMR indicator, and add/remove change flags
@@ -52,7 +52,7 @@ merge_sales_sfha <- function(sales, sfha_indicator_final) {
 #' @param min_analysis_year Keep records with year > min_analysis_year (default 2009 from your script)
 #' @param min_price Keep sale_price > min_price when building lags (default 5000 from your script)
 #' @return df with in_eff_sfha, in_prelim_sfha, in_lomr, ins_req, lag vars, and added/removed flags
-make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "risk500"),
+make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "risk500", "risk500_land"),
                                   min_analysis_year = 2009,
                                   min_price = 5000) {
   method <- match.arg(method)
@@ -60,14 +60,14 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
   if (method == "land") {
     df <- df |>
       rename(
-        sfha2018_col = sfha2018,
-        sfha2024_col = sfha2024,
-        sfha2026_col = sfha2026)
+        sfha2018_col = land_sfha2018,
+        sfha2024_col = land_sfha2024,
+        sfha2026_col = land_sfha2026)
 
   } else if (method == "bldg") {
     df <- df |>
       rename(
-        sfha2018_col =  bldg_sfha2018,
+        sfha2018_col = bldg_sfha2018,
         sfha2024_col = bldg_sfha2024,
         sfha2026_col = bldg_sfha2026)
 
@@ -75,9 +75,10 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
 
     df <- df |>
       rename(
-        sfha2018_col = ptax_sfha2018,
-        sfha2024_col = ptax_sfha2024,
-        sfha2026_col = ptax_sfha2026
+        sfha2018_col = ptax_land_sfha2018,
+        sfha2024_col = ptax_land_sfha2024,
+        sfha2026_col = ptax_land_sfha2026,
+        lomr_date =    bldg_lomr_date
       )
   } else if (method == "risk500") {
 
@@ -85,7 +86,16 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
       rename(
         sfha2018_col = risk500_bldg_2018,
         sfha2024_col = risk500_bldg_2024,
-        sfha2026_col = risk500_bldg_2026
+        sfha2026_col = risk500_bldg_2026,
+        lomr_date =    bldg_lomr_date
+      )
+  } else if (method == "risk500_land") {
+
+    df <- df |>
+      rename(
+        sfha2018_col = risk500_land_2018,
+        sfha2024_col = risk500_land_2024,
+        sfha2026_col = risk500_land_2026
       )
   }
 
@@ -210,7 +220,6 @@ build_res_sales <- function(df) {
     ) |>
     dplyr::ungroup() |>
     dplyr::filter(.data$times_sold < 15)
-
   out
 }
 
@@ -388,6 +397,19 @@ fill_missing_muni_by_nbhd_zip <- function(df_prep) {
 
   out
 }
+
+finalize_sales_dataset <- function(df,
+                                   min_year = 2009,
+                                   min_price = 5000) {
+  df |>
+    dplyr::filter(.data$year > min_year) |>
+    dplyr::filter(.data$sale_price > min_price) |>
+    dplyr::mutate(
+      pin10 = as.character(.data$pin10),
+      pin   = as.character(.data$pin)
+    )
+}
+
 
 # keeps sales from 2010 and onward
 final_df_prep_filters <- function(df_prep, min_sale_date = as.Date("2010-01-01")) {
