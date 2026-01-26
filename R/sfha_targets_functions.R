@@ -134,7 +134,7 @@ make_sfha_indicator_parcels <- function(sfha2018, sfha2024, prelim, lomr2018, lo
 
   # ---- Combine ----
   out <- sfha2018_df |>
-    dplyr::full_join(sfha2024_df, by = "pin10", suffix = c("2018", "2024")) |>
+    dplyr::full_join(sfha2024_df, by = "pin10", suffix = c("_2018", "_2024")) |>
     dplyr::full_join(prelim_df, by = "pin10") |>
     dplyr::full_join(lomr_join, by = "pin10")
 
