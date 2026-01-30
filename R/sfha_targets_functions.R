@@ -79,6 +79,7 @@ make_sfha_indicator_parcels <- function(sfha2018, sfha2024, prelim, lomr2018, lo
     }
   }
 
+
   # ---- SFHA rollups ----
   sfha2018_df <- sfha2018 |>
     maybe_filter_end_year(2018) |>
@@ -140,70 +141,6 @@ make_sfha_indicator_parcels <- function(sfha2018, sfha2024, prelim, lomr2018, lo
 
   out
 }
-#
-# make_sfha_indicator_parcels <- function(sfha2018, sfha2024, prelim, lomr2018, lomr2024) {
-#   # create and use 10 digit parcel number for identifying land in sfhas or lomrs
-#   sfha2018_df <- sfha2018 |>
-#     as.data.frame() |>
-#     filter(end_year >= 2018) |>
-#     arrange(pin10, FLD_ZONE, ZONE_SUBTY) |>
-#     select(pin10, FLD_ZONE) |>
-#     group_by(pin10) |>
-#     slice_head(n = 1) |>
-#     ungroup()
-#
-#   sfha2024_df <- sfha2024 |>
-#     filter(end_year >= 2022) |>
-#     as.data.frame() |>
-#     arrange(pin10, FLD_ZONE, ZONE_SUBTY) |>
-#     select(pin10, FLD_ZONE) |>
-#     group_by(pin10) |>
-#     slice_head(n = 1) |>
-#     ungroup()
-#
-#   prelim_df <- prelim |>
-#     filter(end_year >= 2021) |>
-#     as.data.frame() |>
-#     arrange(pin10, FLD_ZONE, ZONE_SUBTY) |>
-#     select(pin10, FLD_ZONE) |>
-#     group_by(pin10) |>
-#     slice_head(n = 1) |>
-#     ungroup() |>
-#     mutate(in_prelim = "PrePanel")
-#
-#   lomr2018_df <- lomr2018 |>
-#     as.data.frame() |>
-#     mutate(lomr_year = "2018") |>
-#     select(pin10, lomr_year, EFF_DATE, CASE_NO) |>
-#     distinct()
-#
-#
-#   lomr2024_df <- lomr2024 |>
-#     as.data.frame() |>
-#     mutate(lomr_year = "2024") |>
-#     select(pin10, lomr_year, EFF_DATE, CASE_NO) |>
-#     distinct()
-#
-#   lomr_join <- lomr2018_df |>
-#     full_join(lomr2024_df,
-#       by = c("pin10", "CASE_NO", "EFF_DATE"),
-#       suffix = c("lomr2018", "lomr2024")
-#     )  |>
-#     group_by(pin10) |>     # some parcels are in 2 LOMRs. keep the first one.
-#     arrange(pin10, EFF_DATE) |>
-#     slice_head(n = 1) |>
-#     ungroup() |>
-#     rename(lomr_date = EFF_DATE)
-#
-#
-#   # combine parcels flagged as in SFHAs or LOMRs
-#   out <- sfha2018_df |>
-#     full_join(sfha2024_df, by = "pin10",  suffix = c("2018", "2024")) |>
-#     full_join(prelim_df, by = "pin10") |>
-#     full_join(lomr_join, by = "pin10")
-#
-#   # out |> group_by(pin10) |> slice_head(n = 1) |> ungroup()
-# }
 
 
 read_buildings <- function(buildings_files, border, crs_out) {
@@ -302,4 +239,41 @@ read_prelim_1in500 <- function(prelim_shp, border, crs_out = sf::st_crs(border))
     st_transform(st_crs(border)) |>
     st_intersection(border) |>
     st_cast("MULTIPOLYGON")
+}
+
+fill_missing_firm_pan <- function(data) {
+  data |>
+    mutate(FIRM_PAN = case_when(
+      pin10 %in% c("0427302008", "0427302009") ~ "17031C0229J",
+
+      pin10 %in% c(
+        "0633108005", "0633108006", "0633108007",
+        "0633108008", "0633108009",
+        "0633200015", "0633205020"
+      ) ~ "17031C0163K",
+
+      pin10 == "1705320076" ~ "17031C0418J",
+
+      pin10 %in% c("1710130027", "1710400054") ~ "17031C0438K",
+
+      pin10 %in% c("2226307004", "2226307005", "2226206002", "2226206005", "2226306025", "2226306026",
+        "2226308004", "2226308004", "2226308017", "2226403014", "2226404013") ~ "17031C0587J",
+
+      pin10 == "2433302053" ~ "17031C0638J",
+
+      pin  == "2717109004" ~  "17031C0682J",
+
+      pin10  == "2730212019" ~ "17031C0684J",
+
+      pin10 == "2804400093" ~ "17031C0638J",
+
+      pin10 == "2130111028" ~ "17031C0539K",
+
+      pin10 %in% c("0633104002", "0633104003", "0633104004", "0633104006", "0633104011",
+        "0633104012", "0633104013", "0633104014", "0633105001", "0633105025", "0633106004", "0633107005", "0633107014",
+        "0633107021") ~ "17031C0163K",
+
+      TRUE ~ FIRM_PAN  # keep existing value if none match
+    )
+    )
 }
