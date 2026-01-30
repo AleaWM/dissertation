@@ -28,6 +28,8 @@ library(jtools) # for model table formatting
 library(skimr)  # for skim() command for descriptive statistics
 library(scales)
 library(modelsummary)
+
+
 ```
 
 > If property is in SFHA and LOMR, both variables will be coded as 1. I no longer "remove" the SFHA indicator if it is in a LOMR. LOMRs are only considered in the bottom section on effective FIRMs and insurance requirements. 
@@ -37,16 +39,10 @@ library(modelsummary)
 
 clusters_county <- list(
   pin10      = ~ pin10,
-  pin        = ~ pin,
-  clean_name = ~ clean_name,
-  FIRM_PAN   = ~ FIRM_PAN,
-  nbhd_code  = ~ nbhd_code
-)
-
-clusters_triads <- list(
-  pin  = ~ pin,
-  triad = ~ Triad,
-  muni  = ~ muni_name
+#  pin        = ~ pin,
+  clean_name = ~ clean_name#,
+ # FIRM_PAN   = ~ FIRM_PAN
+ # nbhd_code  = ~ nbhd_code
 )
 
 run_by_cluster <- function(formula, data, clusters, prefix = "Model") {
@@ -70,29 +66,27 @@ bind_models <- function(...) {
 # df_prep <- readRDS("data/processed/df_prep_parcels_20260109.rds") |>
 #   filter(pin10 != "1129315024")  # Building on sherwin. Land is in Coastal SFHA for 2018 but building is not. 
 
-drop_parcels <- c(
-  "1129312017", # Building on sherwin. Land is in Coastal SFHA for 2018 but building is not. 
-  "1129315024", # coastal building not in floodplain, on Jarvis!
-  "1132400037", # building miiiight be in coastal floodplain but barely.
-  "1405203011", # coastal building not in floodplain
-  "1405203012", # coastal building not in floodplain
-  "1405211015", # coastal building not in floodplain
-  "1405211016", # coastal building not in floodplain
-  "1405211021", # coastal building not in floodplain
-  "1405211023", # coastal building not in floodplain
-  "1405215017",# coastal building, partly in 1 in 500 year floodzone
-  "1405403019",# coastal building not in floodplain
-  "2130123021" # coastal building, not in floodplain according to redfin
-)
 
 #df_prep <- readRDS("data/processed/targets/sales/df_prep_ptaxsim_final.rds") |>
 #  df_prep <- readRDS("data/processed/targets/sales/df_prep_risk500_final.rds") |>
 #df_prep <- readRDS("data/processed/targets/sales/df_prep_land_baseline_final.rds") |>
 #df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_final.rds") |>
-  df_prep <- readRDS("data/processed/targets/sales/df_prep_ptaxsim_updated_final.rds") |>
+# df_prep <- readRDS("data/processed/targets/sales/df_prep_ptaxsim_updated_final.rds") |>
+source("R/helper_pins_to_drop.R")
+
+#df_prep <- readRDS("data/processed/targets/sales/df_prep_risk500_land_updated_final.rds") |>
+df_prep <- readRDS(
+   "data/processed/targets/sales/df_prep_risk500_updated_final.rds") |>
+  #"data/processed/targets/sales/df_prep_bldg_updated_final.rds") |>
+    filter(!pin10  %in% drop_parcels)
+
+ # df_prep <- readRDS("data/processed/targets/sales/df_prep_risk500_updated_final.rds") |>
+
 
 #df_prep <- readRDS("data/processed/targets/sales/df_prep_bldg_final.rds") |>
-  filter(!pin10  %in% drop_parcels  )  
+  
+
+df_prep |> filter(is.na(FIRM_PAN)) |> group_by(pin10) |> summarize(n = n()) 
 
 ```
 
@@ -104,7 +98,9 @@ df_prep <- df_prep |>
     clean_name == "Chicago" ~  "City",
     as.numeric(str_sub(pin, 1, 2) ) < 13 ~ "North",
     as.numeric(str_sub(pin, 1, 2) ) >= 13 ~ "South"
-  )) 
+  ),
+    Triad = factor(Triad, levels = c("South", "North", "City") )
+  ) 
 
 # remove duplicates
 
@@ -166,7 +162,7 @@ Concerns:
 Contributions to the literature: Many models model if SFHA status changes, but have it as one variable. this assumes that the effect of being added in or removed from an SFHA is the same in both directions. I model in_eff_sfha as one variable and separate it into added and removed to see if there are different effects.
 
 ```{r}
-skim(df_prep)
+#skim(df_prep)
 ```
 
 ## Variable Coding
@@ -331,7 +327,7 @@ df_prep |> filter(Triad == "South" & change_type == "Always SFHA" & pre_date_chr
 #| layout-ncol: 2
 
 
-df_prep |> filter(Triad == "City" & treat_year_add_prelim == "2019") #|> group_by(pin10) |> summarize(n = n())  |> View()
+df_prep |> filter(Triad == "City" & treat_year_add_prelim == "2019") |> group_by(pin10) |> summarize(n = n())  |> View()
 
 # df_prep |> filter(Triad == "City" & treat_year_remove_prelim == "2019") 
 
@@ -420,7 +416,7 @@ effective_twfe <- bind_models(
   run_by_cluster(
     log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha | pin + sale_year,
     data = df_prep,
-    clusters = list(pin = ~ pin, clean_name = ~ clean_name, pin10 = ~ pin10, FIRM_PAN = ~ FIRM_PAN),
+    clusters = clusters_county,
    prefix = "Eff Countywide - Add or Remove"
   ),
 
@@ -428,7 +424,7 @@ effective_twfe <- bind_models(
   run_by_cluster(
     log(sale_price) ~ addedto_eff_sfha*Triad + removedfrom_eff_sfha*Triad | pin + sale_year,
     data = df_prep,
-    clusters = list(pin = ~pin, pin_nbhd = ~nbhd_code, pin10 = ~ pin10, FIRM_PAN = ~ FIRM_PAN),
+    clusters = clusters_county,
    prefix = "Eff Triads - Add or Remove"
   )
 )
@@ -454,7 +450,7 @@ prelim_twfe <- bind_models(
   run_by_cluster(
     log(sale_price) ~ in_prelim_sfha | pin + sale_year,
     data = df_prep,
-    clusters = list(pin = ~ pin, pin10 = ~ pin10, clean_name = ~ clean_name, FIRM_PAN = ~ FIRM_PAN),
+    clusters = clusters_county,
     prefix = "Prelim SFHA - Countywide"
   ),
 
@@ -462,7 +458,7 @@ prelim_twfe <- bind_models(
   run_by_cluster(
     log(sale_price) ~ addedto_prelim_sfha + removedfrom_prelim_sfha | pin + sale_year,
     data = df_prep,
-    clusters = list(pin = ~ pin, clean_name = ~ clean_name, FIRM_PAN = ~ FIRM_PAN, pin10 = ~ pin10),
+    clusters = clusters_county,
     prefix = "Prelim Countywide - Add or Remove"
   ),
 
@@ -470,7 +466,7 @@ prelim_twfe <- bind_models(
   run_by_cluster(
     log(sale_price) ~ in_prelim_sfha*Triad | pin + sale_year,
     data = df_prep,
-    clusters = list(pin = ~ pin, clean_name = ~ clean_name),
+    clusters = clusters_county,
     prefix = "Prelim SFHA - Triads"
   ),
 
@@ -478,7 +474,7 @@ prelim_twfe <- bind_models(
   run_by_cluster(
     log(sale_price) ~ addedto_prelim_sfha*Triad + removedfrom_prelim_sfha*Triad | pin + sale_year,
     data = df_prep,
-    clusters = list(pin = ~ pin, clean_name = ~ clean_name, pin10 = ~ pin10),
+    clusters = clusters_county,
     prefix = "Prelim Triads - Add or Remove"
   )
 )
@@ -637,14 +633,14 @@ prelim_twfe <- bind_models(
   run_by_cluster(
     log(sale_price) ~ in_prelim_sfha | pin + sale_year,
     data = df2,
-    clusters = list(nbhd_code = ~ nbhd_code, pin = ~ pin, clean_name = ~ clean_name, FIRM_PAN = ~ FIRM_PAN, pin10 = ~ pin10),
+    clusters = county_cluster,
     prefix = "Prelim SFHA (filtered sample)"
   ),
 
   run_by_cluster(
     log(sale_price) ~ in_prelim_sfha*Triad | pin + sale_year,
     data = df2,
-    clusters = list(nbhd_code = ~ nbhd_code, pin10 = ~ pin10),
+    clusters = county_cluster,
     prefix = "Prelim SFHA × Triad (filtered sample)"
   )
 )
