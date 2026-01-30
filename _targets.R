@@ -14,9 +14,10 @@ sfha_methods <- tibble::tibble(
 
 
 sales_versions <- data.frame(
-  sales_label = c("baseline", "updated"),
+  sales_label = c( # "baseline",
+    "updated"),
   sales_file  = c(
-    "data/raw/Assessor_-_Parcel_Sales_20250709.csv",
+    # "data/raw/Assessor_-_Parcel_Sales_20250709.csv",
     "data/raw/Assessor_-_Parcel_Sales_20251229.csv"
   ),
   stringsAsFactors = FALSE
@@ -52,18 +53,7 @@ list(
       drop_parcels
     }
   ),
-  #
-  # tar_target(
-  #   firm_overrides,
-  #   {
-  #     source(firm_override_file, local = TRUE)
-  #     # pins is a named character vector: names = pin10, values = FIRM_PAN :contentReference[oaicite:2]{index=2}
-  #     tibble::tibble(
-  #       pin10 = names(pins),
-  #       FIRM_PAN_override = unname(pins)
-  #     )
-  #   }
-  # ),
+
 
 
   ## ---- Read/assemble lookup tables ----
@@ -295,50 +285,36 @@ list(
   tar_target(
     parcels_with_firms,
     {
-      out <- pin_centroids_clean |>
+      out <-  pin_centroids_clean |>
         dplyr::left_join(firm_dates) |>
-        mutate(FIRM_PAN = case_when(
-          pin10 %in% c("0427302008", "0427302009") ~ "17031C0229J",
-
-          pin10 %in% c(
-            "0633108005", "0633108006", "0633108007",
-            "0633108008", "0633108009",
-            "0633200015", "0633205020"
-          ) ~ "17031C0163K",
-
-          pin10 == "1705320076" ~ "17031C0418J",
-
-          pin10 %in% c("1710130027", "1710400054") ~ "17031C0438K",
-
-          pin10 %in% c("2226307004", "2226307005") ~ "17031C0587J",
-
-          pin10 == "2433302053" ~ "17031C0638J",
-
-          pin10 == "2730212019" ~ "17031C0684J",
-
-          pin10 == "28044drop00093" ~ "17031C0638J",
-
-          pin10 == "2130111028" ~ "17031C0539K",
-
-          TRUE ~ FIRM_PAN  # keep existing value if none match
-        )
-        ) |>
+        # mutate(FIRM_PAN = case_when(
+        #   pin10 %in% c("0427302008", "0427302009") ~ "17031C0229J",
+        #
+        #   pin10 %in% c(
+        #     "0633108005", "0633108006", "0633108007",
+        #     "0633108008", "0633108009",
+        #     "0633200015", "0633205020"
+        #   ) ~ "17031C0163K",
+        #
+        #   pin10 == "1705320076" ~ "17031C0418J",
+        #
+        #   pin10 %in% c("1710130027", "1710400054") ~ "17031C0438K",
+        #
+        #   pin10 %in% c("2226307004", "2226307005") ~ "17031C0587J",
+        #
+        #   pin10 == "2433302053" ~ "17031C0638J",
+        #
+        #   pin10 == "2730212019" ~ "17031C0684J",
+        #
+        #   pin10 == "28044drop00093" ~ "17031C0638J",
+        #
+        #   pin10 == "2130111028" ~ "17031C0539K",
+        #
+        #   TRUE ~ FIRM_PAN  # keep existing value if none match
+        # )
+        # ) |>
         mutate(in_prelim_panels = ifelse(VERSION_ID == "2.6.3.6", TRUE, FALSE))
 
-
-      if (any(is.na(out$FIRM_PAN))) {
-        missing <- out |>
-          dplyr::filter(is.na(FIRM_PAN)) |>
-          dplyr::distinct(pin10)
-
-        stop(
-          "Missing FIRM_PAN for ",
-          nrow(missing),
-          " parcels.\nFirst few PINs:\n",
-          paste(head(missing$pin10, 10), collapse = ", "),
-          call. = FALSE
-        )
-      }
       out
     }
   ),
@@ -751,6 +727,7 @@ list(
       # joins residential sales and the indicators for both parcel-based and building-based SFHA indicator variables
       tar_target(
         sales_joined, # has residential only sales now
+
         merge_sales_sfha(res_sales, sfha_compare_pin10_fourway)
       ),
 
@@ -761,7 +738,8 @@ list(
           tar_target(
             sales_prepped,
             make_sfha_timing_vars(
-              sales_joined,
+              sales_joined  |>
+                filter(!pin10 %in% drop_parcels),
               method = method,
               min_analysis_year = 2009,
               min_price = 5000
