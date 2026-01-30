@@ -23,5 +23,7 @@ drop_parcels <- c(
   "2130108033", "2130114012", "2130114013", "2130114014", "2130114015", "2130114016",  # land polygons along the lake, no buildings within them
   "2130124001", "2130124002", "2130124003", "2130124004",  # almost completely in the lake
   "2130999001", "2132213002", # actual water canal in calumet area
-  "2608202004", "2608400034", "3017211033" # also water pins.
+  "2608202004", "2608400034", "3017211033", # also water pins.
+
+  "1129110024", "2717109004"
 )
