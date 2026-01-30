@@ -36,8 +36,11 @@ read_sales_assessor <- function(sales_csv, min_year = 2005) {
 #' @param sfha_indicator_final Output from Stage 1. Must contain pin10 and SFHA/FIRM columns.
 #' @return Sales with SFHA/FIRM fields attached.
 merge_sales_sfha <- function(sales, sfha_compare_pin10_fourway) {
-  sales |>
-    dplyr::left_join(sfha_compare_pin10_fourway, by = "pin10", relationship = "many-to-one")
+  out <-  sales |>
+    dplyr::left_join(sfha_compare_pin10_fourway,
+      by = "pin10", relationship = "many-to-one") |>
+    fill_missing_firm_pan()
+
 }
 
 #' Create SFHA timing variables, LOMR indicator, and add/remove change flags
@@ -62,14 +65,17 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
       rename(
         sfha2018_col = land_sfha2018,
         sfha2024_col = land_sfha2024,
-        sfha2026_col = land_sfha2026)
+        sfha2026_col = land_sfha2026,
+        lomr_date_col = lomr_date)
 
   } else if (method == "bldg") {
     df <- df |>
       rename(
         sfha2018_col = bldg_sfha2018,
         sfha2024_col = bldg_sfha2024,
-        sfha2026_col = bldg_sfha2026)
+        sfha2026_col = bldg_sfha2026,
+        lomr_date_col = bldg_lomr_date
+      )
 
   } else if (method == "ptaxsim") {
 
@@ -78,7 +84,7 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
         sfha2018_col = ptax_land_sfha2018,
         sfha2024_col = ptax_land_sfha2024,
         sfha2026_col = ptax_land_sfha2026,
-        lomr_date =    bldg_lomr_date
+        lomr_date_col = lomr_date
       )
   } else if (method == "risk500") {
 
@@ -87,7 +93,7 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
         sfha2018_col = risk500_bldg_2018,
         sfha2024_col = risk500_bldg_2024,
         sfha2026_col = risk500_bldg_2026,
-        lomr_date =    bldg_lomr_date
+        lomr_date_col =  bldg_lomr_date
       )
   } else if (method == "risk500_land") {
 
@@ -95,10 +101,27 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
       rename(
         sfha2018_col = risk500_land_2018,
         sfha2024_col = risk500_land_2024,
-        sfha2026_col = risk500_land_2026
+        sfha2026_col = risk500_land_2026,
+        lomr_date_col = lomr_date
       )
   }
 
+  df <- fill_missing_panels(df)
+
+  ## If the FIRM panel and FIRM dates do not exist for each sale, then the indicator variables won't be made
+  if (any(is.na(df$FIRM_PAN))) {
+    missing <- df |>
+      dplyr::filter(is.na(FIRM_PAN)) |>
+      dplyr::distinct(pin10)
+
+    stop(
+      "Missing FIRM_PAN for ",
+      nrow(missing),
+      " parcels.\nFirst few PINs:\n",
+      paste(head(missing$pin10, 10), collapse = ", "),
+      call. = FALSE
+    )
+  }
 
   out <- df |>
     dplyr::filter(.data$year > min_analysis_year) |>
@@ -125,8 +148,6 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
 
         TRUE ~ as_date(PRE_DATE)),
 
-      sfha2026 = as.numeric(sfha2026_col),
-
       # the flood zones that existed in the 2018 state NFHL were last updated in 2008. sfha2018 is the default SFHA status for the observations, then lomrs and future updates will be incorporated
       in_eff_sfha = case_when(
         EFF_DATE == as.Date("2008-08-19") ~ sfha2018_col,
@@ -141,8 +162,9 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
         sale_date >= PRE_DATE  ~ sfha2024_col,
         sale_date < PRE_DATE ~ sfha2018_col),
 
-      in_lomr       = ifelse(!is.na(lomr_date) & sale_date >= lomr_date, TRUE, FALSE),
+      in_lomr       = ifelse(!is.na(lomr_date_col) & sale_date >= lomr_date_col, TRUE, FALSE),
     )
+
 
 
   # Lags + change flags require sorting within PIN
@@ -250,21 +272,7 @@ read_pin_muni_key <- function(pin_muni_key_file, muni_nicknames_file, floodfacto
 
 
 make_repeat_sales <- function(sales_prepped_bldg) {
-  # problem pins for various reasons
-  drop_pins <- c("05272000470000",  # co op
-    "17103180800000",  # became 325 W Wacker Drive, the building that looks like water waves, condo in loop
-    "14281050350000",  # is a condo building, whole building bought in 2006, Currently classed as land? probably due to remodeling permit?
-    "10191030030000",     # land trust sale and then maybe split into other pins?
-    "17032220150000",   #  becomes 880 N LakeShore Drive and is a CoOp
-    "17032220180000",   # also part of 880 N Lakeshore Dr  and is  a CoOp
-    "17032220200000",    # ditto
-    "05272000010000",     # another CoOp
-    "21301140150000",  # vacant lot by the lake,
-    "21301140160000"   # vacant lot by the lake
-  )
-
   out <- sales_prepped_bldg |>
-    filter(!pin %in% drop_pins) |>
     mutate(sale_price =  # price corrections randomly spotted
         case_when(
           pin == "15154220240000" & sale_date == as_date("2006-11-01") ~ 180000,   # not 180 million
@@ -342,8 +350,9 @@ make_df_prep <- function(repeat_sales, pin_muni_key_tbl) {
       change_type_prelim = factor(.data$change_type_prelim, levels = c("Never SFHA", "Always SFHA", "Changes SFHA"))
     )
 
-  df
+  out <- df |> fill_missing_muni_by_nbhd_zip() |> final_df_prep_filters()
 }
+
 
 fill_missing_muni_by_nbhd_zip <- function(df_prep) {
   # Uses first match (your warning). Some zips/nbhds span multiple munis.
@@ -376,40 +385,35 @@ fill_missing_muni_by_nbhd_zip <- function(df_prep) {
       "clean_name.x", "clean_name.y",
       "Triad.x", "Triad.y",
       "Township.x", "Township.y"
-    )))
-
-  manual_ff_scores <- readxl::read_xlsx("data/processed/pins_with_some_addresses_forgoogle.xlsx") |>
-    mutate(pin = str_pad(pin, 14, "left", "0"),
-      pin10 = str_sub(pin, 1, 10)) |>
-    select(pin10, flood_factor_score, clean_name)
-
-
-
-  out <- out  |>
+    )))  |>
     mutate(clean_name = ifelse(is.na(clean_name), "Unincorporated", clean_name)) |>
-    mutate(pin10 = str_sub(pin, 1, 10)) |>
-    left_join(manual_ff_scores, by = "pin10")
-
-  out <- out |>
-    mutate(flood_factor_score = ifelse(is.na(env_flood_fs_factor), flood_factor_score, env_flood_fs_factor),
-      clean_name = ifelse(is.na(clean_name.x), clean_name.y, clean_name.x),
-      high_ff_score = ifelse(env_flood_fs_factor > 4 | flood_factor_score > 4, TRUE, FALSE))
-
+    mutate(pin10 = str_sub(pin, 1, 10))
   out
 }
 
-finalize_sales_dataset <- function(df,
-                                   min_year = 2009,
-                                   min_price = 5000) {
-  df |>
-    dplyr::filter(.data$year > min_year) |>
-    dplyr::filter(.data$sale_price > min_price) |>
-    dplyr::mutate(
-      pin10 = as.character(.data$pin10),
-      pin   = as.character(.data$pin)
+
+fill_missing_panels <- function(df_prep) {
+  # build lookup from non-missing rows
+  panel_lookup <- df_prep |>
+    mutate(pin7 =  str_sub(pin, 1, 7)) |>
+    dplyr::distinct(.data$pin7, .data$FIRM_PAN) |>
+    dplyr::filter(
+      !is.na(.data$FIRM_PAN)
+    )
+
+  out <- df_prep |>
+    mutate(pin7 =  str_sub(pin, 1, 7)) |>
+
+    dplyr::left_join(
+      panel_lookup,
+      by = c("pin7"),
+      multiple = "first",
+      suffix = c(".x", ".y")
+    ) |>
+    dplyr::mutate(FIRM_PAN = dplyr::coalesce(.data$FIRM_PAN.x, .data$FIRM_PAN.y)) |>
+    dplyr::select(-dplyr::any_of(c("FIRM_PAN.x", "FIRM_PAN.y", "clean_name.y", "clean_name.x"))
     )
 }
-
 
 # keeps sales from 2010 and onward
 final_df_prep_filters <- function(df_prep, min_sale_date = as.Date("2010-01-01")) {
