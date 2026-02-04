@@ -27,6 +27,7 @@ sales_versions <- data.frame(
 source("R/sfha_targets_functions.R")
 source("R/sales_data_functions.R")
 source("R/indicator_final_functions.R")
+source("R/helper_pins_to_drop.R")
 # source()
 
 targets_out_dir <- "data/processed/targets"
@@ -730,6 +731,15 @@ list(
 
         merge_sales_sfha(res_sales, sfha_compare_pin10_fourway)
       ),
+
+      # checking sales_joined_updated: had missing firm panels but after the filtering below, none remained
+      # sales_joined_updated |> fill_missing_panels() |>filter(is.na(FIRM_PAN) & res_c2 == TRUE & times_sold > 1 & sale_price > 5000 & !pin10  %in% drop_parcels) |>
+      # fill_missing_firm_pan()|>  |> View()
+      # BUT there were stil 53 observations missing land_sfha2018. So it is filling in the firm pans, but not before the firm_dates are merged in.
+      # which means it will have a firm panel, but not the indicators that go with it.
+      # or that it doesn't have a polygon that worked with the SFHA areas
+      # 17 distinct parcels don't have their data
+      # notes on each in pins_still_missing.R script
 
       tarchetypes::tar_map(
         values = sfha_methods,
