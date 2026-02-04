@@ -1,10 +1,12 @@
 ---
 title: "Assessing Parallel Trends Under Staggered Treatment"
 format:
-  html: default
+  html: 
+    code-fold: true
 execute:
   echo: true
   warning: false
+  error: true
 #  eval: false
 ---
 
@@ -18,39 +20,617 @@ This document outlines the correct diagnostics for **parallel trends assumptions
 
 ```{r}
 library(tidyverse)
+library(fixest)
+
 library(didFF)   # for testing if functional form matters for the analysis. Tests if parallel trends assumption is sensitive to functional form (i.e. logged variable vs unlogged variable)
 
 options(scipen = 999)
 
-df_prep <- readRDS("data/processed/df_prep_buildings.rds") |>
+df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_final.rds") |>
   select(-c(clean_name.x, clean_name.y))
 
+table(df_prep$change_type)
+table(df_prep$change_type_prelim)
+
 df_prep <- df_prep |> 
-  filter(pin10 != "0710101038") |>
   mutate(log_price = log(sale_price))
 
 df_prep <- df_prep |>
-  filter(!is.na(high_ff_score) &
+  filter(#!is.na(high_ff_score) &
            !is.na(eff_date) &
-           !is.na(clean_name) &
-           !is.na(pre_date) &
-           !is.na(Triad)
+      #     !is.na(clean_name) &
+           !is.na(pre_date)# &
+      #     !is.na(Triad)
   )
 
 
 # are there pins that sell multiple times 
 df_prep |> group_by(sale_year, pin) |> mutate(n = n()) |> filter(n > 1)
 # yes 
+make_sfha_lineplot <- function(
+  df,
+  y_var = c("sale_price", "log_price"),
+  facet_var,                      # e.g. "pre_date", "Triad"
+  group_vars = c("prelim_sfha_category"),
+  title = "Pre- and Post-Event Slopes by SFHA Status",
+  y_label = NULL,
+  x_breaks = seq(2010, 2026, 4),
+  x_limits = c(2009, 2027)
+) {
 
-table(df_prep$eff_date)
+  y_var <- match.arg(y_var)
 
+  # build grouping vars programmatically
+  grp_vars <- c("sale_year", group_vars, facet_var)
+
+  df_summarised <- df |>
+    dplyr::group_by(dplyr::across(dplyr::all_of(grp_vars))) |>
+    dplyr::summarise(
+      avg_value = mean(.data[[y_var]], na.rm = TRUE),
+      n = dplyr::n(),
+      .groups = "drop"
+    )
+
+  if (is.null(y_label)) {
+    y_label <- ifelse(
+      y_var == "sale_price",
+      "Avg. Sale Price",
+      "Avg. Logged Sale Price"
+    )
+  }
+
+  ggplot2::ggplot(
+    df_summarised,
+    ggplot2::aes(
+      x = sale_year,
+      y = avg_value,
+      color = .data[[group_vars[1]]]
+    )
+  ) +
+    ggplot2::geom_point() +
+    ggplot2::geom_line() +
+    ggplot2::geom_smooth(method = "lm", se = FALSE) +
+    ggplot2::facet_wrap(stats::as.formula(paste("~", facet_var))) +
+    ggplot2::labs(
+      title = title,
+      x = NULL,
+      y = y_label,
+      caption = ""
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = x_breaks,
+      limits = x_limits
+    ) +
+    ggplot2::theme_classic() +
+    ggplot2::theme(legend.position = "bottom")
+}
+```
+
+
+
+```{r recode-dfpreptest}
+table(df_prep$pre_date)
+
+df_prep <- df_prep |>
+  
+  mutate(
+    # so I can subset by FIRM date in later steps
+    eff_date_chr = as.factor(eff_date),
+    pre_date_chr = as.factor(pre_date)) |>
+  group_by(pin) |>
+  arrange(sale_date) |>
+  mutate(
+
+    # first year it was mapped IN (per PIN)
+    treat_year_add_eff = ifelse((any(addedto_eff_sfha== TRUE) )
+                                 & eff_date_chr != "2008-08-19", 
+                                year(eff_date), 10000),  # never treated set to 10,000
+    
+    # first year it was mapped OUT (per PIN)
+    treat_year_remove_eff = ifelse(any(removedfrom_eff_sfha== TRUE)
+                                   & eff_date_chr != "2008-08-19", 
+                                   year(eff_date), 10000),
+    
+    
+    # Added or removed from Preliminary FIRMs
+    treat_year_add_prelim = ifelse((any(addedto_prelim_sfha == TRUE) ), year(pre_date), 10000),  # never treated set to 10,000
+    
+    # first year it was mapped OUT (per PIN)
+    treat_year_remove_prelim = ifelse(any(removedfrom_prelim_sfha== TRUE), year(pre_date), 10000)
+    
+  ) |>
+  ungroup() |>
+  mutate(
+    # Event time (relative year) for each outcome
+    # coded to match S&A's method of relative time
+    rel_year_add_eff    = ifelse(treat_year_add_eff != 10000,    sale_year - treat_year_add_eff,    -1000),
+    rel_year_remove_eff = ifelse(treat_year_remove_eff != 10000, sale_year - treat_year_remove_eff, -1000),
+    
+    
+    rel_year_add_prelim    = ifelse(treat_year_add_prelim != 10000,    sale_year - treat_year_add_prelim,    -1000),
+        rel_year_remove_prelim = ifelse(treat_year_remove_prelim != 10000, sale_year - treat_year_remove_prelim, -1000),
+    
+    # adjustment for if a sale occurs in the same year that it is treated
+    # if sale is before preliminary firm, it is coded as relative year == -1, not yet treated
+    rel_year_add_prelim = ifelse(rel_year_add_prelim == 0 & sale_date < pre_date, -1, rel_year_add_prelim),
+    rel_year_remove_prelim = ifelse(rel_year_remove_prelim == 0 & sale_date < pre_date, -1, rel_year_remove_prelim),
+
+    rel_year_add_eff = ifelse(rel_year_add_eff == 0 & sale_date < eff_date, -1, rel_year_add_eff),
+    rel_year_remove_eff = ifelse(rel_year_remove_eff == 0 & sale_date < eff_date, -1, rel_year_remove_eff)
+
+  ) |>
+  mutate(
+    qtr  = quarter(sale_date),     # 1 to 4
+    year = year(sale_date),            
+    sale_qtr_dec = year + (qtr - 1) / 4,        # 2012.00, .25, .50, .75
+    
+    group_name_eff = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated.
+      # for ALL properties in the updated firms
+      eff_date == "2008-08-19" ~ 0,
+      eff_date == "2019-11-01" ~ 2019,
+      eff_date == "2021-09-10" ~ 2021,
+      TRUE ~ NA),
+    
+    # 2005-01-01 2015-02-15 2019-06-28 2021-09-22 
+
+    group_name_prelim = factor(case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated.
+      # for ALL properties in the updated firms
+      pre_date == "2005-01-01" ~ 0,
+      pre_date == "2015-02-12" ~ 2015,
+      pre_date == "2019-07-01" ~ 2019,
+      pre_date == "2021-09-22" ~ 2021,
+      TRUE ~ NA),
+      ),
+  
+    treated_group_eff = factor(case_when(
+      # for TREATED propertes in updated FIRMs!
+      eff_date == "2008-08-19" & (addedto_eff_sfha|removedfrom_eff_sfha) ~ 0,
+      eff_date == "2019-11-01" & (addedto_eff_sfha|removedfrom_eff_sfha) ~ 2019,
+      eff_date == "2021-09-10" & (addedto_eff_sfha|removedfrom_eff_sfha) ~ 2021,
+      TRUE ~ NA)),
+    
+    treated_group_prelim = factor(case_when( 
+      # for TREATED propertes in updated FIRMs!
+      pre_date == "2005-01-01" & (addedto_prelim_sfha|removedfrom_prelim_sfha) ~ 0,
+      pre_date == "2015-02-12" &  (addedto_prelim_sfha|removedfrom_prelim_sfha)~ 2015,
+      pre_date == "2019-07-01" & (addedto_prelim_sfha|removedfrom_prelim_sfha) ~ 2019,
+      pre_date == "2021-09-22" & (addedto_prelim_sfha|removedfrom_prelim_sfha) ~ 2021,
+
+      TRUE ~ NA)),
+        treated_group_prelim_add = factor(case_when( 
+      # for TREATED properties in updated FIRMs!
+      pre_date == "2005-01-01" & (addedto_prelim_sfha) ~ 0,
+      pre_date == "2015-02-12" &  (addedto_prelim_sfha)~ 2015,
+      pre_date == "2019-07-01" & (addedto_prelim_sfha) ~ 2019,
+      pre_date == "2021-09-22" & (addedto_prelim_sfha) ~ 2021,
+
+      TRUE ~ NA)),
+        treated_group_prelim_remove = factor(case_when( 
+      # for TREATED propertes in updated FIRMs!
+      pre_date == "2005-01-01" & (removedfrom_prelim_sfha) ~ 0,
+      pre_date == "2015-02-12" &  (removedfrom_prelim_sfha)~ 2015,
+      pre_date == "2019-07-01" & (removedfrom_prelim_sfha) ~ 2019,
+      pre_date == "2021-09-22" & (removedfrom_prelim_sfha) ~ 2021,
+
+      TRUE ~ NA))
+    )
+
+```
+
+```{r}
+
+df_prep <- df_prep |>
+  group_by(pin) |>
+  mutate(
+    n_sales = n(),
+    ever_added_prelim   = any(addedto_prelim_sfha == TRUE),
+    ever_removed_prelim = any(removedfrom_prelim_sfha == TRUE),
+    ) |>
+  mutate(
+    prelim_sfha_category = 
+      case_when(
+        ever_added_prelim & !ever_removed_prelim ~ "Added to prelim SFHA",
+        ever_removed_prelim & !ever_added_prelim ~ "Removed from prelim SFHA",
+        # ever_added_prelim & ever_removed_prelim  ~ "Multiple prelim transitions",
+        change_type_prelim == "Always SFHA" ~ "Always SFHA",
+        change_type_prelim == "Never SFHA" ~ "Never SFHA",
+        TRUE ~ "CHECK ME"  ) 
+  ) |> 
+  ungroup()
+
+df_prep <- df_prep |>
+  # select(any_of(-c(clean_name.x, clean_name.y)) )|>
+  mutate(Triad = case_when(
+    clean_name == "Chicago" ~  "City",
+    as.numeric(str_sub(pin, 1, 2) ) < 13 ~ "North",
+    as.numeric(str_sub(pin, 1, 2) ) >= 13 ~ "South"
+  ),
+    Triad = factor(Triad, levels = c("South", "North", "City") )
+  ) 
+
+```
+
+
+
+# Parallel Trends
+
+```{r}
+df_prep <- df_prep |>filter(!is.na(in_eff_sfha))
+
+make_sfha_lineplot(
+  df_prep,
+  y_var     = "log_price",
+  facet_var = "Triad",
+  title     = "Trends by Triad and SFHA Status"
+)
+
+make_sfha_lineplot(
+  df_prep,
+  y_var     = "log_price",
+  facet_var = "pre_date",
+  title     = "Trends by FIRM Date and SFHA Status"
+)
+
+make_sfha_lineplot(
+  (df_prep |> filter(sale_price < 2000000)),
+  y_var     = "sale_price",
+  facet_var = "pre_date",
+  title     = "Trends by FIRM Date and SFHA Status"
+)
+```
+
+```{r}
+make_sfha_lineplot(
+  (df_prep |> filter(prelim_sfha_category %in% c("Always SFHA", "Removed from prelim SFHA"))),
+  y_var     = "log_price",
+  facet_var = "pre_date",
+  title     = "Trends by FIRM Date and SFHA Status"
+)
+
+
+make_sfha_lineplot(
+  (df_prep |> filter(prelim_sfha_category %in% c("Never SFHA", "Added to prelim SFHA"))),
+  y_var     = "log_price",
+  facet_var = "pre_date",
+  title     = "Trends by FIRM Date and SFHA Status"
+)
+
+```
+
+## Added 
+
+```{r}
+
+# ---- 1. prep years (run once; safe if they already exist) ----
+df_prep <- df_prep |>
+  mutate(
+    pre_year = if ("pre_year" %in% names(df)) pre_year else as.integer(format(pre_date, "%Y")),
+    eff_year = if ("eff_year" %in% names(df)) eff_year else as.integer(format(eff_date, "%Y")),
+    event_time = sale_year - pre_year
+  )
+
+# ---- 3. bin leads/lags ----
+df_prep <- df_prep |>
+  mutate(
+    event_time_binned = case_when(
+      event_time <= -5 ~ -5L,
+      event_time >=  5 ~  5L,
+      TRUE ~ as.integer(event_time)
+    )
+  )
+
+# ---- 4. define sample + treatment (example: Added vs Never) ----
+df_es <- df_prep |>
+  filter(prelim_sfha_category %in% c("Added to prelim SFHA", "Never SFHA")) |>
+  mutate(treated = prelim_sfha_category == "Added to prelim SFHA")
+
+# ---- 5. event-study regression ----
+mod_es <- feols(
+  log(sale_price) ~ i(event_time_binned, treated, ref = -1) | pin + sale_year,
+  cluster = ~ pin10,
+  data = df_es
+)
+
+# ---- 6. pre-trend check (leads only) ----
+pretrends <- broom::tidy(mod_es) |>
+  filter(str_detect(term, "^event_time_binned::")) |>
+  mutate(rel_time = as.integer(str_extract(term, "-?\\d+"))) |>
+  filter(rel_time < 0) |>
+  arrange(rel_time)
+
+pretrends
+
+# ---- 7. joint test of pre-trends ----
+wald(mod_es, keep = "event_time_binned::-(5|4|3|2)")
+
+# ---- 8. plot ----
+iplot(mod_es, xlab = "Years relative to map year", main = "Event Study")
+
+```
+
+## Removed 
+
+```{r}
+# ---- 4. define sample + treatment (example: Added vs Never) ----
+df_es_removed <- df_prep |>
+  filter(prelim_sfha_category %in% c("Removed from prelim SFHA", "Always SFHA")) |>
+  mutate(treated = prelim_sfha_category == "Removed from prelim SFHA")
+
+# ---- 5. event-study regression ----
+mod_es_removed <- feols(
+  log(sale_price) ~ i(event_time_binned, treated, ref = -1) | pin + sale_year,
+  cluster = ~ pin10,
+  data = df_es_removed
+)
+
+# ---- 6. pre-trend check (leads only) ----
+pretrends <- broom::tidy(mod_es_removed) |>
+  filter(str_detect(term, "^event_time_binned::")) |>
+  mutate(rel_time = as.integer(str_extract(term, "-?\\d+"))) |>
+  filter(rel_time < 0) |>
+  arrange(rel_time)
+
+pretrends
+
+# ---- 7. joint test of pre-trends ----
+wald(mod_es_removed, keep = "event_time_binned::-(5|4|3|2)")
+
+# ---- 8. plot ----
+iplot(mod_es_removed, xlab = "Years relative to map year", main = "Event Study")
+
+```
+
+## Trends by Geography
+
+To relax the assumption of countywide parallel trends, event-study models are augmented with cohort-specific time trends, implemented as interactions between sale year and assessment triad or preliminary map cohort. This allows price trajectories to vary flexibly across institutional groupings while preserving identification from within-cohort deviations around the map update.
+
+```{r}
+
+# ---- 5. EVENT STUDY WITH FLEXIBLE TRENDS ----
+# CHOOSE ONE FE SPECIFICATION BELOW
+
+## (A) Flexible trends by TRIAD
+mod_es_triad <- feols(
+  log(sale_price) ~ i(event_time_binned, treated, ref = -1) |
+    pin + sale_year^Triad,
+  cluster = ~ pin10,
+  data = df_es
+)
+
+
+# ---- 6. pre-trend extraction (example: triad version) ----
+pretrends_triad <- broom::tidy(mod_es_triad) |>
+  filter(str_detect(term, "^event_time_binned::")) |>
+  mutate(rel_time = as.integer(str_extract(term, "-?\\d+"))) |>
+  filter(rel_time < 0) |>
+  arrange(rel_time)
+
+pretrends_triad
+
+# ---- 7. joint test of pre-trends ----
+wald(mod_es_triad, keep = "event_time_binned::-(5|4|3|2)")
+
+# ---- 8. plot ----
+iplot(
+  mod_es_triad,
+  xlab = "Years relative to map year",
+  main = "Event Study with Triad-Specific Trends"
+)
+
+```
+
+```{r}
+
+
+## (B) Flexible trends by PRE-MAP COHORT (pre_year)
+mod_es_preyear <- feols(
+  log(sale_price) ~ i(event_time_binned, treated, ref = -1) |
+    pin + sale_year^pre_year,
+  cluster = ~ pin10,
+  data = df_es
+)
+
+# ---- 6. pre-trend extraction (example: triad version) ----
+pretrends_firm <- broom::tidy(mod_es_preyear) |>
+  filter(str_detect(term, "^event_time_binned::")) |>
+  mutate(rel_time = as.integer(str_extract(term, "-?\\d+"))) |>
+  filter(rel_time < 0) |>
+  arrange(rel_time)
+
+pretrends_firm
+
+# ---- 7. joint test of pre-trends ----
+wald(mod_es_preyear, keep = "event_time_binned::-(5|4|3|2)")
+
+# ---- 8. plot ----
+iplot(
+  mod_es_preyear,
+  xlab = "Years relative to map year",
+  main = "Event Study with Triad-Specific Trends"
+)
+
+```
+
+## simpler version
+
+```{r}
+test_parallel_trends_slope <- function(df,
+                                      id_var = "pin",
+                                      year_var = "sale_year",
+                                      y_var = "sale_price",
+                                      group_var = "change_type_prelim",
+                                      pre_start = 2010,
+                                      pre_end = 2014,
+                                      cluster_var = "pin") {
+
+  d <- df |>
+    filter(.data[[group_var]] %in% c("Always SFHA", "Never SFHA")) |>
+    filter(.data[[year_var]] >= pre_start, .data[[year_var]] <= pre_end) |>
+    mutate(log_price = log(.data[[y_var]]))
+
+  # Year FE makes it hard to estimate a single slope; instead use year as numeric without year FE,
+  # but keep property FE so you’re comparing within-property changes.
+  fml <- as.formula(paste0(
+    "log_price ~ ", year_var, " * ", group_var, " | ", id_var
+  ))
+
+  feols(fml, data = d, cluster = as.formula(paste0("~", cluster_var)))
+}
+
+m_slope <- test_parallel_trends_slope(df_prep,
+                                      id_var = "pin",
+                                      year_var = "sale_year",
+                                      y_var = "sale_price",
+                                      group_var = "change_type_prelim",
+                                      pre_start = 2010,
+                                      pre_end = 2015,
+                                      cluster_var = "pin10")
+
+summary(m_slope)
+
+m_slope <- test_parallel_trends_slope(df_prep,
+                                      id_var = "pin",
+                                      year_var = "sale_year",
+                                      y_var = "log_price",
+                                      group_var = "change_type_prelim",
+                                      pre_start = 2010,
+                                      pre_end = 2015,
+                                      cluster_var = "pin10")
+
+summary(m_slope)
+
+```
+
+
+
+
+> Groups appear to have different pre-trends based on the significant non-zero slope for the interaction variable.
+
+In a pre-period only window (before any relevant map change), assign a fake “event year” and estimate whether the difference between always-in vs never-in changes over event time before the placebo event. If the lead coefficients aren’t flat, you’ve got non-parallel trends.
+
+```{r}
+test_parallel_trends_placebo <- function(df,
+                                        id_var = "pin",
+                                        year_var = "sale_year",
+                                        y_var = "sale_price",
+                                        group_var = "change_type_prelim",  # 1 = always-in, 0 = never-in
+                                        placebo_year = 2012,
+                                        pre_start = 2010,
+                                        pre_end = 2014,   # should be BEFORE any real prelim/effective year used in this sample
+                                        rel_window = c(-5, 5),
+                                        cluster_var = "pin10") {
+
+  stopifnot(all(c(id_var, year_var, y_var, group_var) %in% names(df)))
+
+  d <- df |>
+    filter(.data[[group_var]] %in% c("Always SFHA", "Never SFHA")) |>
+    filter(.data[[year_var]] >= pre_start, .data[[year_var]] <= pre_end) |>
+    mutate(
+      log_price = log(.data[[y_var]]),
+      rel_t = .data[[year_var]] - placebo_year
+    ) |>
+    filter(rel_t >= rel_window[1], rel_t <= rel_window[2])
+
+  # Event-study style: year FE are included; identification comes from within-id changes and relative-time x group interaction.
+  # `i(rel_t, group, ref = -1)` gives coefficients for each event time for group==1 relative to group==0,
+  # normalized to rel_t = -1.
+  fml <- as.formula(paste0(
+    "log_price ~ i(rel_t, ", group_var, ", ref = -1) | ",
+    id_var, " + ", year_var
+  ))
+
+  m <- feols(
+    fml,
+    data = d,
+    cluster = as.formula(paste0("~", cluster_var))
+  )
+
+  # Extract event-time coefficients in a tidy-ish way
+  ct <- broom::tidy(m) |>
+    filter(grepl("^rel_t::", term)) |>
+    mutate(
+      rel_t = as.integer(sub("rel_t::", "", term)),
+      is_lead = rel_t < 0
+    )
+
+  # Simple visual
+  p <- ggplot(ct, aes(x = rel_t, y = estimate)) +
+    geom_hline(yintercept = 0) +
+    geom_vline(xintercept = 0, linetype = "dashed") +
+    geom_point() +
+
+    labs(
+      x = "Event time (years relative to placebo year)",
+      y = "Difference (Always-in minus Never-in), relative to t = -1",
+      title = "Placebo event-study pre-trend test"
+    ) +
+    theme_minimal()
+
+  list(
+    data_used = d,
+    model = m,
+    coef_table = ct,
+    plot = p
+  )
+}
+
+# You need a dataset that contains ONLY always-in and never-in observations for the relevant geography/time,
+# and a window that is truly pre-treatment for that geography.
+res <- test_parallel_trends_placebo(
+  df = df_prep,                       
+  id_var = "pin",                    
+  year_var = "sale_year",
+  y_var = "sale_price",
+  group_var = "change_type_prelim",      
+  placebo_year = 2012,
+  pre_start = 2010,
+  pre_end = 2014,                
+  rel_window = c(-5, 5),
+  cluster_var = "pin10"
+)
+
+res$plot
+summary(res$model)
+res$coef_table
+
+```
+
+Not super significantly different but probably not truly parallel trends during pre-trends?
+
+```{r}
+# Test whether ALL lead coefficients are zero
+# (Works if the term names match; sometimes you need to inspect names(res$model$coefficients))
+
+lead_terms <- res$coef_table |>
+  filter(is_lead) |>
+  pull(term)
+
+# Wald test: all leads = 0
+fixest::wald(res$model, paste(lead_terms, "= 0", collapse = " ; "))
+
+```
+
+```{r}
+# Test whether ALL lead coefficients are zero
+# (Works if the term names match; sometimes you need to inspect names(res$model$coefficients))
+
+lead_terms <- res$coef_table |>
+  filter(is_lead) |>
+  pull(term)
+
+# Wald test: all leads = 0
+fixest::wald(res$model, paste(lead_terms, "= 0", collapse = " ; "))
+
+```
+
+```{r remove-multisales-peryear}
 df_clean <- df_prep |> 
   mutate(
     sale_quarter = quarter(sale_date),
     pin_num = as.numeric(pin)
   ) |> 
   ungroup() |>
-  group_by(pin_num, sale_year, eff_date, in_eff_sfha, #addedto_eff_sfha
+  group_by(pin_num, sale_year, pre_date, eff_date, in_eff_sfha, #addedto_eff_sfha
            ) |> 
   summarize(
     log_price = mean(log_price, na.rm=TRUE), 
@@ -62,90 +642,252 @@ df_clean |> group_by(sale_year, pin_num) |> mutate(n = n()) |> filter(n > 1)
 # not any more
 ```
 
+> “Indicators for preliminary SFHA additions and removals are defined at the transaction-pair level. Observations with no change between consecutive sales are coded as zero; missing values therefore indicate the absence of a preliminary SFHA transition rather than missing information.”
+
+```{r}
+q1_data <- df_prep 
+
+prop_summary_prelim <- q1_data |>
+  group_by(pin) |>
+  summarize(
+    n_sales = n(),
+    price = mean(sale_price),
+    ever_added_prelim   = any(addedto_prelim_sfha == TRUE),
+    ever_removed_prelim = any(removedfrom_prelim_sfha == TRUE),
+    change_type_prelim = first(change_type_prelim)) |>
+  mutate(
+    prelim_sfha_category = 
+      case_when(
+        ever_added_prelim & !ever_removed_prelim ~ "Added to prelim SFHA",
+        ever_removed_prelim & !ever_added_prelim ~ "Removed from prelim SFHA",
+        # ever_added_prelim & ever_removed_prelim  ~ "Multiple prelim transitions",
+        change_type_prelim == "Always SFHA" ~ "Always SFHA",
+        change_type_prelim == "Never SFHA" ~ "Never SFHA",
+        TRUE ~ "CHECK ME"  ) 
+  )
+
+prop_summary_prelim
+
+prelim_sfha_stats <- prop_summary_prelim |>
+  group_by(prelim_sfha_category) |>
+  mutate(
+    avg_sales_per_property = mean(n_sales)) |>
+  summarize(
+    n_properties = n(),
+    n_sales = sum(n_sales),
+    mean_price = mean(price),
+    median_price = median(price),
+    avg_sales_per_property = first(avg_sales_per_property),
+    .groups = "drop"
+  )
+
+prelim_sfha_stats
+```
+```{r}
+prelim_event_counts <- q1_data |>
+  summarize(
+    n_sales = n(),
+    n_added_events = sum(addedto_prelim_sfha),
+    n_removed_events = sum(removedfrom_prelim_sfha),
+    pct_sales_with_event = (n_added_events + n_removed_events) / n_sales
+  )
+prelim_event_counts
+```
+
+“Preliminary SFHA reclassifications occur in approximately X% of observed transactions.”
+
+
+```{r eval = FALSE}
+
+data_dictionary <- df_prep |>
+  summarise(across(
+    everything(),
+    list(
+      class  = ~ paste(class(.), collapse = ", "),
+      n_na   = ~ sum(is.na(.)),
+      n_uniq = ~ n_distinct(.)
+    ),
+    .names = "{.col}__{.fn}"
+  )) |>
+  pivot_longer(
+    everything(),
+    names_to = c("variable", ".value"),
+    names_sep = "__"
+  ) |>
+  arrange(variable)
+
+write.csv(data_dictionary, "q1_data_dictionary.csv", row.names = FALSE)
+
+
+skim_summary <- skimr::skim(df_prep)
+
+skim_summary |>
+  as.data.frame() |>
+  write.csv("q1_skim_summary.csv", row.names = FALSE)
+
+
+```
+
+
+# Step 0: Descriptive Stats
+
+```{r}
+property_summary <- df_prep |>
+  group_by(pin) |>
+  summarize(
+    n_sales = n(),
+    mean_price = mean(sale_price),
+    # FIRM exposure
+    firm_date = first(pre_date),
+    ever_firm_update =  ifelse(first(pre_date)=="2005-01-01",FALSE, TRUE),
+
+    # SFHA dynamics
+        change_type = first(change_type)
+  )
+property_summary
+```
+
+## A. Properties with no FIRM update vs ever updated
+
+```{r}
+firm_update_stats <- property_summary |>
+  group_by(ever_firm_update) |>
+  summarize(
+    n_properties = n(),
+    n_sales      = sum(n_sales),
+    avg_price = mean(mean_price), # avg price of #avg price per property, kinda weird stat
+  )
+
+firm_update_stats
+```
+
+
+```{r}
+firm_update_stats <- df_prep |>
+     mutate(ever_firm_update =  ifelse(pre_date =="2005-01-01", FALSE, TRUE) ) |>
+  group_by(ever_firm_update) |>
+  summarize(
+    n_properties = n_distinct(pin),
+    n_sales      = n(),
+    avg_price = mean(sale_price),
+    median_price = median(sale_price)
+  )
+
+firm_update_stats
+```
+
+## B. Properties by FIRM panel exposure
+
+```{r}
+firm_panel_stats <- property_summary |>
+  group_by(firm_date) |>
+  summarize(
+    n_properties = n(),
+    n_sales      = sum(n_sales)
+  ) |>
+  arrange(firm_date)
+
+firm_panel_stats
+```
+
+## C. SFHA status categories
+
+```{r}
+#| layout-ncol: 2
+
+
+sfha_category_stats <- df_prep |>
+  group_by(pin) |> mutate(n_sales = n()) |> ungroup() |>
+  group_by(change_type_prelim) |>
+  summarize(
+    n_properties = n_distinct(pin),
+    avg_sales_per_property = mean(n_sales),
+    n_sales      = n(),
+    .groups = "drop"
+  ) |>
+  arrange(desc(n_properties))
+
+sfha_category_stats
+
+sfha_category_stats <- df_prep |>
+    mutate(ever_firm_update =  ifelse(pre_date =="2005-01-01", FALSE, TRUE) ) |>
+  group_by(change_type_prelim) |>
+  summarize(
+    n_properties = n_distinct(pin),
+    #avg_sales_per_property = mean(n_sales),
+    n_sales      = n(),
+    avg_price = mean(sale_price),
+    median_price = median(sale_price)  ) |>
+  arrange(desc(n_properties))
+
+sfha_category_stats
+```
+
+## D. Cross tab
+
+```{r}
+sfha_sales_stats <- df_prep |>
+  group_by(change_type_prelim, pre_date) |>
+  summarize(
+    n_sales = n(),
+    n_props = n_distinct(pin),
+    avg_price = mean(sale_price),
+    median_price = median(sale_price)
+  )
+sfha_sales_stats
+```
+
+```{r}
+price_summary <- df_prep |>
+  summarize(
+    n_sales = n(),
+    mean_price = mean(sale_price, na.rm = TRUE),
+    median_price = median(sale_price, na.rm = TRUE),
+    p10 = quantile(sale_price, 0.10, na.rm = TRUE),
+    p90 = quantile(sale_price, 0.90, na.rm = TRUE)
+  )
+price_summary
+
+price_by_sfha <- df_prep |>
+  group_by(change_type_prelim) |>
+  summarize(
+    n_sales = n(),
+    mean_price = mean(sale_price, na.rm = TRUE),
+    median_price = median(sale_price, na.rm = TRUE),
+    .groups = "drop"
+  )
+price_by_sfha
+```
+
+```{r}
+geo_summary <- df_prep |>
+  distinct(pin, Township, Triad) |>
+  summarize(
+    n_properties = n(),
+    n_townships = n_distinct(Township),
+    n_triads = n_distinct(Triad)
+  )
+geo_summary
+```
+
+```{r}
+housing_type_summary <- df_prep |>
+  distinct(pin, condo, class) |>
+  summarize(
+    n_properties = n(),
+    condo_share = mean(condo == "Condo", na.rm = TRUE),
+    n_classes = n_distinct(class)
+  )
+housing_type_summary
+```
+
 # Step 1: Define Treatment Cohorts
 
-```{r}
-#| label: eff-salesdata
-
-# Define cohort based on first year treated
-data <- df_clean |>
-  mutate(
-    c_i = ifelse(eff_date == "2008-08-19", 1, 0 ), # indicator for if never treated group
-  
-         group_name = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated. 
-           eff_date == "2008-08-19" ~ 0,
-           eff_date == "2019-11-01" ~ 2019,
-           eff_date == "2021-09-10" ~ 2021,
-           TRUE~ NA),
-      #   period_g = sale_year-2011    #  recenter sale year to make period variable
-          d_it =   ifelse(sale_year > 2020 & in_eff_sfha == 1 & group_name!=0, 1, 0),  # indicator for if treated by time t
-
-    ) |>
-  ungroup()
-
-table(df_prep$in_eff_sfha)
-
-q3_sales <- df_prep |>    
-  mutate(    
-    pin_num = as.numeric(pin),
-    sale_quarter = quarter(sale_date)) |>
-  filter(sale_quarter == 3) |> 
-  group_by(pin_num, sale_year, eff_date, in_eff_sfha
-  ) |> 
-  summarize(
-    log_price = mean(log_price, na.rm=TRUE), 
-  ) |> 
-  ungroup() |>
-  mutate(
-    group_name = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated. 
-      eff_date == "2008-08-19"  ~ 0,
-      eff_date == "2019-11-01"  ~ 2019,
-      eff_date == "2021-09-10"  ~ 2021,
-      #eff_date == "2019-11-01" & removedfrom_eff_sfha == "MappedOut" ~ 2019,
-     # eff_date == "2021-09-10" & removedfrom_eff_sfha == "MappedOut" ~ 2021,
-      TRUE ~ 0),
-    #   period_g = sale_year-2011    #  recenter sale year to make period variable
-  )
-  
-table(q3_sales$group_name)
-
-```
-
-
-```{r}
-#| label: prelim-salesdata
-
-table(df_prep$pre_date)
-# 2015-02-12 2019-06-26 2021-09-22 
-table(df_prep$in_prelim_sfha)
-
-prelim_q3_sales <- df_prep |>    
-  mutate(    
-    pin_num = as.numeric(pin),
-    sale_quarter = quarter(sale_date)) |>
-  filter(sale_quarter == 3) |> 
-  group_by(pin_num, sale_year, pre_date, in_prelim_sfha) |> 
-  summarize(
-    log_price = mean(log_price, na.rm=TRUE)) |> 
-  ungroup() |>
-  mutate(
-    #d_it =   ifelse(sale_year >= 2020 & in_prelim_sfha == 1,1, 0),  # indicator for if treated by time t
-    
-    group_name = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated. 
-      pre_date == "2015-02-12" ~ 2015,
-      pre_date == "2019-06-26" ~ 2019,
-      pre_date == "2021-09-22" ~ 2021,
-
-      # pre_date == "2015-02-12" & in_prelim_sfha== "SFHA"  ~ 2015,
-      # pre_date == "2019-06-26" & in_prelim_sfha== "SFHA"~ 2019,
-      # pre_date == "2021-09-22" & in_prelim_sfha == "SFHA" ~ 2021,
-      TRUE~ 0),
-  )
-
-table(prelim_q3_sales$group_name)
-```
 
 **Purpose**: Identify the first year each unit enters treatment. This cohort structure is required to estimate group-time ATT or run cohort-specific checks.
+
+See `treat_group_prelim`
+
 
 ---
 
@@ -156,32 +898,55 @@ group: groups based on FIRM panels that were updated at once
 treated:
 
 
-```{r}
+```{r eval=FALSE}
 library(did)
 att_gt_out <- att_gt(yname = "log_price",
                      tname = "sale_year",
                      idname = "pin_num",
-                     gname = "group_name",
+                     gname = "treat_group_",
                      xformla = ~in_eff_sfha,
-                     
+
                      data = q3_sales,
                      panel = TRUE,
                      allow_unbalanced_panel = TRUE)
-
-summary(att_gt_out)
-ggdid(att_gt_out)
-
+# 
+# summary(att_gt_output)
+# ggdid(att_gt_output)
 #saveRDS(out2, file = "outputs/didQ1_model_output.rds")
 #saveRDS(p2, file = "outputs/didQ1_plot_output.rds")
+
+
+# att_gt_eff_remove <- att_gt(yname = "log_price",
+#                      tname = "sale_year",
+#                      idname = "pin_num",
+#                      gname = "group_name_remove",
+#                      data = q3_sales,
+#                      panel = TRUE,
+#                      allow_unbalanced_panel = TRUE)
+# summary(att_gt_eff_remove)
+# ggdid(att_gt_eff_remove)
+
+# att_gt_eff_add <- att_gt(yname = "log_price",
+#                      tname = "sale_year",
+#                      idname = "pin_num",
+#                      gname = "group_name_add",
+#                      data = q3_sales,
+#                      panel = TRUE,
+#                      allow_unbalanced_panel = TRUE)
+# summary(att_gt_eff_add)
+# ggdid(att_gt_eff_add)
 ```
 
 
 ```{r eval=FALSE}
+library(did)
+
 prelim_att_gt_output <- att_gt(yname = "log_price",
                      tname = "sale_year",
                      idname = "pin_num",
                      gname = "group_name",
                      data = prelim_q3_sales,
+                     panel = TRUE,
                      allow_unbalanced_panel = TRUE)
 
 summary(prelim_att_gt_output)
@@ -201,6 +966,7 @@ Aggregated effect
 
 
 ```{r}
+#| error: true
 # aggregate the group-time average treatment effects
 agg_output <- aggte(att_gt_out, type = "dynamic")
 summary(agg_output)
