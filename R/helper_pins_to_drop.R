@@ -25,5 +25,45 @@ drop_parcels <- c(
   "2130999001", "2132213002", # actual water canal in calumet area
   "2608202004", "2608400034", "3017211033", # also water pins.
 
-  "1129110024", "2717109004"
+  "1129110024", "2717109004",
+
+  # flagged as added to City
+  "1129110014", # coastal condo, FF = 1, building by the park in rogers park!
+  "1129110023", # coastal condo, FF = 4, building by the tennis courts in rogers park!
+  "1129308022", # coastal condo, FF = 1, rogers park
+  "1129318015", # coastal condo, FF = 1, rogers park
+  "1405207009", # coastal condo, FF = 1
+  "1405211024", # coastal condo, FF = 1
+  "1405211025", # almost coastal condo, FF = 3
+
+  # new construction homes that had huge price increases
+
+  "2411209095", "2411209097", "2411209098",
+  "1336106098",
+
+  "1729309068",  # nothing actually wrong with this PIN, sales seem normal, just missing eff_date info,
+  # near the river but not on the river, appears to be the land around other pins?
+
+
+  "0427302008", # old parcel, northfield / Glenview area.  not FZ
+  "0427302009", # old parcel, northfield / Glenview area.  not FZ
+  "0633108005", # new buildings in Bartlett, next to the SFHA but not in it
+  "0633108006", # new buildings in Bartlett, next to the SFHA but not in it
+  "0633108007", # new buildings in Bartlett, next to the SFHA but not in it
+  "0633108008", # new buildings in Bartlett, next to the SFHA but not in it
+  "0633108009",  # land around the new buildings
+  "0633200015", # more new buildings in bartlett: Wood Lily Ct.
+  "0633205019",
+  "0633205020", # bartlett, Bluebell LN
+  "1705320076", # no building here?
+  "1710130027", # by chicago riverbut not floodzone
+  "1710400054", # by chicago riverbut not floodzone, no buildinghere?
+  "2226307004", # new homesin Lemont. The onesthat use to be a golf course! not FZ
+  "2226307005", # new homesin Lemont. The onesthat use to be a golf course! not FZ
+  "2226307010",
+  "2226307011",
+  "2226307012",
+  "2433302053", # nobuildinghere
+  "2730212019", # in A LOMR since 2018, Clover Drive, Orland Park. New Buildings. By floodzonebut not in floodzone
+  "2804400093"   # midlothian turnpike. by floodzone but not in floodzone
 )
