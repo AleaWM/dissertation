@@ -43,6 +43,31 @@ merge_sales_sfha <- function(sales, sfha_compare_pin10_fourway) {
 
 }
 
+#
+fill_missing_panels <- function(df_prep) {
+  # build lookup from non-missing rows
+  panel_lookup <- df_prep |>
+    mutate(pin7 =  str_sub(pin, 1, 7)) |>
+    dplyr::distinct(.data$pin7, .data$FIRM_PAN) |>
+    dplyr::filter(
+      !is.na(.data$FIRM_PAN)
+    )
+
+  out <- df_prep |>
+    mutate(pin7 =  str_sub(pin, 1, 7)) |>
+
+    dplyr::left_join(
+      panel_lookup,
+      by = c("pin7"),
+      multiple = "first",
+      suffix = c(".x", ".y")
+    ) |>
+    dplyr::mutate(FIRM_PAN = dplyr::coalesce(.data$FIRM_PAN.x, .data$FIRM_PAN.y)) |>
+    dplyr::select(-dplyr::any_of(c("FIRM_PAN.x", "FIRM_PAN.y", "clean_name.y", "clean_name.x"))
+    )
+}
+
+
 #' Create SFHA timing variables, LOMR indicator, and add/remove change flags
 #'
 #' This encapsulates the logic you were using in data_prep_new.R, but as a pure function.
@@ -392,28 +417,6 @@ fill_missing_muni_by_nbhd_zip <- function(df_prep) {
 }
 
 
-fill_missing_panels <- function(df_prep) {
-  # build lookup from non-missing rows
-  panel_lookup <- df_prep |>
-    mutate(pin7 =  str_sub(pin, 1, 7)) |>
-    dplyr::distinct(.data$pin7, .data$FIRM_PAN) |>
-    dplyr::filter(
-      !is.na(.data$FIRM_PAN)
-    )
-
-  out <- df_prep |>
-    mutate(pin7 =  str_sub(pin, 1, 7)) |>
-
-    dplyr::left_join(
-      panel_lookup,
-      by = c("pin7"),
-      multiple = "first",
-      suffix = c(".x", ".y")
-    ) |>
-    dplyr::mutate(FIRM_PAN = dplyr::coalesce(.data$FIRM_PAN.x, .data$FIRM_PAN.y)) |>
-    dplyr::select(-dplyr::any_of(c("FIRM_PAN.x", "FIRM_PAN.y", "clean_name.y", "clean_name.x"))
-    )
-}
 
 # keeps sales from 2010 and onward
 final_df_prep_filters <- function(df_prep, min_sale_date = as.Date("2010-01-01")) {
