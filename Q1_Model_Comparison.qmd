@@ -103,6 +103,39 @@ add_stars <- function(p) {
     TRUE     ~ ""
   )
 }
+
+get_treated_n <- function(m, vars = c(
+  "addedto_eff_sfha",
+  "removedfrom_eff_sfha",
+  "addedto_prelim_sfha",
+  "removedfrom_prelim_sfha"
+)) {
+  mf <- model.frame(m)
+  vars <- intersect(vars, names(mf))
+  if (length(vars) == 0) return(NA_integer_)
+  sum(Reduce(`|`, lapply(mf[vars], to_logical01)), na.rm = TRUE)
+}
+
+gof_map <- data.frame(
+  raw = c("nobs", "treated_n"),
+  clean = c("Observations", "Treated observations"),
+  fmt = c(0, 0)
+)
+
+
+get_treated_n <- function(m, vars = c(
+  "addedto_eff_sfha", "removedfrom_eff_sfha",
+  "addedto_prelim_sfha", "removedfrom_prelim_sfha"
+)) {
+  mf <- model.frame(m)
+  vars <- intersect(vars, names(mf))
+  if (length(vars) == 0) return(NA_integer_)
+
+  # treat as TRUE if any treat var is TRUE in that row
+  x <- Reduce(`|`, lapply(mf[vars], to_logical01))
+  sum(x, na.rm = TRUE)
+}
+
 ```
 
 # Compare datasets and output
@@ -381,10 +414,36 @@ fit_prelim_models <- function(df_prep) {
 effective_models <- lapply(datasets2, fit_effective_models)
 prelim_models    <- lapply(datasets2, fit_prelim_models)
 
+
+make_gof_rows <- function(models_by_dataset, treat_vars) {
+  purrr::imap_dfr(models_by_dataset, function(model_list, dataset_id) {
+    purrr::imap_dfr(model_list, function(m, model_name) {
+      tibble::tibble(
+        dataset_id = dataset_id,
+        model_name = model_name,
+        term = c("Observations", "Treated observations"),
+        cell = c(
+          as.character(stats::nobs(m)),
+          as.character(get_treated_n(m, vars = treat_vars))
+        )
+      )
+    })
+  })
+}
+
+eff_gof <- make_gof_rows(
+  effective_models,
+  treat_vars = c("addedto_eff_sfha", "removedfrom_eff_sfha")
+)
+
+pre_gof <- make_gof_rows(
+  prelim_models,
+  treat_vars = c("addedto_prelim_sfha", "removedfrom_prelim_sfha")
+)
+
 ```
 
 
-### Formatting tables
 
 ```{r}
 #| label: build-complete-term-grids
@@ -450,11 +509,23 @@ coef_cell <- function(est, se, p) {
   )
 }
 
+# eff_tbl <- eff_grid |>
+#   mutate(cell = coef_cell(estimate, std.error, p.value))
+# 
+# pre_tbl <- pre_grid |>
+#   mutate(cell = coef_cell(estimate, std.error, p.value))
+
 eff_tbl <- eff_grid |>
-  mutate(cell = coef_cell(estimate, std.error, p.value))
+  mutate(cell = coef_cell(estimate, std.error, p.value)) |>
+  select(dataset_id, model_name, term, cell)
 
 pre_tbl <- pre_grid |>
-  mutate(cell = coef_cell(estimate, std.error, p.value))
+  mutate(cell = coef_cell(estimate, std.error, p.value)) |>
+  select(dataset_id, model_name, term, cell)
+
+# add GOF rows (these already have 'cell')
+eff_tbl <- bind_rows(eff_tbl, eff_gof)
+pre_tbl <- bind_rows(pre_tbl, pre_gof)
 
 # ---- 4) Optional: enforce a consistent dataset column order (edit to match your IDs) ----
 col_order <- c(
@@ -495,6 +566,8 @@ pretty_term <- function(term) {
   map_one <- function(x) {
     x <- str_trim(x)
     dplyr::case_when(
+      x %in% c("Observations")          ~ "Observations",
+x %in% c("Treated observations")  ~ "Treated observations",
       x %in% c("in_eff_sfhaTRUE")              ~ "In SFHA",
       x %in% c("addedto_eff_sfhaTRUE")         ~ "Mapped In",
       x %in% c("removedfrom_eff_sfhaTRUE",
@@ -565,12 +638,6 @@ ft_eff <- eff_wide_labeled |>
   flextable::flextable() |>
   flextable::set_header_labels(values = pretty_cols)
 
-ft_pre <- pre_wide_labeled |>
-   dplyr::select(dplyr::all_of(id_cols), dplyr::all_of(col_order_final)) |>
-  flextable::flextable() |>
-  flextable::set_header_labels(values = pretty_cols)
-
-
 
 ft_eff
 
@@ -582,6 +649,13 @@ ft_eff
 #| label: tbl-preliminary-mainmodels
 #| column: screen
 
+
+ft_pre <- pre_wide_labeled |>
+   dplyr::select(dplyr::all_of(id_cols), dplyr::all_of(col_order_final)) |>
+  flextable::flextable() |>
+  flextable::set_header_labels(values = pretty_cols)
+
+
 ft_pre      # with labels
 
 # flextable::flextable(pre_wide)  # without labels
@@ -589,8 +663,6 @@ ft_pre      # with labels
 ```
 
 
-
-### Not GRID Format
 
 ```{r}
 #| label: robust-table-effective
@@ -986,20 +1058,93 @@ treated_summary_ft
 
 # FIRMs Updated Subsets
 
+## Building Polygons
+
+```{r}
+#| label: attemptatfunction
+#| eval: false
+#| 
+
+show_firm_models_added <- function(df, model_var, treat_var_to_exclude, prop_type_to_exclude){
+
+  df2 <- df |>
+    dplyr::filter(
+      change_type != prop_type_to_exclude,
+      .data[[treat_var_to_exclude]] == 10000
+    ) 
+
+    fml <- stats::as.formula(paste0("log(sale_price) ~ ", model_var, " | pin + sale_year"))
+
+    
+  mod <- fixest::feols(
+   fml,
+    cluster = ~ pin10,
+    fsplit  = ~ pre_date_chr,
+    data    = df2
+  )
+
+  modelsummary::modelsummary(mod, stars = TRUE)
+}
+
+show_firm_models_added(
+  datasets2$bldg_updated,
+  treat_var_to_exclude = "treat_year_add_prelim",
+  model_var = "removedfrom_prelim_sfha",
+  prop_type_to_exclude = "Never SFHA"
+)
+```
+
 ```{r}
 #| error: true
-#| warning: true
-#| message: true
+
+datasets2$land_updated |> filter(change_type_prelim != "Never SFHA" & 
+                           # and properties that are never treated for being added to the SFHA
+                           treat_year_add_eff == 10000 & treat_year_add_prelim == 10000)  |>
+feols(log(sale_price) ~ sw(removedfrom_prelim_sfha) | pin + sale_year,
+     subset = ~pre_date_chr != "2005-01-01",
+      cluster = ~pin10,
+      fsplit= ~pre_date_chr
+) |> modelsummary(stars = TRUE)
+
+
+
+datasets2$land_updated |> filter(change_type_prelim != "Never SFHA" & 
+                           # and properties that are never treated for being added to the SFHA
+                           treat_year_add_eff == 10000 & treat_year_add_prelim == 10000)  |>
+feols(log(sale_price) ~ sw(removedfrom_prelim_sfha*in_lomr) | pin + sale_year,
+     subset = ~pre_date_chr != "2005-01-01",
+      cluster = ~pin10,
+      fsplit= ~pre_date_chr
+) |> modelsummary(stars = TRUE)
+
+
+```
+
+
+```{r}
+#| error: true
+
+datasets2$bldg_updated |> filter(change_type != "Never SFHA" & 
+                           # and properties that are never treated for being added to the SFHA
+                           treat_year_add_eff == 10000 & treat_year_add_prelim == 10000)  |>
+feols(log(sale_price) ~ sw(removedfrom_prelim_sfha) | pin + sale_year,
+     subset = ~pre_date_chr != "2005-01-01",
+      cluster = ~pin10,
+      fsplit= ~pre_date_chr
+) |> modelsummary(stars = TRUE)
+
+
 
 datasets2$bldg_updated |> filter(change_type != "Never SFHA" & 
                            # and properties that are never treated for being added to the SFHA
                            treat_year_add_eff == 10000 & treat_year_add_prelim == 10000)  |>
 feols(log(sale_price) ~ sw(removedfrom_prelim_sfha*in_lomr) | pin + sale_year,
-     # data = df_prep,
-   #  subset = ~eff_date_chr != "2008-08-19",
+     subset = ~pre_date_chr != "2005-01-01",
       cluster = ~pin10,
       fsplit= ~pre_date_chr
 ) |> modelsummary(stars = TRUE)
+
+
 ```
 
 
@@ -1009,14 +1154,14 @@ feols(log(sale_price) ~ sw(removedfrom_prelim_sfha*in_lomr) | pin + sale_year,
 #| warning: true
 #| message: true
 
-df3 <- datasets2$bldg_updated |> filter(change_type_prelim != "Never SFHA" & 
+df3 <- datasets2$dataset_explored |> filter(change_type_prelim != "Never SFHA" & 
                            # and properties that are never treated for being added to the SFHA
                            treat_year_add_eff == 10000 & treat_year_add_prelim == 10000) |>
   mutate(sale_year = factor(sale_year, exclude = "2014"))
 
 prelim_twfe <- list( 
 
-  mod1 <- feols(log(sale_price) ~ removedfrom_prelim_sfha*sale_year*group_name_prelim | pin + sale_year,
+  mod1 <- feols(log(sale_price) ~ removedfrom_prelim_sfha*sale_year*treat_group_name_prelim | pin + sale_year,
       data = df3,
    # subset = ~pre_date_chr == "2015-02-15",
       cluster = ~pin10
