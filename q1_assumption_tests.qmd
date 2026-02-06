@@ -18,35 +18,13 @@ This document outlines the correct diagnostics for **parallel trends assumptions
 
 ---
 
-```{r}
+```{r setup}
 library(tidyverse)
 library(fixest)
 
 library(didFF)   # for testing if functional form matters for the analysis. Tests if parallel trends assumption is sensitive to functional form (i.e. logged variable vs unlogged variable)
 
 options(scipen = 999)
-
-df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_final.rds") |>
-  select(-c(clean_name.x, clean_name.y))
-
-table(df_prep$change_type)
-table(df_prep$change_type_prelim)
-
-df_prep <- df_prep |> 
-  mutate(log_price = log(sale_price))
-
-df_prep <- df_prep |>
-  filter(#!is.na(high_ff_score) &
-           !is.na(eff_date) &
-      #     !is.na(clean_name) &
-           !is.na(pre_date)# &
-      #     !is.na(Triad)
-  )
-
-
-# are there pins that sell multiple times 
-df_prep |> group_by(sale_year, pin) |> mutate(n = n()) |> filter(n > 1)
-# yes 
 make_sfha_lineplot <- function(
   df,
   y_var = c("sale_price", "log_price"),
@@ -67,6 +45,7 @@ make_sfha_lineplot <- function(
     dplyr::group_by(dplyr::across(dplyr::all_of(grp_vars))) |>
     dplyr::summarise(
       avg_value = mean(.data[[y_var]], na.rm = TRUE),
+      median_value = median(.data[[y_var]], na.rm=TRUE),
       n = dplyr::n(),
       .groups = "drop"
     )
@@ -104,6 +83,35 @@ make_sfha_lineplot <- function(
     ggplot2::theme_classic() +
     ggplot2::theme(legend.position = "bottom")
 }
+
+df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_final.rds") |>
+  select(-c(clean_name.x, clean_name.y))
+```
+
+
+```{r}
+table(df_prep$change_type)
+table(df_prep$change_type_prelim)
+
+df_prep <- df_prep |> 
+  mutate(log_price = log(sale_price),
+         in_eff_sfha = in_eff_sfha == 1,
+         in_prelim_sfha = in_prelim_sfha == 1)
+
+df_prep <- df_prep |>
+  filter(#!is.na(high_ff_score) &
+           !is.na(eff_date) &
+      #     !is.na(clean_name) &
+           !is.na(pre_date)# &
+      #     !is.na(Triad)
+  )
+
+
+# are there pins that sell multiple times?
+# df_prep |> group_by(sale_year, pin) |> mutate(n = n()) |> filter(n > 1)
+# yes 
+
+
 ```
 
 
@@ -180,39 +188,41 @@ df_prep <- df_prep |>
       pre_date == "2019-07-01" ~ 2019,
       pre_date == "2021-09-22" ~ 2021,
       TRUE ~ NA),
-      ),
-  
-    treated_group_eff = factor(case_when(
+      ))
+
+df_prep <- df_prep |> 
+  mutate(
+    treated_group_eff = (case_when(
       # for TREATED propertes in updated FIRMs!
       eff_date == "2008-08-19" & (addedto_eff_sfha|removedfrom_eff_sfha) ~ 0,
       eff_date == "2019-11-01" & (addedto_eff_sfha|removedfrom_eff_sfha) ~ 2019,
       eff_date == "2021-09-10" & (addedto_eff_sfha|removedfrom_eff_sfha) ~ 2021,
       TRUE ~ NA)),
     
-    treated_group_prelim = factor(case_when( 
+    treated_group_prelim = (case_when( 
       # for TREATED propertes in updated FIRMs!
       pre_date == "2005-01-01" & (addedto_prelim_sfha|removedfrom_prelim_sfha) ~ 0,
       pre_date == "2015-02-12" &  (addedto_prelim_sfha|removedfrom_prelim_sfha)~ 2015,
       pre_date == "2019-07-01" & (addedto_prelim_sfha|removedfrom_prelim_sfha) ~ 2019,
       pre_date == "2021-09-22" & (addedto_prelim_sfha|removedfrom_prelim_sfha) ~ 2021,
 
-      TRUE ~ NA)),
-        treated_group_prelim_add = factor(case_when( 
+      TRUE ~ 0)),
+        treated_group_prelim_add = (case_when( 
       # for TREATED properties in updated FIRMs!
       pre_date == "2005-01-01" & (addedto_prelim_sfha) ~ 0,
       pre_date == "2015-02-12" &  (addedto_prelim_sfha)~ 2015,
       pre_date == "2019-07-01" & (addedto_prelim_sfha) ~ 2019,
       pre_date == "2021-09-22" & (addedto_prelim_sfha) ~ 2021,
 
-      TRUE ~ NA)),
-        treated_group_prelim_remove = factor(case_when( 
+      TRUE ~ 0)),
+        treated_group_prelim_remove = (case_when( 
       # for TREATED propertes in updated FIRMs!
       pre_date == "2005-01-01" & (removedfrom_prelim_sfha) ~ 0,
       pre_date == "2015-02-12" &  (removedfrom_prelim_sfha)~ 2015,
       pre_date == "2019-07-01" & (removedfrom_prelim_sfha) ~ 2019,
       pre_date == "2021-09-22" & (removedfrom_prelim_sfha) ~ 2021,
 
-      TRUE ~ NA))
+      TRUE ~ 0))
     )
 
 ```
@@ -226,6 +236,7 @@ df_prep <- df_prep |>
     ever_added_prelim   = any(addedto_prelim_sfha == TRUE),
     ever_removed_prelim = any(removedfrom_prelim_sfha == TRUE),
     ) |>
+  ungroup() |>
   mutate(
     prelim_sfha_category = 
       case_when(
@@ -250,9 +261,57 @@ df_prep <- df_prep |>
 
 ```
 
+I want a non-significant result for `sale_year x in_eff_sfha` & `sale_year x high_ff_score x in_eff_sfha` coefficient in the pre-event data. 
+
+
+The coefficient on sale_year is the baseline slope.
+
+The sale_year:in_eff_sfha term tells you whether the slope differs between properties in an SFHA vs not within the SFHA (within the baseline event period).
+
+
 
 
 # Parallel Trends
+
+## Graphs 
+
+### Pre Trends
+
+
+A couple large houses sold in the treatment categories with small samples easily skews the slopes of the pre trends. So visualizations of  year interactinos for slopes are not super useful. 
+
+```{r}
+#| layout-ncol: 2
+
+df_prep <- df_prep |> filter(!pin10 %in% c("0122400028", "0516106013"))
+
+make_sfha_lineplot(
+  (df_prep |> filter(sale_date < pre_date)) ,
+  y_var     = "log_price",
+  facet_var = "event",
+  title     = "Pre-Event Trends for Cook County by SFHA Status"
+)
+
+
+
+make_sfha_lineplot(
+  (df_prep |> filter(sale_date < pre_date)) ,
+  y_var     = "log_price",
+  facet_var = "Triad",
+  title     = "Pre-Event Trends by Triad and SFHA Status"
+)
+
+make_sfha_lineplot(
+  (df_prep |> filter(sale_date < pre_date)) ,
+  y_var     = "log_price",
+  facet_var = "pre_date_chr",
+  title     = "Pre-Event Trends by Update Time and SFHA Status"
+)
+
+
+```
+
+### All years 
 
 ```{r}
 df_prep <- df_prep |>filter(!is.na(in_eff_sfha))
@@ -280,6 +339,9 @@ make_sfha_lineplot(
 ```
 
 ```{r}
+#| layout-ncol: 2
+
+
 make_sfha_lineplot(
   (df_prep |> filter(prelim_sfha_category %in% c("Always SFHA", "Removed from prelim SFHA"))),
   y_var     = "log_price",
@@ -297,7 +359,8 @@ make_sfha_lineplot(
 
 ```
 
-## Added 
+## Added Pre Trend regression
+
 
 ```{r}
 
@@ -306,7 +369,8 @@ df_prep <- df_prep |>
   mutate(
     pre_year = if ("pre_year" %in% names(df)) pre_year else as.integer(format(pre_date, "%Y")),
     eff_year = if ("eff_year" %in% names(df)) eff_year else as.integer(format(eff_date, "%Y")),
-    event_time = sale_year - pre_year
+    event_time = sale_year - pre_year,
+    event_time = ifelse(event_time == 0 & sale_date < pre_date, -1, event_time)
   )
 
 # ---- 3. bin leads/lags ----
@@ -320,19 +384,21 @@ df_prep <- df_prep |>
   )
 
 # ---- 4. define sample + treatment (example: Added vs Never) ----
-df_es <- df_prep |>
+# Added to SFHA comparison!
+df_es_add <- df_prep |>
   filter(prelim_sfha_category %in% c("Added to prelim SFHA", "Never SFHA")) |>
   mutate(treated = prelim_sfha_category == "Added to prelim SFHA")
 
 # ---- 5. event-study regression ----
-mod_es <- feols(
+# base model, no flexible fixed effects
+mod_es_add_none <- feols(
   log(sale_price) ~ i(event_time_binned, treated, ref = -1) | pin + sale_year,
   cluster = ~ pin10,
-  data = df_es
+  data = df_es_add
 )
 
 # ---- 6. pre-trend check (leads only) ----
-pretrends <- broom::tidy(mod_es) |>
+pretrends <- broom::tidy(mod_es_add_none) |>
   filter(str_detect(term, "^event_time_binned::")) |>
   mutate(rel_time = as.integer(str_extract(term, "-?\\d+"))) |>
   filter(rel_time < 0) |>
@@ -341,65 +407,48 @@ pretrends <- broom::tidy(mod_es) |>
 pretrends
 
 # ---- 7. joint test of pre-trends ----
-wald(mod_es, keep = "event_time_binned::-(5|4|3|2)")
+wald(mod_es_add_none, keep = "event_time_binned::-(5|4|3|2)")
 
 # ---- 8. plot ----
-iplot(mod_es, xlab = "Years relative to map year", main = "Event Study")
+iplot(mod_es_add_none, xlab = "Years relative to map year", main = "Event Study: Added")
 
 ```
 
-## Removed 
+Pre Trend wald test shows that pre trend coefficients are slightly statistically significant from each other. Not a steady pre event trend.  This gets better when Triad fixed effects are added below!
 
-```{r}
-# ---- 4. define sample + treatment (example: Added vs Never) ----
-df_es_removed <- df_prep |>
-  filter(prelim_sfha_category %in% c("Removed from prelim SFHA", "Always SFHA")) |>
-  mutate(treated = prelim_sfha_category == "Removed from prelim SFHA")
-
-# ---- 5. event-study regression ----
-mod_es_removed <- feols(
-  log(sale_price) ~ i(event_time_binned, treated, ref = -1) | pin + sale_year,
-  cluster = ~ pin10,
-  data = df_es_removed
-)
-
-# ---- 6. pre-trend check (leads only) ----
-pretrends <- broom::tidy(mod_es_removed) |>
-  filter(str_detect(term, "^event_time_binned::")) |>
-  mutate(rel_time = as.integer(str_extract(term, "-?\\d+"))) |>
-  filter(rel_time < 0) |>
-  arrange(rel_time)
-
-pretrends
-
-# ---- 7. joint test of pre-trends ----
-wald(mod_es_removed, keep = "event_time_binned::-(5|4|3|2)")
-
-# ---- 8. plot ----
-iplot(mod_es_removed, xlab = "Years relative to map year", main = "Event Study")
-
-```
-
-## Trends by Geography
 
 To relax the assumption of countywide parallel trends, event-study models are augmented with cohort-specific time trends, implemented as interactions between sale year and assessment triad or preliminary map cohort. This allows price trajectories to vary flexibly across institutional groupings while preserving identification from within-cohort deviations around the map update.
+
+### Added pre trend events by Triad 
+
+
+Properties follow the same trend within institutional cohorts
+(assessment Triads or map-update cohorts)
+
 
 ```{r}
 
 # ---- 5. EVENT STUDY WITH FLEXIBLE TRENDS ----
-# CHOOSE ONE FE SPECIFICATION BELOW
 
 ## (A) Flexible trends by TRIAD
-mod_es_triad <- feols(
+mod_es_add_triad <- feols(
   log(sale_price) ~ i(event_time_binned, treated, ref = -1) |
     pin + sale_year^Triad,
   cluster = ~ pin10,
-  data = df_es
+  data = df_es_add
 )
 
 
+# (3) Pre-year cohort trends
+mod_es_add_preyear <- feols(
+  log(sale_price) ~ i(event_time_binned, treated, ref = -1) |
+    pin + sale_year^pre_year,
+  cluster = ~ pin10,
+  data = df_es_add
+)
+
 # ---- 6. pre-trend extraction (example: triad version) ----
-pretrends_triad <- broom::tidy(mod_es_triad) |>
+pretrends_triad <- broom::tidy(mod_es_add_triad) |>
   filter(str_detect(term, "^event_time_binned::")) |>
   mutate(rel_time = as.integer(str_extract(term, "-?\\d+"))) |>
   filter(rel_time < 0) |>
@@ -408,30 +457,212 @@ pretrends_triad <- broom::tidy(mod_es_triad) |>
 pretrends_triad
 
 # ---- 7. joint test of pre-trends ----
-wald(mod_es_triad, keep = "event_time_binned::-(5|4|3|2)")
+wald(mod_es_add_triad, keep = "event_time_binned::-(5|4|3|2)")
 
 # ---- 8. plot ----
 iplot(
-  mod_es_triad,
+  mod_es_add_triad,
   xlab = "Years relative to map year",
-  main = "Event Study with Triad-Specific Trends"
+  main = "Event Study with Triad-Specific Trends: Added"
 )
 
 ```
 
+Wald test is no longer statistically significant. Passes pre-trend test.
+
+
+```{r}
+# ---- 3. collect models ----
+mods <- list(
+  "No flexible trends"     = mod_es_add_none,
+  "Triad-specific trends" = mod_es_add_triad,
+  "Pre-year cohort trends"= mod_es_add_preyear
+)
+
+coef_map <- broom::tidy(mod_es_add_none) |>
+  filter(str_detect(term, "^event_time_binned::")) |>
+  mutate(
+    rel_time = as.integer(str_extract(term, "-?\\d+")),
+    clean = paste0("t = ", rel_time)
+  ) |>
+  arrange(rel_time) |>
+  pull(clean, term)
+
+# ---- 5. comparison table ----
+modelsummary::modelsummary(
+  mods,
+  coef_map = coef_map,
+  estimate  = "{estimate}{stars}",
+  statistic = "({std.error})",
+  stars = c("*" = .10, "**" = .05, "***" = .01),
+  gof_omit = "Adj|Pseudo|Within|RMSE"
+)
+```
+
+"Table X compares event-study estimates under alternative assumptions about price trends. Allowing for assessment-triad-specific trends modestly attenuates estimated effects while preserving the overall dynamic pattern. More aggressive cohort-specific trends based on preliminary map year further reduce precision, reflecting limited identifying variation once highly flexible trends are imposed."
+
+
+
+```{r}
+# Pick shapes that are visually distinct and legible
+shape_vals <- c(
+  "No trends"        = 16, # filled circle
+  "Triad trends"     = 17, # filled triangle
+  "Pre-year trends"  = 15  # filled square
+)
+
+linetype_vals <- c(
+  "No trends"        = "solid",
+  "Triad trends"     = "dashed",
+  "Pre-year trends"  = "dotted"
+)
+
+
+extract_es <- function(mod, label) {
+  broom::tidy(mod) |>
+    filter(str_detect(term, "^event_time_binned::")) |>
+    mutate(
+      rel_time = as.integer(str_extract(term, "-?\\d+")),
+      spec = label
+    )
+}
+
+es_df <- bind_rows(
+  extract_es(mod_es_add_none,    "No trends"),
+  extract_es(mod_es_add_triad,   "Triad trends"),
+  extract_es(mod_es_add_preyear, "Pre-year trends")
+)
+
+ref_row <- es_df |>
+  distinct(spec) |>
+  mutate(
+    rel_time  = -1,
+    estimate  = 0,
+    std.error = 0,
+    ref = TRUE
+  )
+
+es_df_plot <- bind_rows(
+  es_df |> mutate(ref = FALSE),
+  ref_row
+)
+
+ggplot(es_df_plot, aes(x = rel_time, y = estimate, group = spec)) +
+  geom_hline(yintercept = 0, linetype = "longdash") +
+  geom_vline(xintercept = -1, linetype = "dotted") +
+
+  # confidence intervals (skip ref period automatically since se = 0)
+  geom_errorbar(
+    aes(
+      ymin = estimate - 1.96 * std.error,
+      ymax = estimate + 1.96 * std.error,
+      linetype = spec
+    ),
+    width = 0.15
+  ) +
+
+  geom_line(aes(linetype = spec), linewidth = 0.6) +
+
+  geom_point(
+    aes(shape = spec),
+    size = 2.3,
+    stroke = 0.6
+  ) +
+
+  # OPTIONAL: emphasize reference period
+  geom_point(
+    data = subset(es_df_plot, ref),
+    shape = 21,       # hollow circle
+    size = 3,
+    stroke = 0.9
+  ) +
+
+  scale_shape_manual(values = c(
+    "No trends"       = 16,
+    "Triad trends"    = 17,
+    "Pre-year trends" = 15
+  )) +
+  scale_linetype_manual(values = c(
+    "No trends"       = "solid",
+    "Triad trends"    = "dashed",
+    "Pre-year trends" = "dotted"
+  )) +
+
+  labs(
+    x = "Years relative to map year",
+    y = "Estimated effect on log(price)",
+    shape = "Specification",
+    linetype = "Specification",
+    title = "Event-study estimates under alternative trend assumptions",
+    subtitle = "Year −1 is the omitted reference period (normalized to zero)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+
+
+```
+
+
+
+## Removed Pre Trend Regression
+
+```{r}
+# ---- 4. define sample + treatment (example: Added vs Never) ----
+df_es_removed <- df_prep |>
+  filter(prelim_sfha_category %in% c("Removed from prelim SFHA", "Always SFHA")) |>
+  mutate(treated = prelim_sfha_category == "Removed from prelim SFHA")
+
+# ---- 5. event-study regression ----
+mod_es_removed_none <- feols(
+  log(sale_price) ~ i(event_time_binned, treated, ref = -1) | pin + sale_year,
+  cluster = ~ pin10,
+  data = df_es_removed
+)
+
+mod_es_removed_preyear <- feols(
+  log(sale_price) ~ i(event_time_binned, treated, ref = -1) | pin + sale_year^pre_year,
+  cluster = ~ pin10,
+  data = df_es_removed
+)
+# ---- 6. pre-trend check (leads only) ----
+pretrends <- broom::tidy(mod_es_removed_none) |>
+  filter(str_detect(term, "^event_time_binned::")) |>
+  mutate(rel_time = as.integer(str_extract(term, "-?\\d+"))) |>
+  filter(rel_time < 0) |>
+  arrange(rel_time)
+
+pretrends
+
+# ---- 7. joint test of pre-trends ----
+wald(mod_es_removed_none, keep = "event_time_binned::-(5|4|3|2)")
+
+# ---- 8. plot ----
+iplot(mod_es_removed_none, xlab = "Years relative to map year", main = "Event Study: Removed")
+
+```
+
+> Failed pre-trend test: Coeficients werestatistically significant from each other.  Gets better when using Triads below!
+
+### Removed from SFHA pre trends by Triad 
+
+
+Properties follow the same trend within institutional cohorts
+(assessment Triads or map-update cohorts)
+
+
 ```{r}
 
 
-## (B) Flexible trends by PRE-MAP COHORT (pre_year)
-mod_es_preyear <- feols(
+##  Flexible trends by Triad
+mod_es_removed_triad <- feols(
   log(sale_price) ~ i(event_time_binned, treated, ref = -1) |
-    pin + sale_year^pre_year,
+    pin + sale_year^Triad,
   cluster = ~ pin10,
-  data = df_es
+  data = df_es_removed
 )
 
 # ---- 6. pre-trend extraction (example: triad version) ----
-pretrends_firm <- broom::tidy(mod_es_preyear) |>
+pretrends_firm <- broom::tidy(mod_es_removed_triad) |>
   filter(str_detect(term, "^event_time_binned::")) |>
   mutate(rel_time = as.integer(str_extract(term, "-?\\d+"))) |>
   filter(rel_time < 0) |>
@@ -440,73 +671,142 @@ pretrends_firm <- broom::tidy(mod_es_preyear) |>
 pretrends_firm
 
 # ---- 7. joint test of pre-trends ----
-wald(mod_es_preyear, keep = "event_time_binned::-(5|4|3|2)")
+wald(mod_es_removed_triad, keep = "event_time_binned::-(5|4|3|2)")
 
 # ---- 8. plot ----
 iplot(
-  mod_es_preyear,
+  mod_es_removed_triad,
   xlab = "Years relative to map year",
-  main = "Event Study with Triad-Specific Trends"
+  main = "Event Study with Triad-Specific Trends: Removed"
 )
 
 ```
 
-## simpler version
+
 
 ```{r}
-test_parallel_trends_slope <- function(df,
-                                      id_var = "pin",
-                                      year_var = "sale_year",
-                                      y_var = "sale_price",
-                                      group_var = "change_type_prelim",
-                                      pre_start = 2010,
-                                      pre_end = 2014,
-                                      cluster_var = "pin") {
+# ---- 3. collect models ----
+mods <- list(
+  "No flexible trends"     = mod_es_removed_none,
+  "Triad-specific trends" = mod_es_removed_triad,
+  "Pre-year cohort trends"= mod_es_removed_preyear
+)
 
-  d <- df |>
-    filter(.data[[group_var]] %in% c("Always SFHA", "Never SFHA")) |>
-    filter(.data[[year_var]] >= pre_start, .data[[year_var]] <= pre_end) |>
-    mutate(log_price = log(.data[[y_var]]))
+coef_map <- broom::tidy(mod_es_removed_none) |>
+  filter(str_detect(term, "^event_time_binned::")) |>
+  mutate(
+    rel_time = as.integer(str_extract(term, "-?\\d+")),
+    clean = paste0("t = ", rel_time)
+  ) |>
+  arrange(rel_time) |>
+  pull(clean, term)
 
-  # Year FE makes it hard to estimate a single slope; instead use year as numeric without year FE,
-  # but keep property FE so you’re comparing within-property changes.
-  fml <- as.formula(paste0(
-    "log_price ~ ", year_var, " * ", group_var, " | ", id_var
-  ))
+# ---- 5. comparison table ----
+modelsummary::modelsummary(
+  mods,
+  coef_map = coef_map,
+  estimate  = "{estimate}{stars}",
+  statistic = "({std.error})",
+  stars = c("*" = .10, "**" = .05, "***" = .01),
+  gof_omit = "Adj|Pseudo|Within|RMSE"
+)
+```
 
-  feols(fml, data = d, cluster = as.formula(paste0("~", cluster_var)))
+
+
+```{r}
+extract_es <- function(mod, label) {
+  broom::tidy(mod) |>
+    filter(str_detect(term, "^event_time_binned::")) |>
+    mutate(
+      rel_time = as.integer(str_extract(term, "-?\\d+")),
+      spec = label
+    )
 }
 
-m_slope <- test_parallel_trends_slope(df_prep,
-                                      id_var = "pin",
-                                      year_var = "sale_year",
-                                      y_var = "sale_price",
-                                      group_var = "change_type_prelim",
-                                      pre_start = 2010,
-                                      pre_end = 2015,
-                                      cluster_var = "pin10")
+es_df <- bind_rows(
+  extract_es(mod_es_removed_none,    "No trends"),
+  extract_es(mod_es_removed_triad,   "Triad trends"),
+  extract_es(mod_es_removed_preyear, "Pre-year trends")
+)
 
-summary(m_slope)
+ref_row <- es_df |>
+  distinct(spec) |>
+  mutate(
+    rel_time  = -1,
+    estimate  = 0,
+    std.error = 0,
+    ref = TRUE
+  )
 
-m_slope <- test_parallel_trends_slope(df_prep,
-                                      id_var = "pin",
-                                      year_var = "sale_year",
-                                      y_var = "log_price",
-                                      group_var = "change_type_prelim",
-                                      pre_start = 2010,
-                                      pre_end = 2015,
-                                      cluster_var = "pin10")
+es_df_plot <- bind_rows(
+  es_df |> mutate(ref = FALSE),
+  ref_row
+)
 
-summary(m_slope)
+ggplot(es_df_plot, aes(x = rel_time, y = estimate, group = spec)) +
+  geom_hline(yintercept = 0, linetype = "longdash") +
+  geom_vline(xintercept = -1, linetype = "dotted") +
+
+  # confidence intervals (skip ref period automatically since se = 0)
+  geom_errorbar(
+    aes(
+      ymin = estimate - 1.96 * std.error,
+      ymax = estimate + 1.96 * std.error,
+      linetype = spec
+    ),
+    width = 0.15
+  ) +
+
+  geom_line(aes(linetype = spec), linewidth = 0.6) +
+
+  geom_point(
+    aes(shape = spec),
+    size = 2.3,
+    stroke = 0.6
+  ) +
+
+  # OPTIONAL: emphasize reference period
+  geom_point(
+    data = subset(es_df_plot, ref),
+    shape = 21,       # hollow circle
+    size = 3,
+    stroke = 0.9
+  ) +
+
+  scale_shape_manual(values = c(
+    "No trends"       = 16,
+    "Triad trends"    = 17,
+    "Pre-year trends" = 15
+  )) +
+  scale_linetype_manual(values = c(
+    "No trends"       = "solid",
+    "Triad trends"    = "dashed",
+    "Pre-year trends" = "dotted"
+  )) +
+
+  labs(
+    x = "Years relative to map year",
+    y = "Estimated effect on log(price)",
+    shape = "Specification",
+    linetype = "Specification",
+    title = "Event-study estimates under alternative trend assumptions",
+    subtitle = "Year −1 is the omitted reference period (normalized to zero)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
 
 ```
 
 
 
+# Placebo Event: 2014
 
-> Groups appear to have different pre-trends based on the significant non-zero slope for the interaction variable.
+ **Always SFHA and Never SFHA, aka Always Treated and Never Treated Observations**
 
 In a pre-period only window (before any relevant map change), assign a fake “event year” and estimate whether the difference between always-in vs never-in changes over event time before the placebo event. If the lead coefficients aren’t flat, you’ve got non-parallel trends.
+
+
 
 ```{r}
 test_parallel_trends_placebo <- function(df,
@@ -514,22 +814,23 @@ test_parallel_trends_placebo <- function(df,
                                         year_var = "sale_year",
                                         y_var = "sale_price",
                                         group_var = "change_type_prelim",  # 1 = always-in, 0 = never-in
-                                        placebo_year = 2012,
+                                        placebo_year = 2014,
                                         pre_start = 2010,
-                                        pre_end = 2014,   # should be BEFORE any real prelim/effective year used in this sample
+                                        pre_end = 2018,   # should be BEFORE any real prelim/effective year used in this sample
                                         rel_window = c(-5, 5),
                                         cluster_var = "pin10") {
 
   stopifnot(all(c(id_var, year_var, y_var, group_var) %in% names(df)))
 
   d <- df |>
-    filter(.data[[group_var]] %in% c("Always SFHA", "Never SFHA")) |>
+    filter(.data[[group_var]] %in% c("Never SFHA", "Always SFHA")) |>
     filter(.data[[year_var]] >= pre_start, .data[[year_var]] <= pre_end) |>
     mutate(
       log_price = log(.data[[y_var]]),
-      rel_t = .data[[year_var]] - placebo_year
+      rel_t = .data[[year_var]] - placebo_year,
+      rel_t = ifelse(rel_t == 0 & sale_date < as.Date("2014-01-01"), -1, rel_t)
     ) |>
-    filter(rel_t >= rel_window[1], rel_t <= rel_window[2])
+    filter(rel_t >= rel_window[1] & rel_t <= rel_window[2])
 
   # Event-study style: year FE are included; identification comes from within-id changes and relative-time x group interaction.
   # `i(rel_t, group, ref = -1)` gives coefficients for each event time for group==1 relative to group==0,
@@ -545,19 +846,29 @@ test_parallel_trends_placebo <- function(df,
     cluster = as.formula(paste0("~", cluster_var))
   )
 
-  # Extract event-time coefficients in a tidy-ish way
-  ct <- broom::tidy(m) |>
-    filter(grepl("^rel_t::", term)) |>
-    mutate(
-      rel_t = as.integer(sub("rel_t::", "", term)),
-      is_lead = rel_t < 0
-    )
+  # # Extract event-time coefficients in a tidy-ish way
+  # ct <- broom::tidy(m) |>
+  #   filter(grepl("^rel_t::", term)) |>
+  #   mutate(
+  #     rel_t = as.integer(sub("rel_t::", "", term)),
+  #     is_lead = rel_t < 0
+  #   )
 
+  ct <- broom::tidy(m) |>
+  dplyr::filter(grepl("^rel_t::", term)) |>
+  dplyr::mutate(
+    rel_t   = as.integer(sub("^rel_t::(-?\\d+).*", "\\1", term)),
+    group   = sub("^.*change_type_prelim::", "", term),
+    is_lead = rel_t < 0
+  )
+
+  
   # Simple visual
   p <- ggplot(ct, aes(x = rel_t, y = estimate)) +
     geom_hline(yintercept = 0) +
-    geom_vline(xintercept = 0, linetype = "dashed") +
+    geom_vline(xintercept = -0.5, linetype = "dashed") +
     geom_point() +
+    scale_x_continuous(limits = c(-5, 5)) +
 
     labs(
       x = "Event time (years relative to placebo year)",
@@ -581,10 +892,10 @@ res <- test_parallel_trends_placebo(
   id_var = "pin",                    
   year_var = "sale_year",
   y_var = "sale_price",
-  group_var = "change_type_prelim",      
-  placebo_year = 2012,
+  group_var = "prelim_sfha_category",      
+  placebo_year = 2014,
   pre_start = 2010,
-  pre_end = 2014,                
+  pre_end = 2019,                
   rel_window = c(-5, 5),
   cluster_var = "pin10"
 )
@@ -597,33 +908,48 @@ res$coef_table
 
 Not super significantly different but probably not truly parallel trends during pre-trends?
 
-```{r}
+
+```{r manual-wald-test}
 # Test whether ALL lead coefficients are zero
-# (Works if the term names match; sometimes you need to inspect names(res$model$coefficients))
+cn <- names(coef(res$model))
+lead_cn <- cn[str_detect(cn, "^rel_t::-")]
 
-lead_terms <- res$coef_table |>
-  filter(is_lead) |>
-  pull(term)
+# Pull coefficients + vcov for the lead terms
+b <- coef(res$model)[lead_cn]
+V <- vcov(res$model)[lead_cn, lead_cn, drop = FALSE]
 
-# Wald test: all leads = 0
-fixest::wald(res$model, paste(lead_terms, "= 0", collapse = " ; "))
+# Basic sanity checks
+stopifnot(length(b) > 0)
+if (anyNA(V) || any(!is.finite(V))) {
+  stop("VCOV for lead terms contains NA/Inf. Joint test cannot be computed.")
+}
+
+# Compute Wald statistic: b' V^{-1} b
+# Use solve(); if singular, fall back to generalized inverse
+W <- tryCatch(
+  as.numeric(t(b) %*% solve(V, b)),
+  error = function(e) {
+    as.numeric(t(b) %*% MASS::ginv(V) %*% b)
+  }
+)
+
+df <- length(b)
+p  <- 1 - pchisq(W, df = df)
+
+list(
+  statistic = W,
+  df = df,
+  p_value = p,
+  n_leads_tested = df,
+  leads = lead_cn
+)
 
 ```
 
-```{r}
-# Test whether ALL lead coefficients are zero
-# (Works if the term names match; sometimes you need to inspect names(res$model$coefficients))
-
-lead_terms <- res$coef_table |>
-  filter(is_lead) |>
-  pull(term)
-
-# Wald test: all leads = 0
-fixest::wald(res$model, paste(lead_terms, "= 0", collapse = " ; "))
-
-```
 
 ```{r remove-multisales-peryear}
+#| eval: false
+#| include: false
 df_clean <- df_prep |> 
   mutate(
     sale_quarter = quarter(sale_date),
@@ -638,7 +964,7 @@ df_clean <- df_prep |>
 
 
 # are there pins that sell multiple times 
-df_clean |> group_by(sale_year, pin_num) |> mutate(n = n()) |> filter(n > 1) 
+# df_clean |> group_by(sale_year, pin_num) |> mutate(n = n()) |> filter(n > 1) 
 # not any more
 ```
 
@@ -900,20 +1226,24 @@ treated:
 
 ```{r eval=FALSE}
 library(did)
-att_gt_out <- att_gt(yname = "log_price",
+df_es_removed <- df_es_removed |> 
+  mutate(#treated_group_prelim_remove = as.numeric(treated_group_prelim_remove),
+         pin_num = as.numeric(pin))
+
+table(df_es_removed$change_type_prelim)
+table(df_es_removed$treated_group_prelim_remove)
+
+prelim_remove_att_gt_out <- att_gt(yname = "log_price",
                      tname = "sale_year",
                      idname = "pin_num",
-                     gname = "treat_group_",
-                     xformla = ~in_eff_sfha,
+                     gname = "treated_group_prelim_remove",
 
-                     data = q3_sales,
-                     panel = TRUE,
+                     data = df_es_removed,
+                    # panel = FALSE,
                      allow_unbalanced_panel = TRUE)
-# 
-# summary(att_gt_output)
-# ggdid(att_gt_output)
-#saveRDS(out2, file = "outputs/didQ1_model_output.rds")
-#saveRDS(p2, file = "outputs/didQ1_plot_output.rds")
+
+summary(prelim_remove_att_gt_out)
+ggdid(prelim_remove_att_gt_out)
 
 
 # att_gt_eff_remove <- att_gt(yname = "log_price",
@@ -938,21 +1268,6 @@ att_gt_out <- att_gt(yname = "log_price",
 ```
 
 
-```{r eval=FALSE}
-library(did)
-
-prelim_att_gt_output <- att_gt(yname = "log_price",
-                     tname = "sale_year",
-                     idname = "pin_num",
-                     gname = "group_name",
-                     data = prelim_q3_sales,
-                     panel = TRUE,
-                     allow_unbalanced_panel = TRUE)
-
-summary(prelim_att_gt_output)
-ggdid(prelim_att_gt_output)
-```
-
 **Purpose**: Estimate cohort-specific treatment effects that respect staggered timing using the `did` package.
 
 **Why it matters**: This avoids “forbidden comparisons”—treating already-treated units as controls—and calculates average treatment effects relative to treatment timing, conditional on never-treated or not-yet-treated comparisons.
@@ -967,8 +1282,10 @@ Aggregated effect
 
 ```{r}
 #| error: true
+#| eval: false
+
 # aggregate the group-time average treatment effects
-agg_output <- aggte(att_gt_out, type = "dynamic")
+agg_output <- aggte(prelim_add_att_gt_out, type = "dynamic")
 summary(agg_output)
 
 ggdid(agg_output)
@@ -1010,19 +1327,6 @@ placebo_model <- feols(outcome ~ i(relative_time, first_treat_year) + covariates
 
 **Why**: If “effects” show up before treatment, you’ve got either model misspecification or anticipation dynamics. Either way, your core assumptions are shaky.
 
----
-
-# Step 7: Test Sensitivity to Cohort Definition
-
-```{r eval=FALSE}
-
-# Sensitivity by dropping early adopters or redefining cohorts
-att_gt_trimmed <- att_gt(..., gname = first_treat_year, data = my_data |> filter(first_treat_year > 2012))
-```
-
-**Purpose**: Confirm your results are not driven by any specific cohort.
-
-**Why**: Robust results should not depend solely on early or late adopters.
 
 ---
 
