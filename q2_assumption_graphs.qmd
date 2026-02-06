@@ -12,6 +12,20 @@ format:
 ---
 
 
+| Variable          | Description                                     |
+| ----------------- | ----------------------------------------------- |
+| `log_price`       |  log price  (your main DV)                      |
+| `high_ff_score x event` |  Main treatment interaction     |
+|`event` | Pre or Post data release. It is NOT the treatment. Just the additional extra value in homes after 2020 above and beyond the sale year fixed effects. | 
+| `sale_year`       | Year of sale                    |
+| `sale_quarter`    |  Quarter of sale                       |
+| `change_type`     | SFHA transition category (e.g., Added, Removed) (not used) |
+| `eff_date`        | Flood map effective date (treatment timing)     |
+| `in_eff_sfha`     | Indicator for if property is in a FEMA SFHA at time of sale |
+| `clean_name`      | Municipality                                    |
+| `Triad`           | Subregional identifier (potential FE subgroup)  |
+
+
 
 ```{r setup, warning=FALSE, message=FALSE}
 library(DescTools)
@@ -28,17 +42,113 @@ library(jtools)
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
 
-df_prep <- readRDS("data/processed/df_prep_buildings.rds") |>
+df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_final.rds") |>
   select(-c(clean_name.x, clean_name.y))
 
 df_prep <- df_prep |> 
-  # 282 PINs in 2022 were sold as part of a new Condo in Schaumburg 
-  # (parcel = 0710101038). Condo building has high flood factor score. 
-  # Looks like it is now apartments? 21 Kristin Drive.  DROPPED
-
-  filter(pin10 != "0710101038") |>
   mutate(log_price = log(sale_price)) |> 
-  filter(!is.na(Triad) & Triad != "NA")
+  filter(!is.na(Triad) & Triad != "NA") |>
+  mutate(in_eff_sfha = in_eff_sfha==1,
+         in_prelim_sfha = in_prelim_sfha == 1)
+
+table(df_prep$in_prelim_sfha)
+```
+
+
+```{r}
+
+df_prep <- df_prep |>
+  group_by(pin) |>
+  mutate(
+    n_sales = n(),
+    ever_added_prelim   = any(addedto_prelim_sfha == TRUE),
+    ever_removed_prelim = any(removedfrom_prelim_sfha == TRUE),
+    ) |>
+  mutate(
+    prelim_sfha_category = 
+      case_when(
+        ever_added_prelim & !ever_removed_prelim ~ "Added to prelim SFHA",
+        ever_removed_prelim & !ever_added_prelim ~ "Removed from prelim SFHA",
+        # ever_added_prelim & ever_removed_prelim  ~ "Multiple prelim transitions",
+        change_type_prelim == "Always SFHA" ~ "Always SFHA",
+        change_type_prelim == "Never SFHA" ~ "Never SFHA",
+        TRUE ~ "CHECK ME"  ) 
+  ) |> 
+  ungroup()
+```
+
+```{r}
+make_sfha_lineplot <- function(
+  df,
+  y_var = c("sale_price", "log_price"),
+  facet_var,                      # e.g. "pre_date", "Triad"
+  group_vars = c("prelim_sfha_category"),
+  title = "Pre- and Post-Event Slopes by SFHA Status",
+  y_label = NULL,
+  x_breaks = seq(2010, 2026, 4),
+  x_limits = c(2009, 2027)
+) {
+
+  y_var <- match.arg(y_var)
+
+  # build grouping vars programmatically
+  grp_vars <- c("sale_year", group_vars, facet_var)
+
+  df_summarised <- df |>
+    dplyr::group_by(dplyr::across(dplyr::all_of(grp_vars))) |>
+    dplyr::summarise(
+      avg_value = mean(.data[[y_var]], na.rm = TRUE),
+      n = dplyr::n(),
+      .groups = "drop"
+    )
+
+  if (is.null(y_label)) {
+    y_label <- ifelse(
+      y_var == "sale_price",
+      "Avg. Sale Price",
+      "Avg. Logged Sale Price"
+    )
+  }
+
+  ggplot2::ggplot(
+    df_summarised,
+    ggplot2::aes(
+      x = sale_year,
+      y = avg_value,
+      color = .data[[group_vars[1]]]
+    )
+  ) +
+    ggplot2::geom_point() +
+    ggplot2::geom_line() +
+    ggplot2::geom_smooth(method = "lm", se = FALSE) +
+    ggplot2::facet_wrap(stats::as.formula(paste("~", facet_var))) +
+    ggplot2::labs(
+      title = title,
+      x = NULL,
+      y = y_label,
+      caption = ""
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = x_breaks,
+      limits = x_limits
+    ) +
+    ggplot2::theme_classic() +
+    ggplot2::theme(legend.position = "bottom")
+}
+
+make_sfha_lineplot(
+  df_prep,
+  y_var     = "log_price",
+  facet_var = "Triad",
+  title     = "Trends by Triad and SFHA Status"
+)
+
+make_sfha_lineplot(
+  df_prep,
+  y_var     = "log_price",
+  facet_var = "pre_date",
+  title     = "Trends by FIRM Date and SFHA Status"
+)
 
 ```
 
@@ -53,6 +163,51 @@ df_prep <- df_prep |>
            !is.na(Triad)
          )
 ``` 
+
+```{r}
+
+df_prep |> 
+ # mutate(period = if_else(sale_date < new_info_released, "1.Pre", "2.Post")) |> 
+  group_by(sale_year, in_prelim_sfha, Triad) |> 
+  summarise(avg_price = mean(log_price, na.rm = TRUE),
+            n = n(), .groups = "drop") |> 
+  ggplot(aes(x = sale_year, y = avg_price, color = in_prelim_sfha)) +
+  geom_point() +
+  geom_line() +
+#    geom_vline(xintercept=2020, lty = 2) +
+
+  geom_smooth(#aes(linetype = period), 
+              method = "lm", se = FALSE) +
+  facet_wrap(~Triad) +
+  labs(title = "Pre- and Post-Event Slopes by Triad and SFHA Status",
+       caption = "",
+       x = NULL, y = "Avg. Logged Sale Price") +
+  scale_x_continuous(breaks = seq(2010, 2026, 4), limits = c(2009, 2027) ) +
+  theme_classic()+
+  theme(legend.position = "bottom") 
+
+
+df_prep |> 
+ # mutate(period = if_else(sale_date < new_info_released, "1.Pre", "2.Post")) |> 
+  group_by(sale_year, in_prelim_sfha, pre_date) |> 
+  summarise(avg_price = mean(log_price, na.rm = TRUE),
+            n = n(), .groups = "drop") |> 
+  ggplot(aes(x = sale_year, y = avg_price, color = in_prelim_sfha)) +
+  geom_point() +
+  geom_line() +
+#    geom_vline(xintercept=2020, lty = 2) +
+
+  geom_smooth(#aes(linetype = period), 
+              method = "lm", se = FALSE) +
+  facet_wrap(~pre_date) +
+  labs(title = "Pre- and Post-Event Slopes by Triad and SFHA Status",
+       caption = "",
+       x = NULL, y = "Avg. Logged Sale Price") +
+  scale_x_continuous(breaks = seq(2010, 2026, 4), limits = c(2009, 2027) ) +
+  theme_classic()+
+  theme(legend.position = "bottom") 
+
+```
 
 
 ```{r}

@@ -54,8 +54,12 @@ run_by_cluster <- function(formula, data, clusters, label_prefix = "Model") {
     setNames(paste0(label_prefix, " (cluster: ", names(clusters), ")"))
 }
 
-df_prep <- readRDS("data/processed/targets/sales/df_prep_bldg_updated_final.rds") 
+source("R/helper_pins_to_drop.R")
 
+df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_final.rds")  |> filter(!pin10 %in% drop_parcels)
+
+
+df_prep |> filter(is.na(EFF_DATE))
 ```
 
 ```{r remove-missingvalues}
