@@ -25,61 +25,146 @@ library(fixest)
 library(didFF)   # for testing if functional form matters for the analysis. Tests if parallel trends assumption is sensitive to functional form (i.e. logged variable vs unlogged variable)
 
 options(scipen = 999)
+# make_sfha_lineplot <- function(
+#   df,
+#   y_var = c("sale_price", "log_price"),
+#   facet_var = c("pre_date"),                      # e.g. "pre_date", "Triad"
+#   group_vars = c("event_remapped","prelim_sfha_category", "Triad", "pre_date_chr", "pre_date"),
+#   title = "Pre- and Post-Event Slopes by SFHA Status",
+#   linetype = c("event_remapped"),
+#   color = c("prelim_sfha_category"),
+#   y_label = NULL,
+#   x_breaks = seq(2010, 2026, 4),
+#   x_limits = c(2009, 2027)
+# ) {
+# 
+#   y_var <- match.arg(y_var)
+# 
+#   # build grouping vars programmatically
+#   grp_vars <- c("sale_year", group_vars, facet_var)
+# 
+#   df_summarised <- df |>
+#     dplyr::group_by(dplyr::across(dplyr::all_of(grp_vars))) |>
+#     dplyr::summarise(
+#       avg_value = mean(.data[[y_var]], na.rm = TRUE),
+#       median_value = median(.data[[y_var]], na.rm=TRUE),
+#       n = dplyr::n(),
+#       .groups = "drop"
+#     )
+# 
+#   if (is.null(y_label)) {
+#     y_label <- ifelse(
+#       y_var == "sale_price",
+#       "Avg. Sale Price",
+#       "Avg. Logged Sale Price"
+#     )
+#   }
+# 
+#   ggplot2::ggplot(
+#     df_summarised,
+#     ggplot2::aes(
+#       x = sale_year,
+#       y = avg_value,
+#       color = .data[[group_vars[1]]]
+#     )
+#   ) +
+#     ggplot2::geom_point() +
+#     ggplot2::geom_line() +
+#     ggplot2::geom_smooth(aes(lty = event_remapped),method = "lm", se = FALSE) +
+#     ggplot2::facet_wrap(stats::as.formula(paste("~", facet_var))) +
+#     ggplot2::labs(
+#       title = title,
+#       x = NULL,
+#       y = y_label,
+#       caption = ""
+#     ) +
+#     ggplot2::scale_x_continuous(
+#       breaks = x_breaks,
+#       limits = x_limits
+#     ) +
+#     ggplot2::theme_classic() +
+#     ggplot2::theme(legend.position = "bottom")
+# }
+# 
+
+
 make_sfha_lineplot <- function(
   df,
   y_var = c("sale_price", "log_price"),
-  facet_var,                      # e.g. "pre_date", "Triad"
-  group_vars = c("prelim_sfha_category"),
+  group_vars = c("event_remapped", "prelim_sfha_category"),
+  facet_vars = c("pre_date_chr"),     # can be length 0, 1, or more
+  color_var = "prelim_sfha_category", # set NULL for no color mapping
+  linetype_var = "event_remapped",    # set NULL for no linetype mapping
   title = "Pre- and Post-Event Slopes by SFHA Status",
   y_label = NULL,
   x_breaks = seq(2010, 2026, 4),
-  x_limits = c(2009, 2027)
+  x_limits = c(2009, 2027),
+  show_smooth = TRUE
 ) {
-
   y_var <- match.arg(y_var)
 
-  # build grouping vars programmatically
-  grp_vars <- c("sale_year", group_vars, facet_var)
+  # --- sanity checks (prevents silent nonsense) ---
+  needed <- unique(c("sale_year", y_var, group_vars, facet_vars, color_var, linetype_var))
+  needed <- needed[!is.null(needed) & needed != ""]
+  missing <- setdiff(needed, names(df))
+  if (length(missing) > 0) {
+    stop("Missing columns in df: ", paste(missing, collapse = ", "))
+  }
 
-  df_summarised <- df |>
+  # --- summarise ---
+  grp_vars <- unique(c("sale_year", group_vars, facet_vars))
+
+  df_sum <- df |>
     dplyr::group_by(dplyr::across(dplyr::all_of(grp_vars))) |>
     dplyr::summarise(
       avg_value = mean(.data[[y_var]], na.rm = TRUE),
-      median_value = median(.data[[y_var]], na.rm=TRUE),
+      median_value = median(.data[[y_var]], na.rm = TRUE),
       n = dplyr::n(),
       .groups = "drop"
-    )
+    ) |>
+    # create a stable "series id" so lines/smooths don't cross-wire
+    dplyr::mutate(.series = interaction(dplyr::across(dplyr::all_of(group_vars)), drop = TRUE))
 
   if (is.null(y_label)) {
-    y_label <- ifelse(
-      y_var == "sale_price",
-      "Avg. Sale Price",
-      "Avg. Logged Sale Price"
-    )
+    y_label <- if (y_var == "sale_price") "Avg. Sale Price" else "Avg. Logged Sale Price"
   }
 
-  ggplot2::ggplot(
-    df_summarised,
-    ggplot2::aes(
-      x = sale_year,
-      y = avg_value,
-      color = .data[[group_vars[1]]]
-    )
-  ) +
+  # --- base aesthetics ---
+  aes_base <- ggplot2::aes(
+    x = sale_year,
+    y = avg_value,
+    group = .series
+  )
+
+  if (!is.null(color_var))    aes_base$colour   <- rlang::sym(color_var)
+  if (!is.null(linetype_var)) aes_base$linetype <- rlang::sym(linetype_var)
+
+  p <- ggplot2::ggplot(df_sum, aes_base) +
     ggplot2::geom_point() +
-    ggplot2::geom_line() +
-    ggplot2::geom_smooth(method = "lm", se = FALSE) +
-    ggplot2::facet_wrap(stats::as.formula(paste("~", facet_var))) +
+    ggplot2::geom_line()
+
+  if (isTRUE(show_smooth)) {
+    p <- p + ggplot2::geom_smooth(method = "lm", se = FALSE)
+  }
+
+  # --- faceting (supports 0, 1, or many) ---
+  if (length(facet_vars) == 0) {
+    # no facets
+  } else if (length(facet_vars) == 1) {
+    p <- p + ggplot2::facet_wrap(stats::as.formula(paste0("~", facet_vars)))
+  } else {
+    # multiple facet variables -> facet_grid
+    # e.g. facet_vars = c("triad", "pre_date_chr") => rows = triad, cols = pre_date_chr
+    p <- p + ggplot2::facet_grid(stats::as.formula(paste(facet_vars[1], "~", facet_vars[2])))
+  }
+
+  p +
     ggplot2::labs(
       title = title,
       x = NULL,
-      y = y_label,
-      caption = ""
+      y = y_label
     ) +
-    ggplot2::scale_x_continuous(
-      breaks = x_breaks,
-      limits = x_limits
-    ) +
+    ggplot2::scale_x_continuous(breaks = x_breaks, limits = x_limits) +
     ggplot2::theme_classic() +
     ggplot2::theme(legend.position = "bottom")
 }
@@ -235,6 +320,7 @@ df_prep <- df_prep |>
     n_sales = n(),
     ever_added_prelim   = any(addedto_prelim_sfha == TRUE),
     ever_removed_prelim = any(removedfrom_prelim_sfha == TRUE),
+    event_remapped = ifelse( sale_date < pre_date, "Pre", "Post"),
     ) |>
   ungroup() |>
   mutate(
@@ -269,6 +355,202 @@ The coefficient on sale_year is the baseline slope.
 The sale_year:in_eff_sfha term tells you whether the slope differs between properties in an SFHA vs not within the SFHA (within the baseline event period).
 
 
+addedto_prelim_sfha=1(treated group)×1(post)
+
+# Slope Test
+
+```{r}
+slopetest <- lm(log_price ~ sale_year*prelim_sfha_category, 
+                df_prep |> filter(sale_date < pre_date | 
+                                    (sale_date < 2017 & pre_date_chr == "2005-01-01")) 
+)
+modelsummary::modelsummary(slopetest)
+```
+
+# Placebo Test
+
+```{r}
+#| label: tbl-appendixA-placebotest
+#| 
+
+library(dplyr)
+library(lubridate)
+library(fixest)
+
+# df_prep must have: pin, pin10, sale_date, sale_year, pre_date, prelim_sfha_category, log_price
+
+run_placebo_did <- function(df,
+                            fake_shift_years = 2,
+                            treated_label = "Added to prelim SFHA",
+                            unit_fe = "pin",
+                            time_fe = "sale_year",
+                            cluster_var = "pin10") {
+  if(treated_label == "Added to prelim SFHA"){
+    df <- df |> filter(prelim_sfha_category %in% c("Added to prelim SFHA", "Never SFHA"))
+  }
+  if(treated_label == "Removed from prelim SFHA"){
+    df <- df |> filter(prelim_sfha_category %in% c("Removed from prelim SFHA", "Always SFHA"))
+  }
+  df_placebo <- df |>
+    mutate(
+      treated = prelim_sfha_category == treated_label,
+      placebo_date = pre_date %m-% years(fake_shift_years),
+      placebo_post = sale_date >= placebo_date
+    ) |>
+    # keep only observations strictly before the *real* event (so placebo is truly placebo)
+    filter(sale_date < pre_date) |>
+    # optional: keep only observations with a defined placebo_date
+    filter(!is.na(placebo_date))
+
+  fml <- as.formula(paste0(
+    "log_price ~ treated * placebo_post | ",
+    unit_fe, " + ", time_fe
+  ))
+
+  feols(
+    fml,
+    cluster = as.formula(paste0("~", cluster_var)),
+    data = df_placebo
+  )
+}
+
+
+m_placebo <- run_placebo_did(df_prep, treated_label = "Removed from prelim SFHA",
+                             fake_shift_years = 2)
+etable(m_placebo)
+
+m_placebo <- run_placebo_did(df_prep, treated_label = "Added to prelim SFHA",
+                             fake_shift_years = 2)
+etable(m_placebo)
+```
+
+```{r}
+#| label: tbl-did_test_normal
+#| tbl-cap: "Same set up as placebo test, but without the placebo. Includes all years of data."
+
+
+run_normal_did <- function(df,
+                            treated_label = "Added to prelim SFHA",
+                            unit_fe = "pin",
+                            time_fe = "sale_year",
+                            cluster_var = "pin10") {
+  if(treated_label == "Added to prelim SFHA"){
+    df <- df |> filter(prelim_sfha_category %in% c("Added to prelim SFHA", "Never SFHA"))
+  }
+  if(treated_label == "Removed from prelim SFHA"){
+    df <- df |> filter(prelim_sfha_category %in% c("Removed from prelim SFHA", "Always SFHA"))
+  }
+
+  df_did <- df |>
+    mutate(
+      treated = prelim_sfha_category == treated_label, #== treated_label,
+      treated_date = pre_date,
+      event_post = (sale_date >= treated_date  & pre_date_chr != "2005-01-01")
+    ) 
+
+  fml <- as.formula(paste0(
+    "log_price ~ treated * event_post | ",
+    unit_fe, " + ", time_fe
+  ))
+
+  feols(
+    fml,
+    cluster = as.formula(paste0("~", cluster_var)),
+    data = df_did
+  )
+}
+
+m_did_add <- run_normal_did(df_prep, treated_label = "Added to prelim SFHA")
+etable(m_did_add)
+
+m_did_remove <- run_normal_did(df_prep, treated_label = "Removed from prelim SFHA")
+etable(m_did_remove)
+```
+
+
+```{r}
+#| label: tbl-two-method-styles-comparison
+#| tbl-cap: "Two ways to set up the equation that should estimate the same effect."
+
+df_same <- df_prep |>
+  filter(prelim_sfha_category %in% c("Added to prelim SFHA", "Never SFHA")) |>
+  mutate(
+    treated = prelim_sfha_category == "Added to prelim SFHA",
+    event_post = sale_date >= pre_date
+  )
+
+m1 <- feols(
+  log_price ~ addedto_prelim_sfha | pin + sale_year,
+  cluster = ~ pin10,
+  data = df_same
+)
+
+
+
+m2 <- feols(
+  log_price ~ I(treated * event_post) | pin + sale_year,
+  cluster = ~ pin10,
+  data = df_same
+)
+
+m3 <- feols(
+  log_price ~ treated * event_post | pin + sale_year,
+  cluster = ~ pin10,
+  data = df_same
+)
+
+etable(m1, m2, m3)
+
+```
+
+prelim_sfha_category is for group membership (treated vs control group definition).
+
+addedto_prelim_sfha is (probably) a post-treated status indicator (treated group switches on after its pre_date, controls never switch on).
+
+```{r}
+run_normal_did_fixed <- function(df,
+                                 treated_label = "Added to prelim SFHA",
+                                 control_label = "Never SFHA",
+                                 unit_fe = "pin",
+                                 time_fe = "sale_year",
+                                 cluster_var = "pin10") {
+
+  df2 <- df |>
+    filter(prelim_sfha_category %in% c(treated_label, control_label)) |>
+    mutate(
+      treated_group = prelim_sfha_category == treated_label, # time-invariant
+      post = sale_date >= pre_date,                          # time-varying
+      did = treated_group * post
+    )
+
+  # canonical DiD (will match the did-only version)
+  m_did <- feols(
+    as.formula(paste0("log_price ~ treated_group * post | ", unit_fe, " + ", time_fe)),
+    cluster = as.formula(paste0("~", cluster_var)),
+    data = df2
+  )
+
+  # did-only version (should match on the treatment effect)
+  m_did_only <- feols(
+    as.formula(paste0("log_price ~ did | ", unit_fe, " + ", time_fe)),
+    cluster = as.formula(paste0("~", cluster_var)),
+    data = df2
+  )
+
+  list(m_did = m_did, m_did_only = m_did_only, data = df2)
+}
+
+out <- run_normal_did_fixed(df_prep)
+etable(out$m_did, out$m_did_only)
+
+```
+
+**Interpretation: adding post changes what variation is attributed to “general post-period shifts among the sample” vs “differential post shift for treated relative to control.” That can easily shrink the interaction from -0.20 to -0.14.**
+
+treated * post ≠ I(treated * post)
+
+With staggered timing, post is not absorbed by year FE, so including it changes the regression and the interaction coefficient.
+
 
 
 # Parallel Trends
@@ -281,30 +563,64 @@ The sale_year:in_eff_sfha term tells you whether the slope differs between prope
 A couple large houses sold in the treatment categories with small samples easily skews the slopes of the pre trends. So visualizations of  year interactinos for slopes are not super useful. 
 
 ```{r}
+
+df_prep |> 
+  group_by(event_remapped, sale_year, prelim_sfha_category, pre_date_chr, pre_date ) |> 
+  summarise(avg_price = mean(log_price, na.rm = TRUE),
+            n = n()) |> 
+  ggplot(aes(x = sale_year, y = avg_price, color = prelim_sfha_category)) +
+  geom_point() +
+  geom_line() +
+
+  geom_smooth(aes(linetype = event_remapped), method = "lm", se = FALSE) +
+#  geom_vline(xintercept=pre_date_chr, lty = 2) +
+
+  facet_wrap(~pre_date_chr) +
+  labs(title = "Pre- and Post-Event Slopes by Triad and SFHA Status",
+       caption = "",
+       x = NULL, y = "Avg. Logged Sale Price") +
+  scale_x_continuous(breaks = seq(2010, 2026, 4), limits = c(2009, 2027) ) +
+  theme_classic()+
+  theme(legend.position = "bottom") 
+
+```
+
+```{r}
 #| layout-ncol: 2
 
 df_prep <- df_prep |> filter(!pin10 %in% c("0122400028", "0516106013"))
 
 make_sfha_lineplot(
+ # df_prep,
   (df_prep |> filter(sale_date < pre_date)) ,
   y_var     = "log_price",
-  facet_var = "event",
+  facet_vars = NULL,
+  linetype_var = NULL,
+   group_vars = c("prelim_sfha_category"),
+
   title     = "Pre-Event Trends for Cook County by SFHA Status"
 )
 
 
 
 make_sfha_lineplot(
+ # df_prep,
   (df_prep |> filter(sale_date < pre_date)) ,
   y_var     = "log_price",
-  facet_var = "Triad",
+  facet_vars = "Triad",
+  linetype_var = NULL,
+  
+  group_vars = c("prelim_sfha_category", "Triad"),
+  
   title     = "Pre-Event Trends by Triad and SFHA Status"
 )
 
 make_sfha_lineplot(
   (df_prep |> filter(sale_date < pre_date)) ,
   y_var     = "log_price",
-  facet_var = "pre_date_chr",
+  group_vars = c("prelim_sfha_category", "pre_date_chr"),
+  linetype_var = NULL,
+  facet_vars = "pre_date_chr",
   title     = "Pre-Event Trends by Update Time and SFHA Status"
 )
 
@@ -319,21 +635,27 @@ df_prep <- df_prep |>filter(!is.na(in_eff_sfha))
 make_sfha_lineplot(
   df_prep,
   y_var     = "log_price",
-  facet_var = "Triad",
+  facet_vars = "Triad",
+  linetype_var  = NULL,
+  group_vars = c("prelim_sfha_category", "Triad"),
   title     = "Trends by Triad and SFHA Status"
 )
 
 make_sfha_lineplot(
   df_prep,
   y_var     = "log_price",
-  facet_var = "pre_date",
+  facet_vars = "pre_date",
+  color_var = "prelim_sfha_category",
+    group_vars = c("event_remapped","prelim_sfha_category"),
   title     = "Trends by FIRM Date and SFHA Status"
 )
 
 make_sfha_lineplot(
   (df_prep |> filter(sale_price < 2000000)),
   y_var     = "sale_price",
-  facet_var = "pre_date",
+  group_vars = c("event_remapped","prelim_sfha_category", "pre_date"),
+  linetype_var = "event_remapped",
+  facet_vars = "pre_date",
   title     = "Trends by FIRM Date and SFHA Status"
 )
 ```
@@ -345,7 +667,7 @@ make_sfha_lineplot(
 make_sfha_lineplot(
   (df_prep |> filter(prelim_sfha_category %in% c("Always SFHA", "Removed from prelim SFHA"))),
   y_var     = "log_price",
-  facet_var = "pre_date",
+  facet_vars = "pre_date",
   title     = "Trends by FIRM Date and SFHA Status"
 )
 
@@ -353,7 +675,7 @@ make_sfha_lineplot(
 make_sfha_lineplot(
   (df_prep |> filter(prelim_sfha_category %in% c("Never SFHA", "Added to prelim SFHA"))),
   y_var     = "log_price",
-  facet_var = "pre_date",
+  facet_vars = "pre_date",
   title     = "Trends by FIRM Date and SFHA Status"
 )
 
@@ -799,6 +1121,40 @@ ggplot(es_df_plot, aes(x = rel_time, y = estimate, group = spec)) +
 ```
 
 
+
+
+## Always and Never Treated
+
+```{r}
+# ---- 4. define sample + treatment (example: Added vs Never) ----
+df_es_neither <- df_prep |>
+  filter(prelim_sfha_category %in% c("Never SFHA", "Always SFHA")) |>
+ mutate(treated = prelim_sfha_category == "Always SFHA",
+        sale_year_factor = factor(sale_year))
+
+# ---- 5. event-study regression ----
+mod_es_neither_none <- feols(
+  log(sale_price) ~ i(sale_year_factor, treated, ref = 2016) | pin + sale_year,
+  cluster = ~ pin10,
+  data = df_es_neither
+)
+
+# ---- 6. pre-trend check (leads only) ----
+pretrends <- broom::tidy(mod_es_neither_none) |>
+  filter(str_detect(term, "^sale_year_factor::")) |>
+  mutate(rel_time = as.integer(str_extract(term, "-?\\d+"))) |>
+  filter(rel_time < 2016) |>
+  arrange(rel_time)
+
+pretrends
+
+# ---- 7. joint test of pre-trends ----
+wald(mod_es_neither_none, keep = "sale_year_factor::(2010|2011|2012|2013)")
+
+# ---- 8. plot ----
+iplot(mod_es_neither_none, xlab = "Years relative to map year", main = "Event Study: Never Treated and Always Treated")
+
+```
 
 # Placebo Event: 2014
 
@@ -1302,26 +1658,16 @@ ggdid(agg_output)
 
 # Step 5: Interpret Pre-Treatment Periods
 
-```{markdown}
-Review the event study plot:
-- Are the estimates for periods prior to treatment flat and centered around zero?
-- Are the confidence intervals wide or tight?
-- Do any of the pre-treatment estimates appear significantly different from zero?
-```
+Review the event study plot:   
+- Are the estimates for periods prior to treatment flat and centered around zero?  
+- Are the confidence intervals wide or tight?  
+- Do any of the pre-treatment estimates appear significantly different from zero?  
 
 **Why**: Significant pre-trends violate the key identifying assumption of DiD.
 
 ---
 
 # Step 6: Run Placebo Tests (Optional but Recommended)
-
-```{r eval=FALSE}
-placebo_data <- my_data |>
-  filter(year < first_treat_year | is.na(first_treat_year))
-
-placebo_model <- feols(outcome ~ i(relative_time, first_treat_year) + covariates | unit_id + year, 
-                       data = placebo_data)
-```
 
 **Purpose**: Estimate treatment effects in periods before any treatment occurs.
 
@@ -1332,23 +1678,17 @@ placebo_model <- feols(outcome ~ i(relative_time, first_treat_year) + covariates
 
 # Step 8: Check for Spillovers or Anticipation
 
-```{markdown}
-- Plot or tabulate trends among properties just outside the treated area
-- Include leads in the `att_gt` model to test for anticipatory behavior
-```
-
 **Why**: Treatment effect estimates require no interference or preemptive market reactions.
 
 ---
 
 # Step 9: Explicitly State Identification Assumptions
 
-```{markdown}
 In your write-up, clearly state:
 - Parallel trends hold for treated and not-yet-treated units
 - Treatment timing is as-good-as-random conditional on covariates and fixed effects
 - No spillover effects or contamination
 - No anticipatory responses
-```
+
 
 > Baker et al. (2025, p. 10): "Each assumption must be directly defended."
