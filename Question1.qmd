@@ -29,13 +29,14 @@ library(skimr)  # for skim() command for descriptive statistics
 library(scales)
 library(modelsummary)
 
+df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.RDS") 
+
 
 ```
 
 > If property is in SFHA and LOMR, both variables will be coded as 1. I no longer "remove" the SFHA indicator if it is in a LOMR. LOMRs are only considered in the bottom section on effective FIRMs and insurance requirements. 
 
 ```{r}
-source("R/helper_pins_to_drop.R")
 
 
 clusters_county <- list(
@@ -64,38 +65,6 @@ bind_models <- function(...) {
   out
 }
 
-# df_prep <- readRDS("data/processed/df_prep_parcels_20260109.rds") |>
-#   filter(pin10 != "1129315024")  # Building on sherwin. Land is in Coastal SFHA for 2018 but building is not. 
-
-df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_final.rds") |>
-# df_prep <- readRDS("data/processed/targets/sales/df_prep_ptaxsim_updated_final.rds") |>
-#df_prep <- readRDS("data/processed/targets/sales/df_prep_risk500_land_updated_final.rds") |>
-#df_prep <- readRDS("data/processed/targets/sales/df_prep_risk500_updated_final.rds") |>
- # "data/processed/targets/sales/df_prep_bldg_updated_final.rds")
-# df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_final.rds") |>
-
-    filter(!pin10  %in% drop_parcels)# |>
-
-df_prep |> filter(is.na(FIRM_PAN)) |> group_by(pin10) |> summarize(n = n()) 
-
-df_prep |> filter(is.na(EFF_DATE)) #|> group_by(pin10) |> summarize(n = n()) 
-
-```
-
-```{r remove-missingvalues}
-df_prep <- df_prep |>
-  # select(any_of(-c(clean_name.x, clean_name.y)) )|>
-  mutate(Triad = case_when(
-    clean_name == "Chicago" ~  "City",
-    as.numeric(str_sub(pin, 1, 2) ) < 13 ~ "North",
-    as.numeric(str_sub(pin, 1, 2) ) >= 13 ~ "South"
-  ),
-    Triad = factor(Triad, levels = c("South", "North", "City") )
-  ) 
-
-# remove duplicates
-
-df_prep <- df_prep |> distinct(pin, sale_date, sale_price, .keep_all = TRUE)
 
 ```
 
@@ -107,7 +76,6 @@ Townships 13 and higher and not chicago mean south triad
 
 The final data set represents the difference in price appreciation for properties that were mapped into an SFHA compared to the hypothetical price they would have sold at if they had not been mapped into an SFHA.
 
-between sales growth rate for \_\_\_ observations and \_\_\_\_\_ properties.
 
 **Does the value of real estate parcels increase when they are removed from an SFHA?**
 
@@ -154,106 +122,18 @@ Contributions to the literature: Many models model if SFHA status changes, but h
 
 ```{r}
 #skim(df_prep)
+table(df_prep$pre_date)
+
 ```
 
 ## Variable Coding
 
 
-```{r recode-dfpreptest}
-table(df_prep$pre_date)
 
-df_prep <- df_prep |>
-  
-  mutate(
-    # so I can subset by FIRM date in later steps
-    eff_date_chr = as.factor(eff_date),
-    pre_date_chr = as.factor(pre_date),
-    
-   # removed_out = removedfrom_eff_sfha == TRUE,# & in_lomr != TRUE,
-   # added_in_prelim    = addedto_prelim_sfha == TRUE,
-   # removed_out_prelim = removedfrom_prelim_sfha == TRUE,# & in_lomr != TRUE
-  ) |>
-  group_by(pin) |>
-  arrange(sale_date) |>
-  mutate(
 
-    # first year it was mapped IN (per PIN)
-    treat_year_add_eff = ifelse((any(addedto_eff_sfha== TRUE) )
-                                 & eff_date_chr != "2008-08-19", 
-                                year(eff_date), 10000),  # never treated set to 10,000
-    
-    # first year it was mapped OUT (per PIN)
-    treat_year_remove_eff = ifelse(any(removedfrom_eff_sfha== TRUE)
-                                   & eff_date_chr != "2008-08-19", 
-                                   year(eff_date), 10000),
-    
-    
-    # Added or removed from Preliminary FIRMs
-    treat_year_add_prelim = ifelse((any(addedto_prelim_sfha == TRUE) ), year(pre_date), 10000),  # never treated set to 10,000
-    
-    # first year it was mapped OUT (per PIN)
-    treat_year_remove_prelim = ifelse(any(removedfrom_prelim_sfha== TRUE), year(pre_date), 10000)
-    
-  ) |>
-  ungroup() |>
-  mutate(
-    # Event time (relative year) for each outcome
-    # coded to match S&A's method of relative time
-    rel_year_add_eff    = ifelse(treat_year_add_eff != 10000,    sale_year - treat_year_add_eff,    -1000),
-    rel_year_remove_eff = ifelse(treat_year_remove_eff != 10000, sale_year - treat_year_remove_eff, -1000),
-    
-    
-    rel_year_add_prelim    = ifelse(treat_year_add_prelim != 10000,    sale_year - treat_year_add_prelim,    -1000),
-        rel_year_remove_prelim = ifelse(treat_year_remove_prelim != 10000, sale_year - treat_year_remove_prelim, -1000),
-    
-    # adjustment for if a sale occurs in the same year that it is treated
-    # if sale is before preliminary firm, it is coded as relative year == -1, not yet treated
-    rel_year_add_prelim = ifelse(rel_year_add_prelim == 0 & sale_date < pre_date, -1, rel_year_add_prelim),
-    rel_year_remove_prelim = ifelse(rel_year_remove_prelim == 0 & sale_date < pre_date, -1, rel_year_remove_prelim),
+```{r }
 
-    rel_year_add_eff = ifelse(rel_year_add_eff == 0 & sale_date < eff_date, -1, rel_year_add_eff),
-    rel_year_remove_eff = ifelse(rel_year_remove_eff == 0 & sale_date < eff_date, -1, rel_year_remove_eff)
 
-  ) |>
-  mutate(
-    qtr  = quarter(sale_date),     # 1 to 4
-    year = year(sale_date),            
-    sale_qtr_dec = year + (qtr - 1) / 4,        # 2012.00, .25, .50, .75
-    
-    group_name_eff = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated.
-      # for ALL properties in the updated firms
-      eff_date == "2008-08-19" ~ 0,
-      eff_date == "2019-11-01" ~ 2019,
-      eff_date == "2021-09-10" ~ 2021,
-      TRUE ~ NA),
-    
-    # 2005-01-01 2015-02-15 2019-06-28 2021-09-22 
-
-    group_name_prelim = factor(case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated.
-      # for ALL properties in the updated firms
-      pre_date == "2005-01-01" ~ 0,
-      pre_date == "2015-02-12" ~ 2015,
-      pre_date == "2019-07-01" ~ 2019,
-      pre_date == "2021-09-22" ~ 2021,
-      TRUE ~ NA),
-      ),
-  
-    treated_group_eff = factor(case_when(
-      # for TREATED propertes in updated FIRMs!
-      eff_date == "2008-08-19" & (addedto_eff_sfha|removedfrom_eff_sfha) ~ 0,
-      eff_date == "2019-11-01" & (addedto_eff_sfha|removedfrom_eff_sfha) ~ 2019,
-      eff_date == "2021-09-10" & (addedto_eff_sfha|removedfrom_eff_sfha) ~ 2021,
-      TRUE ~ NA)),
-    
-    treated_group_prelim = factor(case_when( 
-      # for TREATED propertes in updated FIRMs!
-      pre_date == "2005-01-01" & (addedto_prelim_sfha|removedfrom_prelim_sfha) ~ 0,
-      pre_date == "2015-02-12" &  (addedto_prelim_sfha|removedfrom_prelim_sfha)~ 2015,
-      pre_date == "2019-07-01" & (addedto_prelim_sfha|removedfrom_prelim_sfha) ~ 2019,
-      pre_date == "2021-09-22" & (addedto_prelim_sfha|removedfrom_prelim_sfha) ~ 2021,
-
-      TRUE ~ NA))
-    )
 
 # same concept as grouping by dfirm 
 table(df_prep$group_name_prelim)  # number of sales from each area that was updated in cook county
