@@ -53,30 +53,8 @@ run_by_cluster <- function(formula, data, clusters, label_prefix = "Model") {
   }) |>
     setNames(paste0(label_prefix, " (cluster: ", names(clusters), ")"))
 }
-
-source("R/helper_pins_to_drop.R")
-
-df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_final.rds")  |> filter(!pin10 %in% drop_parcels)
-
-
-df_prep |> filter(is.na(EFF_DATE))
 ```
 
-```{r remove-missingvalues}
-df_prep <- df_prep |>
-    filter(pin10 != "0710101038") |>
-  # select(any_of(-c(clean_name.x, clean_name.y)) )|>
-  mutate(Triad = case_when(
-    clean_name == "Chicago" ~  "City",
-    as.numeric(str_sub(pin, 1, 2) ) < 13 ~ "North",
-    as.numeric(str_sub(pin, 1, 2) ) >= 13 ~ "South"
-  )) 
-
-# remove duplicates
-
-df_prep <- df_prep |> distinct(pin, sale_date, sale_price, .keep_all = TRUE)
-
-```
 
 clean_name == "Chicago", then triad is "City", Townships 01-12 are North Townships 13 and higher and not chicago mean south triad
 
@@ -118,69 +96,14 @@ skim(df_prep)
 
 ## Comparison of Prelim and Eff FIRM Counts
 
-```{r recode-df_prep}
 
-table(df_prep$addedto_eff_sfha)
-
-df_prep <- df_prep |>
-  
-  mutate(
-    # so I can subset by FIRM date in later steps
-    eff_date_chr = as.factor(eff_date),
-    pre_date_chr = as.factor(pre_date),
-    
-    added_in    = addedto_eff_sfha == "MappedIn",
-    removed_out = removedfrom_eff_sfha == "MappedOut" & in_lomr != "Received LOMR",
-    added_in_prelim    = addedto_prelim_sfha == "MappedIn",
-    removed_out_prelim = removedfrom_prelim_sfha == "MappedOut" & in_lomr != "Received LOMR"
-  ) |>
-  group_by(pin) |>
-  mutate(
-    # first year it was mapped IN (per PIN)
-    treat_year_add_eff = ifelse((any(added_in == TRUE) ), 
-                                # & eff_date_chr != "2008-08-19", 
-                                year(eff_date), 10000),  # never treated set to 10,000
-    
-    # first year it was mapped OUT (per PIN)
-    treat_year_remove_eff = ifelse(any(removed_out== TRUE)
-                                   & eff_date_chr != "2008-08-19", 
-                                   year(eff_date), 10000)
-  ) |>
-  ungroup() |>
-  mutate(
-    
-    # Event time (relative year) for each outcome
-    # coded to match S&A's method of relative time
-    
-    rel_year_add_eff    = ifelse(treat_year_add_eff != 10000,    sale_year - treat_year_add_eff,    -1000),
-    rel_year_remove_eff = ifelse(treat_year_remove_eff != 10000, sale_year - treat_year_remove_eff, -1000),
-    
-    
-  ) |>
-  mutate(
-    qtr  = quarter(sale_date),     # 1..4
-    year = year(sale_date),            
-    sale_qtr_dec = year + (qtr - 1) / 4,        # 2012.00, .25, .50, .75
-    
-    group_name_eff = case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated.
-      # used for callaway way I think? Delete soon or move. not needed for S&A method
-      eff_date == "2008-08-19" ~ 0,
-      eff_date == "2019-11-01" ~ 2019,
-      eff_date == "2021-09-10" ~ 2021,
-      TRUE ~ NA),
-    
-
-        treated_group_prelim = factor(case_when(  # group variable, based on the time period that FIRMs were updated. which is when they were first treated.
-      # used for callaway way I think? Delete soon or move. not needed for S&A method
-      eff_date == "2008-08-19" & (addedto_eff_sfha|removedfrom_eff_sfha) ~ 0,
-      pre_date == "2019-11-01" &  (addedto_eff_sfha|removedfrom_eff_sfha)~ 2019,
-      pre_date == "2021-09-10" & (addedto_eff_sfha|removedfrom_eff_sfha) ~ 2021,
-
-
-      TRUE ~ NA))
-
-    )
+```{r}
+feols(log(sale_price) ~ in_eff_sfha*Triad | pin + sale_year,
+     data = df_prep,
+      cluster = ~pin10,
+) |> modelsummary(stars = TRUE)
 ```
+
 
 ```{r}
 df_prep |> filter((change_type == "Changes SFHA" &  change_type != "Always SFHA") |
