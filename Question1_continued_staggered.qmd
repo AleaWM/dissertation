@@ -1,0 +1,736 @@
+---
+title: "Question1_continued_staggered"
+format: 
+  html:
+  #  theme: darkly
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    toc: true
+    toc-location: left
+    tbl-cap-location: margin
+    fig-cap-location: top
+  #  warning: false
+   # message: false
+    error: true
+---
+
+```{r setup, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(glue)
+library(lubridate)
+library(fixest)
+library(plm)    # panel linear models. interchangable with fixest but have different syntax for models
+library(jtools) # for model table formatting
+library(skimr)  # for skim() command for descriptive statistics
+library(scales)
+library(modelsummary)
+```
+
+```{r}
+# made in Q1_final_variables 
+# uses land parcel intersections with SFHA polygons
+df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.RDS") 
+
+res_sales <- readRDS("./data/processed/df_allsales.rds")
+```
+
+
+```{r}
+table(df_prep$pre_date)
+
+table(df_prep$treat_year_add_prelim)
+table(df_prep$addedto_prelim_sfha[df_prep$pre_date_chr == "2021-09-22"])
+
+```
+
+
+```{r remove-missingvalues}
+
+
+res_sales <- res_sales |>
+    filter(!pin10 %in% drop_parcels) |>
+
+  filter(
+    !is.na(high_ff_score) &
+           !is.na(eff_date) &
+           !is.na(clean_name) &
+           !is.na(pre_date) &
+           !is.na(Triad)
+         )
+
+```
+
+
+## Staggered Policy Rollout Methods
+
+### Preliminary FIRMS
+
+#### Added to Preliminary
+
+
+```{r}
+#| label: fig-feolscomparison-prelimfirms-restricted
+#| fig-cap: "**Appendix Item:Restricted Sample - Added to Preliminary SFHA** Information shock = preliminary FIRM."
+#| results: hold
+
+
+est_twfe = feols(log(sale_price) ~ i(rel_year_add_prelim,  ref =c(-1, -1000 )) | 
+                  pin + sale_year, 
+                cluster = ~pin10, 
+                data = df_prep |> filter(change_type != "Always SFHA" & treat_year_remove_prelim == 10000))
+#summary(est_did)
+ 
+est_sa = feols(log(sale_price) ~ sunab(cohort = treat_year_add_prelim, period = rel_year_add_prelim, ref.p = c(-1,-1000)) | 
+               pin + sale_year,
+             cluster= ~pin10,
+             data = df_prep |> filter(change_type != "Always SFHA" & treat_year_remove_prelim == 10000))
+
+# modelsummary::modelsummary(mod1,
+#                output = "flextable",
+#                fmt = function(x) round(x, 2),
+#              stars = TRUE)
+
+iplot(list(est_twfe, est_sa), main = "Mapped into Prelim FIRMs")
+legend("topleft", col = c(1, 2), pch = c(20, 15), 
+       legend = c("TWFE", "S&A (2020)")) 
+```
+
+```{r}
+#| layout-ncol: 2
+summary(est_sa, agg = "ATT")
+summary(est_sa, agg = "cohort")
+```
+
+
+#### Removed from preliminary
+
+```{r}
+#| label: fig-removeprelims
+#| fig-cap: "Removed from Preliminary SFHA and added LOMR Fixed Effects"
+#| results: hold
+
+est_sa = feols(log(sale_price) ~ sunab(cohort = treat_year_remove_prelim, period = rel_year_remove_prelim, ref.p = c(-1,-1000) ) | pin + sale_year^pre_date_chr + in_lomr,
+               cluster= ~pin10,
+               data = df_prep)
+
+# modelsummary::modelsummary(est_sa,
+#                            output = "flextable",
+#                            fmt = function(x) round(x, 2),
+#                            stars = TRUE)
+# coefplot(est_sa)
+
+
+est_twfe = feols(log(sale_price) ~ i(rel_year_remove_prelim,  ref =c(-1, -1000 )) | 
+                   pin + sale_year^pre_date_chr + in_lomr, cluster = ~pin10, 
+                 data = df_prep )
+
+# 
+# prelim_noLOMRPINs = feols(log(sale_price) ~ i(rel_year_remove_prelim,  ref =c(-1, -1000 )) | 
+#                             pin + sale_year,   
+#                           cluster = ~clean_name,
+#                           subset = ~in_lomr == "Not in LOMR" & !is.na(clean_name),
+#                           data = df_prep)
+
+
+iplot(list(est_twfe, est_sa), main = "Removed from Prelim, Controls for LOMRs")
+legend("topleft", col = c(1, 2), pch = c(20, 15), 
+       legend = c("TWFE", "S&A (2020)")) 
+```
+
+```{r}
+#| layout-ncol: 2
+summary(est_sa, agg = "ATT")
+summary(est_sa, agg = "cohort")
+```
+
+```{r}
+#| label: fig-removeprelims-restricted
+#| fig-cap: "**Appendix Item: Restricted sample, Removed from Preliminary SFHA**. Does not control for LOMR status"
+#| results: hold
+
+
+est_sa = feols(log(sale_price) ~  sunab(cohort = treat_year_remove_prelim, period = rel_year_remove_prelim) | pin + sale_year^pre_date_chr,
+               cluster= ~pin10,
+               data = df_prep |> filter(treat_year_add_prelim==10000 & change_type != "Never SFHA"))
+
+# modelsummary::modelsummary(est_sa,
+#                            output = "flextable",
+#                            fmt = function(x) round(x, 2),
+#                            stars = TRUE)
+# coefplot(est_sa)
+
+
+est_twfe = feols(log(sale_price) ~  i(rel_year_remove_prelim,  ref =c(-1, -1000 )) | 
+                   pin + sale_year^pre_date_chr, cluster = ~pin10, 
+                 data = df_prep |> filter(treat_year_add_prelim==10000 & change_type != "Never SFHA") )
+
+# 
+# prelim_noLOMRPINs = feols(log(sale_price) ~ i(rel_year_remove_prelim,  ref =c(-1, -1000 )) | 
+#                             pin + sale_year,   
+#                           cluster = ~clean_name,
+#                           subset = ~in_lomr == "Not in LOMR" & !is.na(clean_name),
+#                           data = df_prep)
+
+
+iplot(list(est_twfe, est_sa), main = "Removed from Prelim, FE have cohort-time FE")
+legend("topleft", col = c(1, 2), pch = c(20, 15), 
+       legend = c("TWFE", "S&A (2020)"))
+```
+
+```{r}
+#| layout-ncol: 2
+summary(est_sa, agg = "ATT")
+summary(est_sa, agg = "cohort")
+```
+
+
+
+
+```{r}
+#| label: fig-removeprelims-restricted-controlforLOMRs
+#| fig-cap: "**Appendix Item: Restricted sample, Removed from Preliminary SFHA**. Controls for LOMR status"
+#| results: hold
+
+est_sa = feols(log(sale_price) ~  in_lomr + sunab(cohort = treat_year_remove_prelim, period = rel_year_remove_prelim) | pin + sale_year,
+               cluster= ~pin10,
+               data = df_prep |> filter(treat_year_add_prelim==10000 & change_type != "Never SFHA"))
+
+# modelsummary::modelsummary(est_sa,
+#                            output = "flextable",
+#                            fmt = function(x) round(x, 2),
+#                            stars = TRUE)
+# coefplot(est_sa)
+
+
+est_twfe = feols(log(sale_price) ~ in_lomr +  i(rel_year_remove_prelim,  ref =c(-1, -1000 )) | 
+                   pin + sale_year, cluster = ~pin10, 
+                 data = df_prep |> filter(treat_year_add_prelim==10000 & change_type != "Never SFHA") )
+
+# 
+# prelim_noLOMRPINs = feols(log(sale_price) ~ i(rel_year_remove_prelim,  ref =c(-1, -1000 )) | 
+#                             pin + sale_year,   
+#                           cluster = ~clean_name,
+#                           subset = ~in_lomr == "Not in LOMR" & !is.na(clean_name),
+#                           data = df_prep)
+
+
+iplot(list(est_twfe, est_sa ), main = "Removed from Prelim, controls for LOMRs")
+legend("topleft", col = c(1, 2), pch = c(20, 15), 
+       legend = c("TWFE", "S&A (2020)"))
+```
+
+```{r}
+#| layout-ncol: 2
+summary(est_sa, agg = "ATT")
+summary(est_sa, agg = "cohort")
+```
+
+
+
+### Callaway and Sant'Anna
+
+```{r}
+#| eval: false
+
+
+library(did)
+
+df_prep_cs <- df_prep |> 
+  mutate(log_price = log(sale_price),
+         pin_num = as.numeric(pin),
+         treat_year_remove = ifelse(is.na(treat_year_remove), 0 , treat_year_remove)) |>
+  filter(change_type != "Always SFHA")
+
+attgt <- att_gt(yname = "log_price",
+                        tname = "sale_year",
+                        idname = "pin_num",
+                        gname = "treat_year_remove",
+                        data = df_prep_cs,
+                allow_unbalanced_panel = TRUE
+                        )
+  
+summary(attgt) 
+saveRDS(attgt, file = "outputs/attgt_Q1_didoutput.rds")
+
+did_graph <- ggdid(attgt)
+did_graph
+
+aggte_output_simp <- aggte(attgt, type = "simple", na.rm=TRUE)
+summary(aggte_output_simp)
+
+aggte_output_dynamic <- aggte(attgt, type = "dynamic", na.rm = TRUE)
+summary(aggte_output_dynamic)
+ggdid(aggte_output_dynamic)
+
+agg_group <- aggte(attgt, type = "group", na.rm=TRUE)
+ggdid(agg_group)
+```
+
+
+
+### Effective FIRMs
+
+#### Removedfrom Effective FIRM
+
+```{r}
+#| layout-ncol: 2
+#| results: hold
+
+eff_hasLOMRPINs = feols(log(sale_price) ~ sunab(cohort = treat_year_remove_eff, period = sale_year)  | 
+                         pin + sale_year,   
+                       cluster = ~pin10,
+                       subset = ~ rel_year_remove_eff > -7 | rel_year_remove_eff == -1000,
+                       data = df_prep)
+
+summary(eff_hasLOMRPINs)
+coefplot(eff_hasLOMRPINs)
+summary(eff_hasLOMRPINs, agg = "ATT")
+summary(eff_hasLOMRPINs, agg = "cohort")
+iplot(eff_hasLOMRPINs, main = "Removed from Eff SFHAs. TWFE & S&A20.")
+legend("topleft", col = c(1, 2), pch = c(20, 15), 
+       legend = c("S&A (2020)"))
+
+```
+
+```{r}
+#| label: fig-removedfromeffective-models 
+#| fig-cap: "TWFE to compare with sunab() output. Uses Effective FIRM dates and year relative to treatment year. Does not control for LOMR status. Excludes sales that happened 7 or more years before removal from SFHA."
+#| results: hold
+
+eff_hasLOMRPINs = feols(log(sale_price) ~ i(rel_year_remove_eff,  ref =c(-1, -1000 ))  | 
+                         pin + sale_year^pre_date_chr,   
+                       cluster = ~pin10,
+                       subset = ~ rel_year_remove_eff > -7 | rel_year_remove_eff == -1000,
+                       data = df_prep)
+#summary(eff_hasLOMRPINs)
+  
+est_sa_haslomrs = feols(log(sale_price) ~ sunab(treat_year_remove_eff, rel_year_remove_eff) | 
+                         pin + sale_year, 
+                       cluster = ~pin10,
+                       subset = ~ rel_year_remove_eff > -7 | rel_year_remove_eff == -1000,
+                       data = df_prep)
+#summary(est_sa_haslomrs)
+
+iplot(list(eff_hasLOMRPINs, est_sa_haslomrs), main = "Removed from Eff SFHAs. TWFE & S&A20.")
+legend("topleft", col = c(1, 2), pch = c(20, 15), 
+       legend = c("TWFE", "S&A (2020)"))
+
+# coefplot(eff_hasLOMRPINs)
+# coefplot(est_sa_haslomrs)
+
+# feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,  
+#                      cluster = ~ pin + clean_name,
+#                      data = df_prep) |> modelsummary()
+```
+
+
+```{r}
+#| label: fig-feolscomparison-removedfromfirms 
+#| fig-cap: "TWFE to compare with sunab() output. Uses Effective FIRM dates and year relative to treatment year. Controls for LOMR status with `in_lomr` variable in model"
+#| results: hold
+
+eff_hasLOMRPINs = feols(log(sale_price) ~ in_lomr  + i(rel_year_remove_eff,  ref =c(-1, -1000 ))  | 
+                         pin + sale_year,   
+                       cluster = ~pin10,
+                       data = df_prep)
+#summary(eff_hasLOMRPINs)
+
+est_sa_haslomrs = feols(log(sale_price) ~ in_lomr  + sunab(treat_year_remove_eff, rel_year_remove_eff) | 
+                         pin + sale_year, 
+                       cluster = ~pin10,
+                       data = df_prep)
+#summary(est_sa_haslomrs)
+
+iplot(list(eff_hasLOMRPINs, est_sa_haslomrs), main = "Removed from Eff SFHAs. TWFE & S&A20. ")
+legend("topleft", col = c(1, 2), pch = c(20, 15), 
+       legend = c("TWFE", "S&A (2020)"))
+
+# coefplot(eff_hasLOMRPINs)
+# coefplot(est_sa_haslomrs)
+
+# feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,  
+#                      cluster = ~ pin + clean_name,
+#                      data = df_prep) |> modelsummary()
+```
+
+
+```{r}
+#| tbl-cap: "Models control for LOMR status."
+#| layout-ncol: 2
+
+summary(est_sa_haslomrs, agg = "ATT")
+summary(est_sa_haslomrs, agg = "cohort")
+```
+
+**Removed from Effective - Excludes LOMR PINs by using `in_lomr` == FALSE**
+
+```{r}
+#| label: fig-feolscomparison-removedfromfirms-nolomrs
+#| fig-cap: "TWFE to compare with sunab() output. Uses Effective FIRM dates and year relative to treatment year. Excludes PINs that had LOMRs!"
+#| message: false
+#| warning: false
+#| results: hold
+
+eff_noLOMRPINs = feols(log(sale_price) ~ i(rel_year_remove_eff,  ref =c(-1, -1000 ))  | 
+                         pin + sale_year,   
+                       cluster = ~pin10,
+                       subset = ~in_lomr == FALSE & !is.na(clean_name),
+                       data = df_prep)
+summary(eff_noLOMRPINs)
+#iplot(eff_noLOMRPINs)
+
+est_sa_nolomrs = feols(log(sale_price) ~ sunab(treat_year_remove_eff, rel_year_remove_eff) | 
+                         pin + sale_year, 
+                       cluster = ~pin10,
+                       subset = ~in_lomr == FALSE & !is.na(clean_name),
+                       data = df_prep)
+summary(est_sa_nolomrs, agg = "cohort")
+
+iplot(list(eff_noLOMRPINs, est_sa_nolomrs), main = "Removed from Eff SFHAs. Excludes LOMR PINs from model.")
+# 
+# feols(log(sale_price) ~ in_eff_sfha  | pin + sale_year,
+#                      cluster = ~ pin + clean_name,
+#                        subset = ~in_lomr == FALSE & !is.na(clean_name),
+#                      data = df_prep) |> modelsummary()
+```
+
+
+```{r}
+#| tbl-cap: "Uses in_lomr==FALSE PINs only."
+#| layout-ncol: 2
+
+summary(est_sa_nolomrs, agg = "ATT")
+summary(est_sa_nolomrs, agg = "cohort")
+```
+
+
+
+```{r}
+#| label: fig-changereferenceyear2
+#| fig-cap: "SA20. Changes reference year from -1 to -2 for Added to Effective SFHA."
+#| eval: false
+#| include: false
+
+mod1 = feols(log(sale_price) ~ sunab(treat_year_add_eff, rel_year_add_eff) | pin + sale_year, 
+                          cluster = ~pin10,
+
+  data = df_prep)
+
+#summary(mod1)
+mod2 = feols(log(sale_price) ~ sunab(cohort = treat_year_add_eff, period = rel_year_add_eff, ref.p = c(-2,-1000)) | pin + sale_year, 
+             cluster = ~pin10,
+  data = df_prep)
+
+#summary(mod2)
+#iplot(mod1)
+
+iplot(list(mod1, mod2), main = "Reference year as -1 and -2, Added to Eff.")
+
+summary(mod2, agg = "ATT")
+summary(mod2, agg = "cohort")
+```
+
+
+#### Added to Effective SFHA 
+
+```{r}
+#| label: tbl-feolscomparison-addedtofirms-effective
+#| fig-cap: "Mapped into Effective SFHA. In_lomr variable in equation"
+#| results: hold
+
+est_twfe = feols(log(sale_price) ~ in_lomr + i(rel_year_add_eff,  ref =c(-1, -1000 )) | 
+                  pin + sale_year,   
+                cluster = ~pin10,
+                data = df_prep)
+#coefplot(est_twfe)
+
+est_sa = feols(log(sale_price) ~ in_lomr +  sunab(treat_year_add_eff, rel_year_add_eff) | pin + sale_year, 
+                           cluster = ~ pin10,
+               data = df_prep)
+#coefplot(est_sa)
+
+
+iplot(list(est_twfe, est_sa), main = "Mapped into Effective SFHA")
+legend("topleft", col = c(1, 2), pch = c(20, 15), 
+       legend = c("TWFE", "S&A (2020)"))
+
+```
+
+```{r}
+#| layout-ncol: 2
+#etable(est_sa)
+#summary(est_sa)
+summary(est_sa, agg = "ATT")
+summary(est_sa, agg = "cohort")
+```
+
+
+
+# Transaction trends
+
+## Volume
+
+```{r}
+res_sales |>
+  group_by(sale_year, change_type, eff_date) |>  
+  summarize(n_txn = n(), .groups = "drop") |>  # number of transactions
+  ggplot(aes(x = sale_year, y = n_txn, color = change_type)) +
+  geom_line(size = 1) +
+  geom_point() +
+  labs(
+    x = "Year of Sale",
+    y = "Number of Transactions",
+    color = "Property Type",
+    title = "Number of Transactions by SFHA & Flood Factor Status"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top") + 
+  facet_wrap(~eff_date)
+
+
+
+res_sales |>
+  group_by(sale_year, change_type, eff_date) |> 
+  summarize(n_txn = n(), .groups = "drop") |>
+  mutate(indexed = n_txn / n_txn[sale_year==2012], .by = c(change_type, eff_date)) |>
+  ggplot(aes(x = sale_year, y = indexed, color = change_type)) +
+  geom_line(size = 1) +
+  geom_point() +
+  labs(
+    x = "Year of Sale",
+    y = "Transactions indexed to 2012 volume",
+    color = "Property Type",
+    title = "Number of Transactions by SFHA & Flood Factor Status"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top") + 
+  facet_wrap(~eff_date) +
+  scale_y_continuous(labels=scales::percent)
+
+
+```
+
+```{r}
+res_sales |>
+  mutate(
+    ff_label = ifelse(high_ff_score, "High FF", "Low FF"),
+    sfha_label = ifelse(in_eff_sfha == "SFHA", "In SFHA", "Not in SFHA"),
+    group = paste(ff_label, sfha_label, sep = " & ")
+  ) |>
+  group_by(sale_year, group) |>   # replace sale_year with your actual year variable
+  summarize(n_txn = n(), .groups = "drop") |>
+  ggplot(aes(x = sale_year, y = n_txn, color = group)) +
+  geom_line(size = 1) +
+  geom_point() +
+  labs(
+    x = "Year of Sale",
+    y = "Number of Transactions",
+    color = "Property Type",
+    title = "Number of Transactions by SFHA & Flood Factor Status"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+```
+
+## Indexed Volume of Sales
+
+```{r}
+res_sales |>
+  mutate(
+    ff_label = ifelse(high_ff_score, "High FF", "Low FF"),
+    sfha_label = ifelse(in_eff_sfha == "SFHA", "In SFHA", "Not in SFHA"),
+    group = paste(ff_label, sfha_label, sep = " & ")
+  ) |>
+  group_by(sale_year, group) |>
+  summarize(n_txn = n(), .groups = "drop") |>
+  group_by(group) |>
+  mutate(
+    base2012 = n_txn[sale_year == 2012],
+    index2012 = n_txn / base2012
+  ) |>
+  ggplot(aes(x = sale_year, y = index2012, color = group)) +
+  geom_line(size = 1) +
+  geom_point() +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    x = "Year of Sale",
+    y = "Indexed Transactions (2012 = 100%)",
+    color = "Property Type",
+    title = "Relative Change in Transactions by SFHA & Flood Factor Status"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+```
+
+```{r}
+
+# 1) Build a quarterly decimal from sale_date
+res_q <- res_sales |>
+  mutate(
+    # ensure Date
+    sale_date = as.Date(sale_date),
+    year  = year(sale_date),
+    qtr   = quarter(sale_date),                 # 1..4
+    sale_qtr_dec = year + (qtr - 1) / 4,        # 2012.00, .25, .50, .75
+    ff_label  = ifelse(high_ff_score, "High FF", "Low FF"),
+    sfha_label = ifelse(in_eff_sfha == "SFHA", "In SFHA", "Not in SFHA"),
+    group = paste(ff_label, sfha_label, sep = " & "),
+    time_year = sale_year - 2010
+  ) |>
+  group_by(sale_qtr_dec, group) |>
+  summarise(n_txn = n(), .groups = "drop")
+
+# (Optional) Fill missing quarters with 0 so lines don’t break
+res_q <- res_q |>
+  group_by(group) |>
+  complete(sale_qtr_dec = seq(floor(min(sale_qtr_dec, na.rm = TRUE)),
+                              ceiling(max(sale_qtr_dec, na.rm = TRUE)) - 0.75,
+                              by = 0.25),
+           fill = list(n_txn = 0)) |>
+  ungroup()
+
+# 2A) Plot raw quarterly counts
+p_counts <- res_q |>
+  ggplot(aes(x = sale_qtr_dec, y = n_txn, color = group)) +
+  geom_line(size = 0.9) +
+  geom_point(size = 1.6) +
+  scale_x_continuous(
+    breaks = seq(floor(min(res_q$sale_qtr_dec, na.rm = TRUE)),
+                 ceiling(max(res_q$sale_qtr_dec, na.rm = TRUE)),
+                 by = 1),
+    labels = function(x) sprintf("%d", x)  # show clean years on ticks
+  ) +
+  labs(
+    x = "Sale Quarter (decimal years)",
+    y = "Number of Transactions",
+    color = "Property Type",
+    title = "Quarterly Transactions by SFHA & Flood Factor Status"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+
+p_counts
+
+# Choose base quarter explicitly: 2012 Q1 (i.e., 2012.00)
+res_q_idx <- res_q |>
+  group_by(group) |>
+  mutate(
+    base_val = n_txn[sale_qtr_dec == 2012.00],
+    index_2012q1 = ifelse(is.na(base_val) | base_val == 0, NA_real_, n_txn / base_val)
+  ) |>
+  ungroup()
+
+p_index <- res_q_idx |>
+  ggplot(aes(x = sale_qtr_dec, y = index_2012q1, color = group)) +
+  geom_line(size = 0.9) +
+  geom_point(size = 1.6) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_x_continuous(
+    breaks = seq(floor(min(res_q_idx$sale_qtr_dec, na.rm = TRUE)),
+                 ceiling(max(res_q_idx$sale_qtr_dec, na.rm = TRUE)),
+                 by = 1),
+    labels = function(x) sprintf("%d", x)
+  ) +
+  labs(
+    x = "Sale Quarter (decimal years)",
+    y = "Indexed Transactions (2012 Q1 = 100%)",
+    color = "Property Type",
+    title = "Relative Quarterly Change by SFHA & Flood Factor (2012 Q1 = 100%)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+
+p_index
+
+```
+
+```{r}
+res_q_idx_season <- res_q |>
+  mutate(
+    year = floor(sale_qtr_dec),                          # extract year
+    qtr  = 1 + (sale_qtr_dec - year) * 4                 # recover quarter (1–4)
+  ) |>
+  group_by(group, qtr) |>
+  mutate(
+    base_val = n_txn[year == 2012],                      # use 2012's value for that quarter
+    rel_index = ifelse(is.na(base_val) | base_val == 0,
+                       NA_real_,
+                       n_txn / base_val)
+  ) |>
+  ungroup()
+
+ggplot(res_q_idx_season, aes(x = sale_qtr_dec, y = rel_index, color = group)) +
+  geom_line(size = 0.9) +
+  geom_point(size = 1.6) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    x = "Sale Quarter (decimal years)",
+    y = "Indexed Transactions (2012 Quarter = 100%)",
+    color = "Property Type",
+    title = "Relative Quarterly Change (Seasonally Indexed to 2012)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+```
+
+## Transaction volume for properties outside of SFHAs
+
+```{r}
+#| label: fig-floodfactorcomparison
+#| fig-cap: "Figure for Question 2. Will move it to correct file eventually."
+
+ggplot(res_q_idx_season |> filter(group %in% c("High FF & Not in SFHA","Low FF & Not in SFHA")), aes(x = sale_qtr_dec, y = rel_index, color = group)) +
+  geom_line(size = 0.9) +
+  geom_point(size = 1.6) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    x = "Sale Quarter (decimal years)",
+    y = "Indexed Transactions (2012 Quarter = 100%)",
+    color = "Property Type",
+    title = "Relative Quarterly Change (Seasonally Indexed to 2012)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+
+```
+
+```{r}
+#| label: fig-FIRMupdates
+#| fig-cap: "Indexed transaction volume for properties outside of SFHA. Shown by geographic areas (based on FIRM effective dates). Uses df_prep which has PINs that sold 2+ times instead of all residentialsales."
+
+res_sales |>
+  mutate(
+    ff_label = ifelse(high_ff_score, "High FF", "Low FF"),
+    sfha_label = ifelse(in_eff_sfha == "SFHA", "In SFHA", "Not in SFHA"),
+    group = paste(ff_label, sfha_label, sep = " & ")
+  ) |>
+    filter(group %in% c("High FF & Not in SFHA","Low FF & Not in SFHA")) |>
+
+  group_by(group, eff_date, sale_year) |>
+  summarize(n_txn = n()) |>
+  ungroup() |>
+  group_by(group, eff_date) |>
+  mutate(
+    base2012 = n_txn[sale_year == 2012],
+    index2012 = n_txn / base2012) |>
+  ungroup() |>
+  ggplot(aes(x = sale_year, y = index2012, color = group), group = eff_date) +
+  geom_line(size = 0.9) +
+  geom_point(size = 1.6) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    x = "Sale Year",
+    y = "Indexed Transactions (2012  = 100%)",
+    color = "Property Type",
+    title = "Relative Yearly Change (Seasonally Indexed to 2012)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top") +
+  facet_wrap(~eff_date)
+
+```
+
+
