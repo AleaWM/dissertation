@@ -64,6 +64,9 @@ drop_parcels <- c(
   "2226307011",
   "2226307012",
   "2433302053", # nobuildinghere
-  "2730212019", # in A LOMR since 2018, Clover Drive, Orland Park. New Buildings. By floodzonebut not in floodzone
-  "2804400093"   # midlothian turnpike. by floodzone but not in floodzone
+  "2730212019", # in A LOMR since 2018, Clover Drive, Orland Park. New Buildings. By floodzone but not in floodzone
+  "2804400093",   # midlothian turnpike. by floodzone but not in floodzone
+
+  "0520308066"  # the 1 building in winnetka flagged as having the bldg poly be mapped out of the 1% SFHA. It still is in 0.2% zone, BUT the property became tax exempt. 1205 Sunset Road
+  # after further digging about this property, it was bought by the municipality so that stormwater improvement constructions could be done. Neat! Lookedat old FIRM and SFHA status did not change. false positive anyways.
 )
