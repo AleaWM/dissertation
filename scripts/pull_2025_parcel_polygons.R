@@ -104,3 +104,5 @@ parcels_2025 <- fetch_all_parcels(page_size = 1000)
 
 failed <- attr(parcels_2025, "failed_offsets")
 failed
+
+st_write(parcels_2025, "inputs/cook_parcels_2025.gpkg", layer = "parcels_2025", append = FALSE)
