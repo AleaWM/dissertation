@@ -1,5 +1,7 @@
 # assign 10-digit land parcels to FIRM panels
-#
+# NOT USED. Information is included in a helper function in sfha_targets_function.R
+# called fill_missing_firm_pan()
+# delete this file
 
 manual_firms <- tibble::tibble(
   pin10 = c(
