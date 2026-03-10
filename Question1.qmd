@@ -1,5 +1,11 @@
 ---
 title: "Cook County Parcel Sales"
+subtitle: "Variant: `r params$variant_key`"
+params:
+ variant_key: "bldg_sfha" # "bldg_sfha"   # options: parcel_sfha, bldg_sfha, parcel_1in500, bldg_1in500
+ # bldg_updated, land_updated, ptaxsim_updated,risk500_land_updated, ri sk500_updated, df_prep_bldg_updated_arcgis,
+ variants_dir: "data/processed/variants" # options: "data/processed/variants" or "data/processed/targets/sales"
+ 
 format: 
   html:
   #  theme: darkly
@@ -13,31 +19,129 @@ format:
     warning: false
     message: false
     error: true
+
 ---
 
-# Data Sources and Background Information
 
+# Data Sources and Background Information
 
 ```{r setup, warning=FALSE, message=FALSE}
 library(tidyverse)
 library(glue)
 library(lubridate)
 library(fixest)
-library(plm)    # panel linear models. interchangable with fixest but have different syntax for models
 library(jtools) # for model table formatting
 library(skimr)  # for skim() command for descriptive statistics
 library(scales)
 library(modelsummary)
+```
 
-df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.RDS") 
 
+```{r}
+source("R/helper_pins_to_drop.R")
+
+# source("R/helper_pins_to_drop_forsure.R")
+
+variant_key  <- params$variant_key
+variants_dir <- params$variants_dir
+
+variant_path <- file.path(
+  variants_dir,
+  paste0("df_prep_", variant_key, ".rds")
+)
+
+if (!file.exists(variant_path)) {
+  stop("Variant file not found: ", variant_path)
+}
+```
+
+
+```{r}
+#| eval: false
+
+df_prep <- readRDS(variant_path) |> filter(!pin10 %in% drop_parcels)
+
+
+# helpful stamp
+variant_label <- case_when(
+  variant_key == "parcel_sfha"   ~ "Parcel × SFHA (1%)",
+  variant_key == "bldg_sfha"     ~ "Building × SFHA (1%)",
+  variant_key == "parcel_1in500" ~ "Parcel × 0.2%",
+  variant_key == "bldg_1in500"   ~ "Building × 0.2%",
+  
+  TRUE ~ variant_key
+)
+
+cat("Loaded variant:", variant_label, "\n")
+
+
+variant_label <- dplyr::case_when(
+  variant_key == "parcel_sfha"   ~ "Parcel × SFHA (1-in-100)",
+  variant_key == "bldg_sfha"     ~ "Building × SFHA (1-in-100)",
+  variant_key == "parcel_1in500" ~ "Parcel × 0.2% (1-in-500)",
+  variant_key == "bldg_1in500"   ~ "Building × 0.2% (1-in-500)",
+  TRUE ~ variant_key
+)
+
+# Handy text you can drop anywhere
+variant_stamp <- paste0("[", variant_label, "]")
+
+
+
+::: {.callout-note}
+**Variant:** `r variant_label`
+**File loaded:** `r paste0("df_prep__", params$variant_key, ".rds")`
+:::
 
 ```
 
-> If property is in SFHA and LOMR, both variables will be coded as 1. I no longer "remove" the SFHA indicator if it is in a LOMR. LOMRs are only considered in the bottom section on effective FIRMs and insurance requirements. 
+
+<!--- Can run from command line with: quarto::quarto_render("Question1.qmd", execute_params = list(variant_key = "bldg_sfha"))
+) --->
+
+
+
+
+```{r}
+#| include: false
+#| eval: false
+
+df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_arcgis.rds") |> 
+  filter(!pin10 %in%drop_parcels)
+
+df_prep |> filter(Triad == "City" & removedfrom_eff_sfha == TRUE) 
+df_prep |> filter(Triad == "City" & addedto_eff_sfha == TRUE)
+
+
+df_prep |> filter(Triad == "City" & removedfrom_eff_sfha == TRUE)  |> distinct(pin10)
+df_prep |> filter(Triad == "City" & addedto_eff_sfha == TRUE) |> distinct(pin10)
+```
+
 
 ```{r}
 
+source("R/helper_pins_to_drop.R")
+
+df_prep <- readRDS("data/processed/variants/df_prep__bldg_sfha.RDS") |> filter(!pin10 %in% drop_parcels)
+
+#df_prep <- readRDS("data/processed/df_prep_bldg_sfha_updated_arcgis_forQ1_assumptiontests.RDS") |> filter(!pin10 %in% drop_parcels)
+
+#df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.rds") |> filter(!pin10 %in%drop_parcels)
+
+df_prep <- df_prep |>
+  group_by(pin) |>
+   mutate(d_price_pct = round((sale_price-dplyr::lag(sale_price))/(dplyr::lag(sale_price)), digits = 2), .after = pin) |> ungroup()
+
+
+df_prep <-  df_prep |> filter(is.na(d_price_pct) | d_price_pct < 20 & sale_price > 20000) 
+
+df_prep <- df_prep |> group_by(pin) |> 
+  mutate(times_sold = n()) |> filter(times_sold > 1)
+```
+
+
+
+```{r}
 
 clusters_county <- list(
   pin10      = ~ pin10#,
@@ -68,14 +172,11 @@ bind_models <- function(...) {
 
 ```
 
-clean_name == "Chicago", then triad is "City", 
-Townships 01-12 are North
-Townships 13 and higher and not chicago mean south triad
+
 
 # Research Question 1
 
 The final data set represents the difference in price appreciation for properties that were mapped into an SFHA compared to the hypothetical price they would have sold at if they had not been mapped into an SFHA.
-
 
 **Does the value of real estate parcels increase when they are removed from an SFHA?**
 
@@ -97,26 +198,23 @@ I also explored interaction terms with LOMR status. Owners can appeal their floo
 
 All models clustered standard errors at the parcel (PIN) level to account for repeated observations of the same property.
 
--   Robustness checks: cluster at eff_date or muni level, vcov = "hetero", etc.
+-   Robustness checks: cluster at land_parcel, FIRM_PAN, or muni level, vcov = "hetero", etc.
 
 Notes:
 
 1.  Removal from the SFHA is due to the FEMA flood insurance rate maps being updated. Properties are either in or out of the "1-in-100" year flood plain. They can be located in the SFHA and also have a LOMR that "removes" them from the floodplain. This information is represented in multiple variables (`in_eff_sfha` and `in_lomr`). If an observation is coded as `Removed` from an SFHA, it indicates that the floodplain shapefile itself changed that was created by FEMA.
 
--   If a property was in an SFHA in a FIRM and had an approved LOMR and then the FIRM is updated years later and the LOMR was still viewed as accurate and valid, then the PIN will appear as "removed from the SFHA" because the updated FIRM will incorporate the old LOMR into the updated floodplain. Depending on the time of sale, being flaggeda as removed from the SFHA would miss the potential price change from the change in insurance requirement (which again, was not the original research question).
+-   If a property was in an SFHA in a FIRM and had an approved LOMR and then the FIRM is updated years later and the LOMR was still viewed as accurate and valid, then the PIN will appear as "removed from the SFHA" because the updated FIRM will incorporate the old LOMR into the updated floodplain. Depending on the time of sale, being flagged as removed from the SFHA would miss the potential price change from the change in insurance requirement (which again, was not the original research question).
 
-2.  Treatment window timing: In theory, EFF_DATE would be associated with a change in price due to the capitalization of mandatory flood insurance requirement for homes that have mortgages in floodplains. 
+2.  Treatment window timing: In theory, EFF_DATE would be associated with a change in price due to the capitalization of mandatory flood insurance requirement for homes that have mortgages in floodplains.
 
-- PRE_DATE is also used due to a buyers anticipation of a policy's impact. The knowledge of the risk and the potential loss due to future floods may decrease the amount that buyers are willing to pay for a property that they see as more risky even if the financial ties to required flood insurance are not effective yet.   
-
+-   PRE_DATE is also used due to a buyers anticipation of a policy's impact and to measure the effect of risk information conveyed in preliminary FIRMs. The knowledge of the risk and the potential loss due to future floods may decrease the amount that buyers are willing to pay for a property that they see as more risky even if the financial ties to required flood insurance are not effective yet.
 
 Concerns:
 
 -   Who's included or excluded? Are the properties that are in floodplains different in ways that impact the sales? Are people less willing to buy risky properties in general, resulting in fewer sales?
 
--   If parcels were removed from the FEMA flood zone but still at risk, does that say more about information asymmetry or regulatory trust than flood safety?
-
--   Areas that have received new flood maps are mostly wealthier parts of Cook County. The pins added to flood plains in the preliminary FIRM are all in Northern Cook County. The FIRMs updated in 2019 and 2021 are along the lake front and include Glencoe/Wilmette areas. Could really influence price trends.
+-   Areas that have received new flood maps are mostly wealthier parts of Cook County. The pins added to flood plains in the preliminary FIRM are all in Northern Cook County. The FIRMs updated in 2019 and 2021 are along the lake front and include Glencoe/Wilmette areas. Could really influence price trends. 
 
 Contributions to the literature: Many models model if SFHA status changes, but have it as one variable. this assumes that the effect of being added in or removed from an SFHA is the same in both directions. I model in_eff_sfha as one variable and separate it into added and removed to see if there are different effects.
 
@@ -126,10 +224,7 @@ table(df_prep$pre_date)
 
 ```
 
-## Variable Coding
-
-
-
+## PIN Inspection
 
 ```{r }
 
@@ -144,15 +239,11 @@ table(df_prep$treated_group_eff)
 table(df_prep$treated_group_prelim)
 ```
 
-
 ```{r}
 table(df_prep$treat_year_remove_prelim, df_prep$Triad)
 table(df_prep$treat_year_add_prelim, df_prep$Triad)
 
 ```
-
-
-## Preliminary FIRM descriptive Stats
 
 
 ```{r}
@@ -164,57 +255,137 @@ table(df_prep$sale_year[df_prep$sale_year>=2016], df_prep$addedto_prelim_sfha[df
 table(df_prep$sale_year[df_prep$sale_year>=2016], df_prep$removedfrom_prelim_sfha[df_prep$sale_year>=2016])
 ```
 
-
-```{r} 
-table(df_prep$group_name_prelim)    # treated and nontreated  properties in each group of panels updated
-
+```{r}
 table(df_prep$addedto_prelim_sfha)
 table(df_prep$removedfrom_prelim_sfha)
 ```
 
+### Southern Cook County PINs of Interest
+
+Crestwood, Oak Forest, Alsip, etc. 
+
+
+```{r}
+#| include: false
+
+n_parcels_interest <- df_prep |>
+  dplyr::filter(treat_year_remove_prelim == "2015") |>
+  dplyr::distinct(pin10) |>
+  nrow()
+```
 
 ```{r}
 #| label: tbl-southerncook-obs
-#| tbl-cap: "Properties in South Triad that were removed from PRELIMINARY SFHA in 2015 and properties in South Triad that were always in the SFHA that were in FIRMs updated in 2015."
+#| tbl-cap: !expr 'glue::glue("Properties in South Triad that were removed from SFHAs by a PRELIMINARY map release in 2015. Distinct parcels: {n_parcels_interest}.")'
 
-
-df_prep |> filter(Triad == "South" & treat_year_remove_prelim == "2015") # all 2015 treatment pins are in South Triad
-
-df_prep |> filter(Triad == "South" & change_type == "Always SFHA" & pre_date_chr == "2015-02-12") 
-# change type only exists for effective 
+df_prep |> filter(
+  treat_year_remove_prelim == "2015") |> DT::datatable(rownames = FALSE) # all 2015 treatment pins are in South Triad
 ```
 
+```{r}
+#| include: false
+
+n_parcels_interest <- df_prep |>
+  dplyr::filter(treat_year_add_prelim == "2015") |>
+  dplyr::distinct(pin10) |>
+  nrow()
+```
+
+```{r}
+#| label: tbl-southerncook-obs-added
+#| tbl-cap: !expr 'glue::glue("Properties in South Triad that were added to SFHAs by a PRELIMINARY map release in 2015. Distinct parcels: {n_parcels_interest}.")'
+
+df_prep |> filter(
+  treat_year_add_prelim == "2015") |> DT::datatable(rownames = FALSE)
+```
+
+```{r}
+#| label: tbl-southerncook-obs-alwayssfha
+#| tbl-cap: "Properties in South Triad that were always in the SFHA and in FIRMs updated in 2015."
+
+df_prep |> filter(Triad == "South" & change_type_prelim == "Always SFHA" & pre_date_chr == "2015-02-12") 
+```
+
+### Chicago PINs of Interest
+
+Mostly ignoring Chicago PINs though because they are nearly all Coastal condos that are false positives since they are up to the waterfront. 
 
 ```{r}
 #| label: tbl-chicago-obs
-#| tbl-cap: "Properties in Chicago that were removed from PRELIMINARY SFHA in 2019 and properties in Chicago that were always in the SFHA that were in FIRMs updated in 2019."
-#| layout-ncol: 2
+#| tbl-cap: "Properties in Chicago that were added or removed from PRELIMINARY SFHA in 2019 and properties in Chicago that were always in the SFHA that were in FIRMs updated in 2019. Should be close to zero or zero number of PINs identified. "
 
 
 df_prep |> filter(Triad == "City" & treat_year_add_prelim == "2019") # |> group_by(pin10) |> summarize(n = n())  |> View()
 
 df_prep |> filter(Triad == "City" & treat_year_remove_prelim == "2019") # |> group_by(pin10) |> summarize(n = n())  |> View()
+```
 
+```{r}
+#| label: tbl-chicago-obs-parcels
+#| tbl-cap: "Distinct buildings that changed status. These are most likely on the coast of Lake Michigan."
 
-df_prep |> filter(Triad == "City" & change_type == "Always SFHA" & pre_date_chr == "2019-07-01") 
-# change type only exists for effective
+df_prep |> filter(Triad == "City" & treat_year_add_prelim == "2019")  |> group_by(pin10) |> summarize(n = n())  
+
+df_prep |> filter(Triad == "City" & treat_year_remove_prelim == "2019")  |> group_by(pin10) |> summarize(n = n())  
 ```
 
 
+```{r}
+#| label: tbl-chicago-obs-alwaysin
+#| tbl-cap: "Properties in Chicago that were always in an SFHA. Mostly Coastal condos."
+
+df_prep |> filter(Triad == "City" & change_type_prelim == "Always SFHA" & pre_date_chr == "2019-07-01")
+```
+
+### Northern Cook County PINs of Interest
+
+Note: Some parts of northern Cook were part of the coastal FIRMs updated (Wilmette, Winnetka, etc.). This area had a preliminary map released in 2019 which became effective in 2021.
+
+The other section of the county updated is in the north-west corner (Barrington Hills, etc.).  This area had a preliminary map released in 2021 which became effective in 2026. Only PINs identified with the preliminary map update are used in the analysis since the FIRMs became effective at the end of the dissertation and there were essentially no sales to use for a third effective treatment cohort. 
 
 ```{r}
-#| label: tbl-northerncook-obs
-#| tbl-cap: "Properties in Northern half of Cook County that were removed or added from flood risk zone."
-#| layout-ncol: 2
+#| include: false
+
+n_parcels_interest <- df_prep |>
+ filter(Triad == "North" & (treat_year_add_prelim == "2021" | treat_year_add_prelim == "2019")) |>
+  dplyr::distinct(pin10) |>
+  nrow()
+```
 
 
-df_prep |> filter(Triad == "North" & (treat_year_add_prelim == "2021" | treat_year_add_prelim == "2019")) # |> group_by(pin10) |> summarize(n = n())  |> View()
+```{r}
+#| label: tbl-northerncook-obs-added
+#| tbl-cap: !expr 'glue::glue("Properties in Northern half of Cook County that were added to flood risk zone. From 2019 OR 2021 preliminary map releases!  Distinct parcels: {n_parcels_interest}.")'
 
-df_prep |> filter(Triad == "North" & (treat_year_remove_prelim == "2021" | treat_year_remove_prelim == "2019"))
+
+df_prep |> filter(Triad == "North" & (treat_year_add_prelim == "2021" | treat_year_add_prelim == "2019")) |> DT::datatable(rownames = FALSE) 
+```
+
+```{r}
+#| include: false
+
+n_parcels_interest <- df_prep |>
+ filter(Triad == "North" & (treat_year_remove_prelim == "2021" | treat_year_remove_prelim == "2019")) |>
+  dplyr::distinct(pin10) |>
+  nrow()
+```
+
+```{r}
+#| label: tbl-northerncook-obs-removed
+#| tbl-cap: !expr 'glue::glue("Properties in Northern half of Cook County that were removed from flood risk zone. From 2019 OR 2021 preliminary map releases!  Distinct parcels: {n_parcels_interest}.")'
 
 
-df_prep |> filter(Triad == "North" & change_type == "Always SFHA") 
-# change type only exists for effective
+df_prep |> filter(Triad == "North" & (treat_year_remove_prelim == "2021" | treat_year_remove_prelim == "2019"))|> DT::datatable(rownames = FALSE)
+```
+
+
+```{r}
+#| label: tbl-northerncook-obs-alwayssfha
+#| tbl-cap: "Properties in Northern half of Cook County that were always in flood risk zone."
+#| 
+df_prep |> 
+  filter(Triad == "North" & change_type_prelim == "Always SFHA")  |>
+  DT::datatable(rownames = FALSE)
 ```
 
 ## Comparison of Prelim and Eff FIRM Counts
@@ -238,9 +409,138 @@ table(df_prep$rel_year_remove_prelim)
 
 ```
 
-
-
 # Models
+
+```{r fe-avgs}
+df_changes <- df_prep |>
+  dplyr::arrange(pin, sale_year) |>
+  dplyr::group_by(pin) |>
+  dplyr::mutate(
+    d_price = sale_price - dplyr::lag(sale_price),
+    d_log_price = log(sale_price) - dplyr::lag(log(sale_price))
+  ) |>
+  dplyr::ungroup() |>
+  mutate(post = sale_date >= pre_date & pre_date_chr != "2005-01-01"  )
+
+# cohort average change
+df_changes |>
+  dplyr::filter(!is.na(d_log_price)) |>
+  dplyr::group_by(treat_year_remove_prelim) |>
+  dplyr::summarise(mean_change = mean(d_log_price, na.rm = TRUE))
+
+mean(df_prep$sale_price[df_prep$sale_year==2013])
+
+mean(df_prep$sale_price[df_prep$sale_year==2018])
+
+
+mean(df_prep$sale_price[df_prep$sale_year==2013 & df_prep$in_prelim_sfha==TRUE])
+
+mean(df_prep$sale_price[df_prep$sale_year==2013 & df_prep$in_prelim_sfha==FALSE])
+
+```
+
+```{r}
+# deman by PIN
+df_fe <- df_prep |>
+  dplyr::mutate(
+    y = log(sale_price),
+    x = as.numeric(removedfrom_prelim_sfha)
+  ) |>
+  dplyr::group_by(pin) |>
+  dplyr::mutate(
+    y_w1 = y - mean(y, na.rm = TRUE),
+    x_w1 = x - mean(x, na.rm = TRUE)
+  ) |>
+  dplyr::ungroup()
+
+# demean by year
+df_fe <- df_fe |>
+  dplyr::group_by(sale_year) |>
+  dplyr::mutate(
+    y_dd = y_w1 - mean(y_w1, na.rm = TRUE),
+    x_dd = x_w1 - mean(x_w1, na.rm = TRUE)
+  ) |>
+  dplyr::ungroup()
+
+beta_hat <- with(df_fe,
+  sum(x_dd * y_dd, na.rm = TRUE) /
+  sum(x_dd^2, na.rm = TRUE)
+)
+
+beta_hat
+```
+
+
+Exact way of demeaning:
+
+```{r}
+df_fe <- df_prep |>
+  dplyr::mutate(
+    y = log(sale_price),
+    x = as.numeric(in_prelim_sfha)
+  )  
+
+grand_mean_y <- mean(df_fe$y, na.rm = TRUE)
+grand_mean_x <- mean(df_fe$x, na.rm = TRUE)
+
+pin_means <- df_fe |>
+  dplyr::group_by(pin) |>
+  dplyr::summarise(
+    y_i = mean(y, na.rm = TRUE),
+    x_i = mean(x, na.rm = TRUE)
+  )
+
+year_means <- df_fe |>
+  dplyr::group_by(sale_year) |>
+  dplyr::summarise(
+    y_t = mean(y, na.rm = TRUE),
+    x_t = mean(x, na.rm = TRUE)
+  )
+
+df_fe <- df_fe |>
+  dplyr::left_join(pin_means, by = "pin") |>
+  dplyr::left_join(year_means, by = "sale_year") |>
+  dplyr::mutate(
+    y_dd = y - y_i - y_t + grand_mean_y,
+    x_dd = x - x_i - x_t + grand_mean_x
+  )
+
+df_fe |> 
+  select(pin, sale_year, sale_price , y_dd, x_dd,  addedto_prelim_sfha, removedfrom_prelim_sfha, everything())|> filter(Triad == "North" & treat_year_remove_prelim  != 10000) |>
+  group_by(pin) |>
+  arrange(pin) |>
+  mutate(d_price = sale_price- dplyr::lag(sale_price), .after = sale_price) |> ungroup()
+                                                                                        
+
+beta_hat <- with(df_fe,
+  sum(x_dd * y_dd, na.rm = TRUE) /
+  sum(x_dd^2, na.rm = TRUE)
+)
+
+beta_hat
+
+
+```
+
+```{r}
+df_fe <- df_prep |>
+  dplyr::group_by(pin) |>
+  dplyr::mutate(y_w = log(sale_price) - mean(log(sale_price))) |>
+  dplyr::ungroup() |>
+  dplyr::group_by(sale_year, event_remapped) |>
+  dplyr::mutate(y_w = y_w - mean(y_w)) |>
+  dplyr::ungroup() |> 
+  select(y_w,  addedto_prelim_sfha, removedfrom_prelim_sfha, everything())
+
+df_treatment <- df_prep |>
+  dplyr::group_by(pin) |>
+  dplyr::mutate(y_w = log(sale_price) - mean(log(sale_price))) |>
+  dplyr::ungroup() |>
+  dplyr::group_by(sale_year) |>
+  dplyr::mutate(y_w = y_w - mean(y_w)) |>
+  dplyr::ungroup()
+
+```
 
 
 > Skim this: https://www.bookdown.org/rwnahhas/RMPH/mlr-interaction.html
@@ -249,33 +549,26 @@ table(df_prep$rel_year_remove_prelim)
 
 ## FIRM updates as Information Events
 
-
 **Average Within-Parcel Effect of SFHA Status (PIN × Year FE)**
 
-The “countywide” models average within-parcel response to SFHA status, aggregated across all parcels that ever change status. `in_eff_sfha` ignores asymmetric effects of being added or removed to the SFHA. `addedto_eff_sfha` and `removedfrom_eff_sfha` allow for estimation of the effect of being added or removed from an SFHA without assuming that the effect is symmetric. 
-
+The “countywide” models average within-parcel response to SFHA status, aggregated across all parcels that ever change status. `in_eff_sfha` ignores asymmetric effects of being added or removed to the SFHA. `addedto_eff_sfha` and `removedfrom_eff_sfha` allow for estimation of the effect of being added or removed from an SFHA without assuming that the effect is symmetric.
 
 $\log(p_{it}) = \beta_1 \text{in_eff_sfha}_{it} + \gamma_i + \eta_t + \varepsilon_{it}$
 
-
 $\log(p_{it}) = \beta_1 \text{in_eff_sfha}_{it} + \beta_2 \text{Triad} + \beta_{3} (\text{in_eff_sfha}_{it} \times \text{Triad}) + \gamma_i + \eta_t + \varepsilon_{it}$
-
-
 
 $\log(p_{it}) = \beta_1 \text{SFHA Added}_{it} + \beta_2 \text{SFHA Removed}_{it} + \gamma_i + \eta_t + \varepsilon_{it}$
 
-
-
 $\log(p_{it}) = \beta_1 \text{SFHA Added}_{it} + \beta_2 \text{Triad} + \beta_{3} (\text{SFHA Added}_{it} \times \text{Triad}) + \beta_1 \text{SFHA Removed}_{it}  + \beta_{3} (\text{SFHA Removed}_{it} \times \text{Triad})+ \gamma_i + \eta_t + \varepsilon_{it}$
 
-
-
 where Triad drops out of the equation because it is time invariant.
-
 
 ```{r}
 #| label: tbl-effective-fixedeffects-allmodels
 #| tbl-cap: "**Average Effect of EFFECTIVE SFHA Status** Within-parcel effect of SFHA exposure over time. Only identifies the effect if SFHA status changes for a parcel. For always-in or always-out parcels, FE wipe out the variation. Interacting with Triad allows for regioinal heterogeneity in the effect."
+#| error: true
+#| warning: true
+#| message: true
 
 
 
@@ -296,27 +589,27 @@ effective_twfe <- bind_models(
     clusters = clusters_county,
    prefix = "Eff County - Both Togeth"
   ),
-  # Asymmetric: added
-  run_by_cluster(
-    log(sale_price) ~ addedto_eff_sfha | pin + sale_year,
-    data = df_prep,
-    clusters = clusters_county,
-   prefix = "Eff County - Added"
-  ),
+  # # Asymmetric: added
+  # run_by_cluster(
+  #   log(sale_price) ~ addedto_eff_sfha | pin + sale_year,
+  #   data = df_prep,
+  #   clusters = clusters_county,
+  #  prefix = "Eff County - Added"
+  # ),
   
-    run_by_cluster(
-    log(sale_price) ~ addedto_eff_sfha | pin + sale_year,
-    data = df_prep |> filter(treat_year_remove_eff == 10000),
-    clusters = clusters_county,
-   prefix = "Eff County - Added - No Rem"
-  ),
-  
-      run_by_cluster(
-    log(sale_price) ~ addedto_eff_sfha | pin + sale_year,
-    data = df_prep |> filter(change_type !=  "Always SFHA" & treat_year_remove_eff == 10000),
-    clusters = clusters_county,
-   prefix = "Eff County - Added - Subset"
-  ),
+  #   run_by_cluster(
+  #   log(sale_price) ~ addedto_eff_sfha | pin + sale_year,
+  #   data = df_prep |> filter(treat_year_remove_eff == 10000),
+  #   clusters = clusters_county,
+  #  prefix = "Eff County - Added - No Rem"
+  # ),
+  # 
+  #     run_by_cluster(
+  #   log(sale_price) ~ addedto_eff_sfha | pin + sale_year,
+  #   data = df_prep |> filter(change_type !=  "Always SFHA" & treat_year_remove_eff == 10000),
+  #   clusters = clusters_county,
+  #  prefix = "Eff County - Added - Subset"
+  # ),
   
   run_by_cluster(
     log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year,
@@ -347,22 +640,22 @@ effective_twfe <- bind_models(
    prefix = "Eff Triads - Add or Remove"
   ),
 
+  # 
+  # # Heterogeneity by Triad (interaction spec)
+  # run_by_cluster(
+  #   log(sale_price) ~ addedto_eff_sfha*Triad | pin + sale_year,
+  #   data = df_prep |> filter(change_type !=  "Always SFHA" & treat_year_remove_eff == 10000),
+  #   clusters = clusters_county,
+  #  prefix = "Eff Triads - Add - Subset"
+  # ),
+
 
   # Heterogeneity by Triad (interaction spec)
   run_by_cluster(
-    log(sale_price) ~ addedto_eff_sfha*Triad | pin + sale_year,
-    data = df_prep |> filter(change_type !=  "Always SFHA" & treat_year_remove_eff == 10000),
-    clusters = clusters_county,
-   prefix = "Eff Triads - Add - Subset"
-  ),
-
-
-  # Heterogeneity by Triad (interaction spec)
-  run_by_cluster(
-    log(sale_price) ~  removedfrom_eff_sfha*Triad | pin + sale_year,
+    log(sale_price) ~  removedfrom_eff_sfha | pin + sale_year^Triad,
     data = df_prep |> filter(change_type != "Never SFHA" & treat_year_add_eff== 10000),
     clusters = clusters_county,
-   prefix = "Eff Triads - Remove - Subset"
+   prefix = "Eff Remove - Year^Triad FE"
   )
 )
 
@@ -374,7 +667,6 @@ all_models_formatted <- modelsummary::modelsummary(effective_twfe,
 
 all_models_formatted
 ```
-
 
 ```{r}
 #| label: tbl-prelim-ate-allmodels
@@ -412,6 +704,14 @@ prelim_twfe <- bind_models(
     clusters = clusters_county,
     prefix = "Prelim County- Add - No Remove"
   ),
+  # 
+  # run_by_cluster(
+  #   log(sale_price) ~ addedto_prelim_sfha  | pin + sale_year + qtr,
+  #   data = df_prep |> filter(treat_year_remove_prelim == 10000),
+  #   clusters = clusters_county,
+  #   prefix = "Prelim County- Add - No Remove - Qtr FE"
+  # ),
+  
   
     run_by_cluster(
     log(sale_price) ~ addedto_prelim_sfha  | pin + sale_year,
@@ -433,6 +733,14 @@ prelim_twfe <- bind_models(
     clusters = clusters_county,
    prefix = "Pre County - Remove - No Add"
   ),
+  # 
+  # run_by_cluster(
+  #   log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year + qtr,
+  #   data = df_prep |> filter(treat_year_add_prelim == 10000),
+  #   clusters = clusters_county,
+  #  prefix = "Pre County - Remove - No Add - Qtr FE"
+  # ),
+  # 
   
     run_by_cluster(
     log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
@@ -481,39 +789,10 @@ all_models_formatted
 ```
 
 
-```{r}
-#| label: tbl-mappedout-prelim-fsplit2
-#| tbl-cap: "**Part of Table 5. Full sample, removed from SFHA.**Comparison group is only PINs in same FIRMs that were updated. that were always in SFHA"
-#| eval: false
-#| include: false
-
-basemodel_removed_fullsample <- df_prep |> filter(change_type_prelim != "Never SFHA" & 
-                           # and properties that are never treated for being added to the SFHA
-                           treat_year_add_eff == 10000 & treat_year_add_prelim == 10000)  |>
-feols(log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year) 
-
-
-modelsummary(
-  list(
-    "Clustered by PIN" = basemodel_removed_fullsample,
-    "Clustered by Parcel" =  basemodel_removed_fullsample,
-    "Clustered by Muni" = basemodel_removed_fullsample
-  ),
-  vcov = list(
-    ~pin,
-    ~pin10,
-    ~clean_name
-  ),
-  gof_map = c("nobs", "r.squared", "adj.r.squared", "rmse"), # Customize which GOF statistics to show
-  stars = TRUE
-)
-
-```
-
-
 $\log(p_{it}) = \beta_1 \text{SFHA Added}_{it} + \beta_2 \text{Triad}_{it} + \beta_{3} (\text{SFHA Added}_{it} \times \text{Triad}) + \gamma_i + \eta_t + \varepsilon_{it}$
 
 where the sample excludes properties that were removed from the SFHA.
+
 
 $\log(p_{it}) = \beta_1 \text{SFHA Removed}_{it} + \beta_2 \text{Triad}_{it} + \beta_{3} (\text{SFHA Removed}_{it} \times \text{Triad}) + \gamma_i + \eta_t + \varepsilon_{it}$
 
@@ -522,9 +801,9 @@ where the sample excludes properties that were added to the SFHA.
 
 ### Subset to just properties Always in SFHA or Changed SFHA (specifically removed from)
 
-Exclude properties that were never in SFHA.   
+Exclude properties that were never in SFHA.  
 
-$\log(p_{it}) = \beta_1 \text{SFHA Removed}_{it} + \beta_2 \text{Triad}_{it} + \beta_{3} (\text{SFHA Removed}_{it} \times \text{Triad}) + \gamma_i + \eta_t + \varepsilon_{it}$
+$\log(p_{it}) = \beta_1 \text{SFHA Removed}_{it} + \beta_2 \text{Triad}_{it} + \beta_{3} (\text{SFHA Removed}_{it} \times \text{Triad}) + \gamma_i + \eta_t + \varepsilon_{it}$   
 
 where the sample excludes properties that were added to the SFHA.
 
@@ -533,11 +812,22 @@ where the sample excludes properties that were added to the SFHA.
 #| tbl-cap: "Restricts the sample to parcels whose classification changed from in → out between FIRMs with comparison group of only properties that were Always in an SFHA."
 
 
-df2 <- df_prep |> filter(change_type != "Never SFHA" & 
+df_sub <- df_prep |> filter(change_type != "Never SFHA" & 
                            # and properties that are never treated for being added to the SFHA
                            treat_year_add_eff ==10000 & treat_year_add_prelim == 10000)
 
-table(df2$change_type)
+valid_cohorts <- df_sub |>
+  group_by(pre_date_chr) |>
+  summarise(
+    n = n(),
+    n_treated = sum(removedfrom_prelim_sfha == TRUE, na.rm = TRUE),
+    n_untreated = sum(removedfrom_prelim_sfha == FALSE, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(n_treated > 0, n_untreated > 0) |>
+  pull(pre_date_chr)
+
+df2 <- df_sub |>filter(pre_date_chr %in% valid_cohorts)
 
 prelim_twfe <- bind_models(
   run_by_cluster(
@@ -564,124 +854,45 @@ all_models_formatted_prelim <- modelsummary::modelsummary(prelim_twfe,
 all_models_formatted_prelim
 ```
 
+Exclude properties that were Always in SFHA.
 
-
-Exclude properties that were Always in SFHA.   
-
-Coefficient is hopefully the local average treatment effect (LATE).  
+Coefficient is hopefully the local average treatment effect (LATE).
 
 $\log(p_{it}) = \beta_1 \text{SFHA Added}_{it} + \beta_2 \text{Triad}_{it} + \beta_{3} (\text{SFHA Added}_{it} \times \text{Triad}) + \gamma_i + \eta_t + \varepsilon_{it}$
 
 where the sample excludes properties that were added to the SFHA.
 
-
-```{r}
-df2 <- df_prep |> 
-  # only want PINs Never in SFHA and added to SFHA for comparison
-  filter(change_type != "Always SFHA" & 
-                           # and properties that are never treated for being removed to the SFHA
-                           treat_year_remove_eff == 10000 & treat_year_remove_prelim == 10000)
-table(df2$change_type)
-```
-
-
-
-
-**Added to SFHA compared to properties that were never in the SFHA**. Comparison group excludes properties that were always in the SFHA and those that were removed from the SFHA at some point. 
+**Added to SFHA compared to properties that were never in the SFHA**. Comparison group excludes properties that were always in the SFHA and those that were removed from the SFHA at some point.
 
 ```{r}
 #| label: tbl-mappedin-prelim-fsplit
 #| tbl-cap: "**Part of Table 6.** Comparison group is only PINs in same FIRMs that were updated that were never in an SFHA."
 
-df_prep |> 
+df_sub <- df_prep |> 
   filter(change_type != "Always SFHA" & 
                            # and properties that are never treated for being removed to the SFHA
-                         #  treat_year_remove_eff == 10000 & 
-                    treat_year_remove_prelim == 10000 &
-                 (pre_date_chr != "2005-01-01" #& pre_date_chr != "2019-07-01"
-                  )
-                  )  |>
+                    treat_year_remove_prelim == 10000  )
+                  
+
+valid_cohorts <- df_sub |>
+  group_by(pre_date_chr) |>
+  summarise(
+    n = n(),
+    n_treated = sum(addedto_prelim_sfha == TRUE, na.rm = TRUE),
+    n_untreated = sum(addedto_prelim_sfha == FALSE, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(n_treated > 0, n_untreated > 0) |>
+  pull(pre_date_chr)
   
-  feols(log(sale_price) ~ addedto_prelim_sfha | pin + sale_year,
+df_sub |> filter(pre_date_chr %in% valid_cohorts) |> feols(log(sale_price) ~ addedto_prelim_sfha | pin + sale_year,
         fsplit= ~pre_date_chr,
         cluster = ~pin10
         
   ) |> modelsummary(stars = TRUE)
 ```
 
-
-**Removed from SFHA compared to properties that were still in the SFHA**. Comparison group excludes properties that were never in the SFHA and those that were added to the SFHA at some point. 
-
-```{r}
-#| label: tbl-mappedout-prelim-fsplit
-#| tbl-cap: "Comparison group is only PINs in same FIRMs that were updated."
-#| error: true
-#| warning: true
-#| message: true
-
-df_prep |> filter(change_type != "Never SFHA" & 
-                           # and properties that are never treated for being added to the SFHA
-                         #  treat_year_add_eff == 10000 & 
-                    treat_year_add_prelim == 10000 &
-                    # keeps it from throwing errors when there are 0 observations in the subset
-                    # if there were ever treated observations in these years, undo this!
-                    (pre_date_chr != "2005-01-01" )#& pre_date_chr != "2019-07-01")
-                  )  |>
-     # feols(log(sale_price) ~ sw(removedfrom_prelim_sfha*change_type) | pin + sale_year,
-      feols(log(sale_price) ~ sw(removedfrom_prelim_sfha*change_type_prelim) | pin + sale_year,
-
-     # data = df_prep,
-      cluster = ~ pin10,
-      fsplit= ~ pre_date_chr
-    ) |> 
-  modelsummary(stars = TRUE)
-```
-
-
-
-```{r}
-#| label: tbl-mappedin-prelim-fsplit-1var
-#| tbl-cap: "Comparison group is only PINs in same FIRMs that were updated."
-#| error: true
-#| warning: true
-#| message: true
-
-df_prep |> filter(change_type != "Always SFHA" & 
-                           # and properties that are never treated for being added to the SFHA
-                         #  treat_year_add_eff == 10000 & 
-                    treat_year_remove_prelim == 10000 &
-                    # keeps it from throwing errors when there are 0 observations in the subset
-                    # if there were ever treated observations in these years, undo this!
-                  #  (pre_date_chr != "2005-01-01"  & pre_date_chr != "2019-07-01")
-                   pre_date_chr != "2005-01-01"
-
-                  )  |>
-     # feols(log(sale_price) ~ sw(removedfrom_prelim_sfha*change_type) | pin + sale_year,
-      feols(log(sale_price) ~ sw(addedto_prelim_sfha) | pin + sale_year,
-           cluster = ~ pin10,
-      fsplit= ~ pre_date_chr
-    ) |> 
-  modelsummary(stars = TRUE)
-
-
-df_prep |> filter(change_type != "Always SFHA" & 
-                           # and properties that are never treated for being added to the SFHA
-                         #  treat_year_add_eff == 10000 & 
-                    treat_year_remove_prelim == 10000 #&
-                    # keeps it from throwing errors when there are 0 observations in the subset
-                    # if there were ever treated observations in these years, undo this!
-                  #  (pre_date_chr != "2005-01-01" & pre_date_chr != "2019-07-01")
-                  )  |>
-     # feols(log(sale_price) ~ sw(removedfrom_prelim_sfha*change_type) | pin + sale_year,
-      feols(log(sale_price) ~ sw(in_lomr*treat_year_remove_prelim) | pin + sale_year,
-           cluster = ~ pin10,
-      fsplit= ~ pre_date_chr
-    ) |> 
-  modelsummary(stars = TRUE)
-```
-
-
-
+**Removed from SFHA compared to properties that were still in the SFHA**. Comparison group excludes properties that were never in the SFHA and those that were added to the SFHA at some point.
 
 
 ```{r}
@@ -691,19 +902,29 @@ df_prep |> filter(change_type != "Always SFHA" &
 #| warning: true
 #| message: true
 
-df3 <- df_prep |> filter(change_type != "Never SFHA" & 
+df_sub <- df_prep |> filter(change_type != "Never SFHA" & 
                            # and properties that are never treated for being added to the SFHA
-                           treat_year_add_eff == 10000 & treat_year_add_prelim == 10000 &
-                           pre_date_chr != "2005-01-01" & pre_date_chr != "2019-07-01") 
+                           treat_year_add_eff == 10000 & treat_year_add_prelim == 10000 ) 
 
+valid_cohorts <- df_sub |>
+  group_by(pre_date_chr) |>
+  summarise(
+    n = n(),
+    n_treated = sum(removedfrom_prelim_sfha == TRUE, na.rm = TRUE),
+    n_untreated = sum(removedfrom_prelim_sfha == FALSE, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(n_treated > 0, n_untreated > 0) |>
+  pull(pre_date_chr)
+  
+df3 <- df_sub |> filter(pre_date_chr %in% valid_cohorts)
+  
 removed_models <- list( 
-
-  mod1 <- feols(log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
+  mod1 <- feols(log(sale_price) ~ i(sale_year, removedfrom_prelim_sfha) | pin + Triad,
       data = df3,
           fsplit= ~ pre_date_chr,
-      cluster = ~pin10
+      cluster = ~ pin10
 )
-
 ) 
 
 all_models_formatted_prelim_removed_dfirm <- modelsummary::modelsummary(removed_models,
@@ -714,12 +935,38 @@ all_models_formatted_prelim_removed_dfirm <- modelsummary::modelsummary(removed_
 all_models_formatted_prelim_removed_dfirm
 
 
+```
 
+```{r}
+#| label: tbl-mappedout-prelim-withlomrs
+#| tbl-cap: "**Part of Table 5. Has LOMRs for removal."
+#| error: true
+#| warning: true
+#| message: true
 
+df_sub <- df_prep |> 
+ # mutate(removedfrom_prelim_sfha = ifelse( in_prelim_sfha == TRUE & in_lomr ==TRUE, removedfrom_prelim_sfha == TRUE, removedfrom_prelim_sfha ) ) |>
+
+filter(change_type != "Never SFHA" & 
+                           # and properties that are never treated for being added to the SFHA
+                           treat_year_add_eff == 10000 & treat_year_add_prelim == 10000) 
+
+valid_cohorts <- df_sub |>
+  group_by(pre_date_chr) |>
+  summarise(
+    n = n(),
+    n_treated = sum(removedfrom_prelim_sfha == TRUE, na.rm = TRUE),
+    n_untreated = sum(removedfrom_prelim_sfha == FALSE, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(n_treated > 0, n_untreated > 0) |>
+  pull(pre_date_chr)
+  
+df3 <- df_sub |> filter(pre_date_chr %in% valid_cohorts)
 
 removed_models <- list( 
 
-  mod1 <- feols(log(sale_price) ~ removedfrom_prelim_sfha*in_lomr| pin + sale_year,
+  mod1 <- feols(log(sale_price) ~ sw(removedfrom_prelim_sfha*in_lomr) | pin + sale_year,
       data = df3,
           fsplit= ~ pre_date_chr,
       cluster = ~pin10
