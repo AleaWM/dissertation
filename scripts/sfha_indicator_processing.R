@@ -147,6 +147,7 @@ tar_load(sfha_compare_pin10_fourway)
 #   "  - indicator_summary.csv")
 #
 
+
 # made in ArcGIS using 2025 parcels. Is missing any parcel that didn't still exist in 2025.
 parcels_with_firms <- readxl::read_xlsx("data/processed/parcel_centroids_FIRM_PAN.xlsx") |>
   select(pin10 = PIN10, FIRM_PAN) |> distinct()
@@ -176,6 +177,7 @@ stopifnot(parcels_with_firm_dates |> group_by(pin10) |> summarize(n = n()) |> fi
 # Made in Feb 2026 for checking R targets pipeline
 indicator_combined <- read_rds("data/processed/indicator_combined.RDS")
 
+# tried full join, March 5 2025
 nfhl_indicators <- parcels_with_firm_dates |>
   left_join(indicator_combined, by = "pin10")
 
@@ -185,7 +187,7 @@ source("R/sfha_targets_functions.R")
 
 sales_file <- "data/raw/Assessor_-_Parcel_Sales_20251229.csv"
 
-sales <- read_sales_assessor(sales_file, min_year = 2010)
+sales <- read_sales_assessor(sales_file, min_year = 2008)
 
 # identifying what parcels I actually need to care about for matching to polygons gut check
 parcels_sold <- sales |> mutate(township = str_sub(pin10, 1, 2)) |>
@@ -337,12 +339,12 @@ sales_joined <- sales_joined2
 # sales_joined |> filter(is.na(PRE_DATE)) |> filter(!pin10 %in% drop_parcels)
 # sales_joined |> group_by(pin10) |> summarize(n = n()) |> arrange(desc(n))
 
-missing_data <- sales_joined |> filter(!pin10 %in% drop_parcels) |>
+missing_data <- sales_joined |>
   filter(is.na(FIRM_PAN)) |>
   distinct(pin,  pin10, sale_date, sale_price)
 
 
-
+dropped_data <- sales_joined |> filter(!pin10 %in% drop_parcels)
 # sales_joined |> filter(is.na(FIRM_PAN)) |> filter(!pin10 %in% drop_parcels)
 #
 # missing_data_parcels <- missing_data |> group_by(pin10) |> summarize(n = n()) |> arrange(desc(n))
@@ -381,282 +383,9 @@ sales_joined <- sales_joined |>
 sales_joined |> filter(is.na(FIRM_PAN)) |>
   group_by(pin10) |> distinct(pin10)
 
-
-pin_muni_key_file <-  "data/raw/pin_muni_key.csv"
-muni_nicknames_file <- "../Merriman RA/ptax/Necessary_Files/muni_shortnames.xlsx"
-floodfactor_file <- "data/processed/floodfactor_scores.csv"
-manual_ff_scores <- readxl::read_xlsx("data/processed/pins_with_some_addresses_forgoogle.xlsx") |>
-  mutate(pin10 = str_pad(pin10, 10, side = "left", pad = "0"))
-
-
-pin_muni_key_tbl <- read_pin_muni_key(pin_muni_key_file, muni_nicknames_file, floodfactor_file)
-
-
-specs <- list(
-  parcel_sfha  = c(pre = "parcel_sfha_2018",  eff = "parcel_sfha_2026"),
-  bldg_sfha    = c(pre = "bldg_sfha_2018",    eff = "bldg_sfha_2026"),
-  parcel_1in500 = c(pre = "parcel_1in500_2018", eff = "parcel_1in500_2026"),
-  bldg_1in500  = c(pre = "bldg_1in500_2018",  eff = "bldg_1in500_2026")
-)
-
-add_change_vars_for_specs <- function(df, specs) {
-  out <- df
-
-  for (key in names(specs)) {
-    pre_col <- specs[[key]][["pre"]]
-    eff_col <- specs[[key]][["eff"]]
-
-    # skip if missing
-    if (!all(c(pre_col, eff_col) %in% names(out))) {
-      message("Skipping ", key, " (missing cols: ",
-        paste(setdiff(c(pre_col, eff_col), names(out)), collapse = ", "), ")")
-      next
-    }
-
-    in_eff_nm    <- paste0("in_eff_", key)
-    in_pre_nm    <- paste0("in_prelim_", key)
-    lag_eff_nm   <- paste0("lag_eff_", key)
-    lag_pre_nm   <- paste0("lag_pre_", key)
-
-    add_eff_ty   <- paste0("added_eff_thisyear_", key)
-    rem_eff_ty   <- paste0("removed_eff_thisyear_", key)
-    add_pre_ty   <- paste0("added_pre_thisyear_", key)
-    rem_pre_ty   <- paste0("removed_pre_thisyear_", key)
-
-    add_eff_ever <- paste0("addedto_eff_", key)
-    rem_eff_ever <- paste0("removedfrom_eff_", key)
-    add_pre_ever <- paste0("addedto_prelim_", key)
-    rem_pre_ever <- paste0("removedfrom_prelim_", key)
-
-    out <- out |>
-      mutate(
-        # robustly handle NA flags
-        "{pre_col}" := replace_na(.data[[pre_col]], FALSE),
-        "{eff_col}" := replace_na(.data[[eff_col]], FALSE),
-
-        # state at sale_date using your timing logic
-        "{in_eff_nm}" := case_when(
-          sale_date >= EFF_DATE ~ .data[[eff_col]],
-          sale_date <  EFF_DATE ~ .data[[pre_col]]
-        ),
-        "{in_pre_nm}" := case_when(
-          sale_date >= PRE_DATE ~ .data[[eff_col]],
-          sale_date <  PRE_DATE ~ .data[[pre_col]]
-        ),
-
-        in_lomr = ifelse(!is.na(lomr_date) & sale_date >= lomr_date, TRUE, FALSE)
-      ) |>
-      group_by(pin) |>
-      arrange(sale_date, .by_group = TRUE) |>
-      mutate(
-        "{lag_eff_nm}" := lag(.data[[in_eff_nm]]),
-        "{lag_pre_nm}" := lag(.data[[in_pre_nm]]),
-
-        "{add_eff_ty}" := !is.na(.data[[lag_eff_nm]]) & !is.na(.data[[in_eff_nm]]) &
-          .data[[lag_eff_nm]] == FALSE & .data[[in_eff_nm]] == TRUE,
-
-        "{rem_eff_ty}" := !is.na(.data[[lag_eff_nm]]) & !is.na(.data[[in_eff_nm]]) &
-          .data[[lag_eff_nm]] == TRUE & .data[[in_eff_nm]] == FALSE,
-
-        "{add_pre_ty}" := !is.na(.data[[lag_pre_nm]]) & !is.na(.data[[in_pre_nm]]) &
-          .data[[lag_pre_nm]] == FALSE & .data[[in_pre_nm]] == TRUE,
-
-        "{rem_pre_ty}" := !is.na(.data[[lag_pre_nm]]) & !is.na(.data[[in_pre_nm]]) &
-          .data[[lag_pre_nm]] == TRUE & .data[[in_pre_nm]] == FALSE,
-
-        # ever treated (within-pin cumulative)
-        "{add_eff_ever}" := cumany(.data[[add_eff_ty]]),
-        "{rem_eff_ever}" := cumany(.data[[rem_eff_ty]]),
-        "{add_pre_ever}" := cumany(.data[[add_pre_ty]]),
-        "{rem_pre_ever}" := cumany(.data[[rem_pre_ty]])
-      ) |>
-      ungroup()
-  }
-
-  out
-}
-
-sales_prepped_all <- add_change_vars_for_specs(sales_joined, specs)
-
-make_change_type <- function(df, in_var, name) {
-  df |>
-    group_by(pin) |>
-    mutate(
-      times_sold = n(),
-      "{name}" := case_when(
-        sum(.data[[in_var]]) == times_sold ~ "Always",
-        sum(.data[[in_var]]) == 0 ~ "Never",
-        TRUE ~ "Changes"
-      )
-    ) |>
-    ungroup()
-}
-
-sales_prepped_all <- make_change_type(sales_prepped_all, "in_eff_parcel_sfha", "change_type_eff_parcel_sfha")
-sales_prepped_all <- make_change_type(sales_prepped_all, "in_prelim_parcel_sfha", "change_type_pre_parcel_sfha")
-
-
-# ------------------------------------------------------------------------------
-# # Change variable if you want other risk polygon indicators!!
-# sales_joined2$sfha2018_col <- sales_joined2$bldg_sfha_2018
-# sales_joined$sfha2024_col <- sales_joined$bldg_sfha_2026
-#
-# sales_joined$sfha2018_col <- sales_joined$parcel_sfha_2018
-# sales_joined$sfha2024_col <- sales_joined$parcel_sfha_2026
-#
-#
-#
-# # sales_joined goes through make_sfha_timing_vars() function in _targets.R pipeline
-# sales_base <- sales_joined |>
-#   # fill_missing_panels() |>
-#   # I don't think this is needed anymore because there does not appear to be missing dates or panels?
-#   # dplyr::mutate(
-#   #   PRE_DATE = as.Date(.data$PRE_DATE),
-#   #   EFF_DATE = as.Date(.data$EFF_DATE),
-#   #
-#   #   EFF_DATE = ifelse(EFF_DATE == as.Date("2026-01-23"), as.Date("2008-08-19"), as.Date(as.character(EFF_DATE))),
-#   #
-#   #   EFF_DATE = case_when(
-#   #     is.na(EFF_DATE) & neighborhood_code %in% c("10024", "18030", "19020", "19060", "24032", "25160",  "30011",
-#   #       "38040", "38110", "70080", "71074", "74022",  "74030",   "77120", "77131") ~ as.Date("2008-08-19"),
-#   #     is.na(EFF_DATE) & neighborhood_code %in% c("13032", "28039", "28100", "15907",  "39081", "39200", "39211") ~ as.Date("2019-11-01"),
-#   #     is.na(EFF_DATE) & neighborhood_code %in% c("23092", "23171", "70010",  "73032", "73041",  "73084",
-#   #       "73093",  "74013",  "76010", "76011") ~ as.Date("2021-09-10"),
-#   #     TRUE ~ as.Date(EFF_DATE)),
-#   #   PRE_DATE = case_when(
-#   #     is.na(PRE_DATE) & neighborhood_code %in% c("19020", "19060", "24032", "25160",  "30011",
-#   #       "38040", "38110", "70080", "71074", "74022",  "74030", "77120", "77131") ~ as.Date("2005-01-01"),
-#   #     is.na(PRE_DATE) &  neighborhood_code %in% c("13032", "15907", "28039", "28100", "39200", "39081", "39211") ~ as.Date("2015-02-12"),
-#   #     is.na(PRE_DATE) & neighborhood_code %in% c("23092", "23171", "70010",  "73032", "73041",  "73084",
-#   #       "73093",  "74013",  "76010", "76011") ~ as.Date("2019-07-01"),
-#   #     is.na(PRE_DATE) & neighborhood_code %in% c("10024", "18030") ~ as.Date("2021-09-22"),
-#   #
-#   #     TRUE ~ as_date(PRE_DATE))) |>
-#   # filter(!is.na(PRE_DATE) &
-#   #   !is.na(sfha2024_col) & !is.na(sfha2018_col)) |>
-#   mutate(
-#     # the flood zones that existed in the 2018 state NFHL were last updated in 2008. sfha2018 is the default SFHA status for the observations, then lomrs and future updates will be incorporated
-#     in_eff_sfha = case_when(
-#       #  EFF_DATE == as.Date("2008-08-19") ~ sfha2018_col,
-#       sale_date >= EFF_DATE ~ sfha2024_col,
-#       sale_date < EFF_DATE ~ sfha2018_col),
-#
-#
-#     # create similar variable but for the preliminary date: model must deal with anticipation to change
-#     in_prelim_sfha = case_when(
-#       #  PRE_DATE == as.Date("2005-01-01") ~ sfha2018_col,    # never had FIRM update. Use SFHA polygons from 2018 NFHL before any updates occurred.
-#       # PRE_DATE == as.Date("2021-09-22") & sale_date > PRE_DATE ~ sfha2026_col,
-#       sale_date >= PRE_DATE  ~ sfha2024_col,
-#       sale_date < PRE_DATE ~ sfha2018_col),
-#
-#     in_lomr       = ifelse(!is.na(lomr_date) & sale_date >= lomr_date, TRUE, FALSE),
-#   )
-
-# table(sales_prepped$in_eff_sfha)
-# table(sales_prepped$bldg_sfha_2018)
-
-# # create lagged variables, order sale dates within PIN!!
-# sales_prepped2 <- sales_prepped |>
-#   dplyr::group_by(.data$pin) |>
-#   dplyr::arrange(.data$sale_date, .by_group = TRUE) |>
-#   dplyr::mutate(
-#     lag_eff = dplyr::lag(.data$in_eff_sfha),
-#     lag_pre = dplyr::lag(.data$in_prelim_sfha)) |>
-#   ungroup() |>
-#
-#   mutate(
-#     added_eff_thisyear =
-#       !is.na(lag_eff) &
-#         !is.na(in_eff_sfha) &
-#         lag_eff == FALSE & in_eff_sfha == TRUE,
-#
-#     removed_eff_thisyear =
-#       !is.na(lag_eff) &
-#         !is.na(in_eff_sfha) &
-#         lag_eff == TRUE & in_eff_sfha == FALSE,
-#
-#     added_pre_thisyear =
-#       !is.na(lag_pre) &
-#         !is.na(in_prelim_sfha) &
-#         lag_pre == FALSE & in_prelim_sfha == TRUE,
-#
-#     removed_pre_thisyear =
-#       !is.na(lag_pre) &
-#         !is.na(in_prelim_sfha) &
-#         lag_pre == TRUE & in_prelim_sfha == FALSE
-#   ) |>
-#   dplyr::ungroup()
-#
-# sales_prepped3 <- sales_prepped2 |>
-#   group_by(pin) |>
-#   arrange(pin, sale_date) |>
-#   mutate(
-#     addedto_prelim_sfha = (cumany(added_pre_thisyear == T)),
-#     removedfrom_prelim_sfha = (cumany(removed_pre_thisyear == T)),
-#     addedto_eff_sfha = (cumany(added_eff_thisyear == T)),
-#     removedfrom_eff_sfha = (cumany(removed_eff_thisyear == T)),
-#   ) |>
-#   ungroup()
-
-sales_prepped3 <- sales_prepped_all |>
-  select(-c(is_mydec_date, sale_filter_less_than_10k, row_id,
-    sale_filter_deed_type, sale_filter_same_sale_within_365,
-    # township_code, neighborhood_code,
-    is_multisale, sale_type, sale_buyer_name, sale_seller_name, mydec_deed_type
-  ))
-
-df_prep_final <- sales_prepped3 |>
-  mutate( # insure requirement definition you used: in_eff_sfha == 1 and NOT in a LOMR
-    ins_req = if_else(in_eff_bldg_sfha == 1 & in_lomr == FALSE, TRUE, FALSE)) |>
-  left_join(pin_muni_key_tbl, by = "pin") |>    # could clean up to parcel level and then join in but... maybe if i have extra time
-  left_join((manual_ff_scores |> select(pin10, flood_factor_score, clean_name, zip_code, nbhd_code)), by = "pin10") |>
-  mutate(
-    flood_factor_score = ifelse(is.na(env_flood_fs_factor), flood_factor_score, env_flood_fs_factor),
-    clean_name = ifelse(is.na(clean_name.x), clean_name.y, clean_name.x),
-    high_ff_score = ifelse(env_flood_fs_factor > 4 | flood_factor_score > 4, TRUE, FALSE),
-    zip_code = ifelse(is.na(zip_code.x), zip_code.y, zip_code.x),
-    nbhd_code = ifelse(is.na(nbhd_code.x), nbhd_code.y, nbhd_code.x),
-  ) |>
-  select(-c(contains(".x"))) |>
-  select(-c(contains(".y")))
-
-# create event + FF variables + default clean_name
-df_prep_final <- df_prep_final |>
-  filter(!pin10 %in% drop_parcels) |>
-  dplyr::mutate(
-    new_info_released = as.Date("2020-06-29"),
-    event = dplyr::if_else(.data$sale_date <= .data$new_info_released, "1. Pre", "2. Post"),
-    high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE),
-  ) |>
-  # drop columns you said you remove (only if they exist)
-  dplyr::select(-dplyr::any_of(c("agency_name", "agency_num", "short_name", "shpfile_name"))) |>
-  # cleanup helper fields
-  dplyr::select(-dplyr::any_of(c("clean_name_manual", "flood_factor_score_manual", "in_lomr_flag")))
-
-# # change_type factors (your exact logic, but robust)
-# df_prep_final <- df_prep_final |>
-#   group_by(pin) |>
-#   dplyr::mutate(
-#     times_sold = n(),
-#     change_type = case_when(
-#       sum(in_eff_sfha) == times_sold ~ "Always SFHA",
-#       sum(in_eff_sfha) == 0 ~ "Never SFHA",
-#       T ~ "Changes SFHA"),
-#     change_type_prelim =
-#       case_when(
-#         sum(in_prelim_sfha) == times_sold ~ "Always SFHA",
-#         sum(in_prelim_sfha) == 0 ~ "Never SFHA",
-#         T ~ "Changes SFHA")) |>
-#   dplyr::ungroup() |>
-#   dplyr::mutate(
-#     change_type = factor(.data$change_type, levels = c("Never SFHA", "Always SFHA", "Changes SFHA")),
-#     change_type_prelim = factor(.data$change_type_prelim, levels = c("Never SFHA", "Always SFHA", "Changes SFHA"))
-#   )
-# table(df_prep_final$change_type)
-# table(df_prep_final$change_type_prelim)
-
+# try to fill in any missing muni names
 fill_missing_muni_by_nbhd_zip <- function(df_prep) {
-  # Uses first match (your warning). Some zips/nbhds span multiple munis.
+  # Uses first match. Some zips/nbhds span multiple munis.
   if (!all(c("zip_code", "nbhd_code") %in% names(df_prep))) return(df_prep)
 
   # build lookup from non-missing rows
@@ -693,170 +422,235 @@ fill_missing_muni_by_nbhd_zip <- function(df_prep) {
 }
 
 skimr::skim(df_prep_final)
-df_prep_final <- df_prep_final |> fill_missing_muni_by_nbhd_zip()
-
-write_rds(df_prep_final, "data/processed/Q1_redone_all_variables.RDS")
 
 
-### What would have gone into Q1_final_variables.R
+pin_muni_key_file <-  "data/raw/pin_muni_key.csv"
+muni_nicknames_file <- "../Merriman RA/ptax/Necessary_Files/muni_shortnames.xlsx"
+floodfactor_file <- "data/processed/floodfactor_scores.csv"
+manual_ff_scores <- readxl::read_xlsx("data/processed/pins_with_some_addresses_forgoogle.xlsx") |>
+  mutate(pin10 = str_pad(pin10, 10, side = "left", pad = "0"))
 
-library(dplyr)
-library(lubridate)
-library(stringr)
 
-finalize_firm_vars <- function(df, key) {
-  # build column names for this variant
-  in_eff   <- paste0("in_eff_", key)
-  in_pre   <- paste0("in_prelim_", key)
+pin_muni_key_tbl <- read_pin_muni_key(pin_muni_key_file, muni_nicknames_file, floodfactor_file)
 
-  add_eff  <- paste0("addedto_eff_", key)
-  rem_eff  <- paste0("removedfrom_eff_", key)
-  add_pre  <- paste0("addedto_prelim_", key)
-  rem_pre  <- paste0("removedfrom_prelim_", key)
 
-  # sanity: fail fast if missing
-  needed <- c(in_eff, in_pre, add_eff, rem_eff, add_pre, rem_pre, "sale_price", "sale_date", "pin", "EFF_DATE", "PRE_DATE")
-  missing <- setdiff(needed, names(df))
-  if (length(missing) > 0) {
-    stop("Missing required columns for key = ", key, ": ", paste(missing, collapse = ", "))
+
+sales_joined <- sales_joined |>
+  select(-c(is_mydec_date, sale_filter_less_than_10k, row_id,
+    sale_filter_deed_type, sale_filter_same_sale_within_365,
+    # township_code, neighborhood_code,
+    is_multisale, sale_type,
+    sale_buyer_name, sale_seller_name,
+    mydec_deed_type
+  ))
+
+
+
+specs <- list(
+  parcel_sfha  = c(pre = "parcel_sfha_2018",  eff = "parcel_sfha_2026"),
+  bldg_sfha    = c(pre = "bldg_sfha_2018",    eff = "bldg_sfha_2026"),
+  parcel_1in500 = c(pre = "parcel_1in500_2018", eff = "parcel_1in500_2026"),
+  bldg_1in500  = c(pre = "bldg_1in500_2018",  eff = "bldg_1in500_2026")
+)
+
+
+
+
+build_variant_dataset <- function(df_base, key, specs) {
+  pre_col <- specs[[key]][["pre"]]
+  eff_col <- specs[[key]][["eff"]]
+
+  if (!all(c(pre_col, eff_col) %in% names(df_base))) {
+    stop("Missing columns for key ", key, ": ",
+      paste(setdiff(c(pre_col, eff_col), names(df_base)), collapse = ", "))
   }
 
-  out <- df |>
+  df <- df_base |>
     mutate(
-      log_price = log(sale_price),
       sale_date = as.Date(sale_date),
       sale_year = year(sale_date),
+      log_price = log(sale_price),
 
-      eff_date = as.Date(EFF_DATE),
-      pre_date = as.Date(PRE_DATE),
+      PRE_DATE = as.Date(PRE_DATE),
+      EFF_DATE = as.Date(EFF_DATE),
+      pre_date = PRE_DATE,
+      eff_date = EFF_DATE,
+      pre_date_chr = as.factor(pre_date),
       eff_date_chr = as.factor(eff_date),
-      pre_date_chr = as.factor(pre_date)
+
+      # canonical “input” columns for this variant
+      sfha2018_col = replace_na(.data[[pre_col]], FALSE),
+      sfha2026_col = replace_na(.data[[eff_col]], FALSE)
+    ) |>
+    filter(!is.na(pre_date), !is.na(eff_date)) |>
+    mutate(
+      in_eff_sfha = case_when(
+        sale_date >= eff_date ~ sfha2026_col,
+        sale_date <  eff_date ~ sfha2018_col
+      ),
+      in_prelim_sfha = case_when(
+        sale_date >= pre_date ~ sfha2026_col,
+        sale_date <  pre_date ~ sfha2018_col
+      ),
+
+      in_lomr = if ("lomr_date" %in% names(df_base))
+        ifelse(!is.na(lomr_date) & sale_date >= lomr_date, TRUE, FALSE)
+      else FALSE
     ) |>
     group_by(pin) |>
     arrange(sale_date, .by_group = TRUE) |>
     mutate(
-      # first year mapped IN (effective)
-      treat_year_add_eff = ifelse(
-        any(.data[[add_eff]] == TRUE) & eff_date_chr != "2008-08-19",
-        year(eff_date),
-        10000
-      ),
+      lag_eff = lag(in_eff_sfha),
+      lag_pre = lag(in_prelim_sfha),
 
-      # first year mapped OUT (effective)
-      treat_year_remove_eff = ifelse(
-        any(.data[[rem_eff]] == TRUE) & eff_date_chr != "2008-08-19",
-        year(eff_date),
-        10000
-      ),
+      added_eff_thisyear   = !is.na(lag_eff) & lag_eff == FALSE & in_eff_sfha == TRUE,
+      removed_eff_thisyear = !is.na(lag_eff) & lag_eff == TRUE  & in_eff_sfha == FALSE,
 
-      # prelim add/remove years
-      treat_year_add_prelim = ifelse(any(.data[[add_pre]] == TRUE), year(pre_date), 10000),
-      treat_year_remove_prelim = ifelse(any(.data[[rem_pre]] == TRUE), year(pre_date), 10000)
+      added_pre_thisyear   = !is.na(lag_pre) & lag_pre == FALSE & in_prelim_sfha == TRUE,
+      removed_pre_thisyear = !is.na(lag_pre) & lag_pre == TRUE  & in_prelim_sfha == FALSE,
+
+      addedto_prelim_sfha     = cumany(added_pre_thisyear),
+      removedfrom_prelim_sfha = cumany(removed_pre_thisyear),
+      addedto_eff_sfha        = cumany(added_eff_thisyear),
+      removedfrom_eff_sfha    = cumany(removed_eff_thisyear)
+    ) |>
+    ungroup() |>
+    group_by(pin) |>
+    mutate(
+      # treat years (canonical)
+      treat_year_add_eff = ifelse(any(addedto_eff_sfha) & eff_date_chr != "2008-08-19", year(eff_date), 10000),
+      treat_year_remove_eff = ifelse(any(removedfrom_eff_sfha) & eff_date_chr != "2008-08-19", year(eff_date), 10000),
+
+      treat_year_add_prelim = ifelse(any(addedto_prelim_sfha), year(pre_date), 10000),
+      treat_year_remove_prelim = ifelse(any(removedfrom_prelim_sfha), year(pre_date), 10000)
     ) |>
     ungroup() |>
     mutate(
-      # relative time
-      rel_year_add_eff    = ifelse(treat_year_add_eff != 10000,    sale_year - treat_year_add_eff,    -1000),
+      # rel years
+      rel_year_add_eff    = ifelse(treat_year_add_eff != 10000, sale_year - treat_year_add_eff, -1000),
       rel_year_remove_eff = ifelse(treat_year_remove_eff != 10000, sale_year - treat_year_remove_eff, -1000),
-
-      rel_year_add_prelim    = ifelse(treat_year_add_prelim != 10000,    sale_year - treat_year_add_prelim,    -1000),
+      rel_year_add_prelim    = ifelse(treat_year_add_prelim != 10000, sale_year - treat_year_add_prelim, -1000),
       rel_year_remove_prelim = ifelse(treat_year_remove_prelim != 10000, sale_year - treat_year_remove_prelim, -1000),
 
-      # if sale happens in same calendar year but before the map date, treat as -1
-      rel_year_add_prelim    = ifelse(rel_year_add_prelim == 0    & sale_date < pre_date, -1, rel_year_add_prelim),
+      # same-year adjustment
+      rel_year_add_prelim    = ifelse(rel_year_add_prelim == 0 & sale_date < pre_date, -1, rel_year_add_prelim),
       rel_year_remove_prelim = ifelse(rel_year_remove_prelim == 0 & sale_date < pre_date, -1, rel_year_remove_prelim),
+      rel_year_add_eff       = ifelse(rel_year_add_eff == 0 & sale_date < eff_date, -1, rel_year_add_eff),
+      rel_year_remove_eff    = ifelse(rel_year_remove_eff == 0 & sale_date < eff_date, -1, rel_year_remove_eff),
 
-      rel_year_add_eff    = ifelse(rel_year_add_eff == 0    & sale_date < eff_date, -1, rel_year_add_eff),
-      rel_year_remove_eff = ifelse(rel_year_remove_eff == 0 & sale_date < eff_date, -1, rel_year_remove_eff),
-
-      qtr  = quarter(sale_date),
-      year = year(sale_date),
-      sale_qtr_dec = year + (qtr - 1) / 4,
-
+      # group names
       group_name_eff = case_when(
         eff_date == as.Date("2008-08-19") ~ 0,
         eff_date == as.Date("2019-11-01") ~ 2019,
         eff_date == as.Date("2021-09-10") ~ 2021,
         TRUE ~ 0
       ),
-
       group_name_prelim = factor(case_when(
         pre_date == as.Date("2005-01-01") ~ 0,
         pre_date == as.Date("2015-02-12") ~ 2015,
         pre_date == as.Date("2019-07-01") ~ 2019,
         pre_date == as.Date("2021-09-22") ~ 2021,
         TRUE ~ 0
-      ))
-    ) |>
-    mutate(
+      )),
+
       treated_group_eff = case_when(
-        eff_date == as.Date("2008-08-19") & (.data[[add_eff]] | .data[[rem_eff]]) ~ 0,
-        eff_date == as.Date("2019-11-01") & (.data[[add_eff]] | .data[[rem_eff]]) ~ 2019,
-        eff_date == as.Date("2021-09-10") & (.data[[add_eff]] | .data[[rem_eff]]) ~ 2021,
+        eff_date == as.Date("2008-08-19") & (addedto_eff_sfha | removedfrom_eff_sfha) ~ 0,
+        eff_date == as.Date("2019-11-01") & (addedto_eff_sfha | removedfrom_eff_sfha) ~ 2019,
+        eff_date == as.Date("2021-09-10") & (addedto_eff_sfha | removedfrom_eff_sfha) ~ 2021,
         TRUE ~ 0
       ),
-
       treated_group_prelim = case_when(
-        pre_date == as.Date("2005-01-01") & (.data[[add_pre]] | .data[[rem_pre]]) ~ 0,
-        pre_date == as.Date("2015-02-12") & (.data[[add_pre]] | .data[[rem_pre]]) ~ 2015,
-        pre_date == as.Date("2019-07-01") & (.data[[add_pre]] | .data[[rem_pre]]) ~ 2019,
-        pre_date == as.Date("2021-09-22") & (.data[[add_pre]] | .data[[rem_pre]]) ~ 2021,
-        TRUE ~ 0
-      ),
-
-      treated_group_prelim_add = case_when(
-        pre_date == as.Date("2005-01-01") & (.data[[add_pre]]) ~ 0,
-        pre_date == as.Date("2015-02-12") & (.data[[add_pre]]) ~ 2015,
-        pre_date == as.Date("2019-07-01") & (.data[[add_pre]]) ~ 2019,
-        pre_date == as.Date("2021-09-22") & (.data[[add_pre]]) ~ 2021,
-        TRUE ~ 0
-      ),
-
-      treated_group_prelim_remove = case_when(
-        pre_date == as.Date("2005-01-01") & (.data[[rem_pre]]) ~ 0,
-        pre_date == as.Date("2015-02-12") & (.data[[rem_pre]]) ~ 2015,
-        pre_date == as.Date("2019-07-01") & (.data[[rem_pre]]) ~ 2019,
-        pre_date == as.Date("2021-09-22") & (.data[[rem_pre]]) ~ 2021,
+        pre_date == as.Date("2005-01-01") & (addedto_prelim_sfha | removedfrom_prelim_sfha) ~ 0,
+        pre_date == as.Date("2015-02-12") & (addedto_prelim_sfha | removedfrom_prelim_sfha) ~ 2015,
+        pre_date == as.Date("2019-07-01") & (addedto_prelim_sfha | removedfrom_prelim_sfha) ~ 2019,
+        pre_date == as.Date("2021-09-22") & (addedto_prelim_sfha | removedfrom_prelim_sfha) ~ 2021,
         TRUE ~ 0
       )
     ) |>
     group_by(pin) |>
     mutate(
+      times_sold = n(),
+      change_type = case_when(
+        sum(in_eff_sfha) == times_sold ~ "Always SFHA",
+        sum(in_eff_sfha) == 0 ~ "Never SFHA",
+        TRUE ~ "Changes SFHA"
+      ),
+      change_type_prelim = case_when(
+        sum(in_prelim_sfha) == times_sold ~ "Always SFHA",
+        sum(in_prelim_sfha) == 0 ~ "Never SFHA",
+        TRUE ~ "Changes SFHA"
+      ),
       n_sales = n(),
-      ever_added_prelim   = any(.data[[add_pre]] == TRUE),
-      ever_removed_prelim = any(.data[[rem_pre]] == TRUE)
+      ever_added_prelim   = any(addedto_prelim_sfha),
+      ever_removed_prelim = any(removedfrom_prelim_sfha)
     ) |>
     ungroup() |>
     mutate(
+      pre_post_firm = ifelse(sale_date < pre_date, "Not Yet Updated", "Post FIRM Update"),
       event_remapped = ifelse(
         sale_date < pre_date & treated_group_prelim != 0, "Pre",
         ifelse(sale_date > pre_date & treated_group_prelim != 0, "Post", "NotRemapped")
       ),
+      prelim_sfha_category = case_when(
+        ever_added_prelim & !ever_removed_prelim ~ "Added to prelim SFHA",
+        ever_removed_prelim & !ever_added_prelim ~ "Removed from prelim SFHA",
+        change_type_prelim == "Always SFHA" ~ "Always SFHA",
+        change_type_prelim == "Never SFHA" ~ "Never SFHA",
+        TRUE ~ "CHECK ME"
+      )
+    ) |>
+    mutate(variant_key = key)
 
-      # generic category based on ever added/removed prelim for THIS key
-      prelim_category = case_when(
-        ever_added_prelim & !ever_removed_prelim ~ "Added (prelim)",
-        ever_removed_prelim & !ever_added_prelim ~ "Removed (prelim)",
-        TRUE ~ "Other"
-      ),
-
+  df <- df |>
+    mutate( # insure requirement definition you used: in_eff_sfha == 1 and NOT in a LOMR
+      ins_req = if_else(in_eff_sfha == 1 & in_lomr == FALSE, TRUE, FALSE)) |>
+    left_join(pin_muni_key_tbl, by = "pin") |>    # could clean up to parcel level and then join in but... maybe if i have extra time
+    left_join((manual_ff_scores |>
+      select(pin10, flood_factor_score, clean_name, zip_code, nbhd_code)), by = "pin10") |>
+    mutate(
+      flood_factor_score = ifelse(is.na(env_flood_fs_factor), flood_factor_score, env_flood_fs_factor),
+      clean_name = ifelse(is.na(clean_name.x), clean_name.y, clean_name.x),
+      high_ff_score = ifelse(env_flood_fs_factor > 4 | flood_factor_score > 4, TRUE, FALSE),
+      zip_code = ifelse(is.na(zip_code.x), zip_code.y, zip_code.x),
+      nbhd_code = ifelse(is.na(nbhd_code.x), nbhd_code.y, nbhd_code.x),
+    ) |>
+    select(-c(contains(".x"))) |>
+    select(-c(contains(".y"))) |>
+    mutate(
       Triad = case_when(
         clean_name == "Chicago" ~ "City",
         as.numeric(str_sub(pin, 1, 2)) < 13 ~ "North",
         as.numeric(str_sub(pin, 1, 2)) >= 13 ~ "South"
       ),
       Triad = factor(Triad, levels = c("South", "North", "City"))
-    ) |>
-    mutate(variant_key = key) # tag which variant produced these vars
+    )
 
-  out
+  # create event + FF variables + default clean_name
+  df <- df |>
+    dplyr::mutate(
+      new_info_released = as.Date("2020-06-29"),
+      event = dplyr::if_else(.data$sale_date <= .data$new_info_released, "1. Pre", "2. Post"),
+      high_ff_score = ifelse(env_flood_fs_factor > 4, TRUE, FALSE),
+    ) |>
+    # drop columns you said you remove (only if they exist)
+    dplyr::select(-dplyr::any_of(c("agency_name", "agency_num", "short_name", "shpfile_name"))) |>
+    # cleanup helper fields
+    dplyr::select(-dplyr::any_of(c("clean_name_manual", "flood_factor_score_manual", "in_lomr_flag")))
+
+
+
+  df <- df |> fill_missing_muni_by_nbhd_zip()
+
+  df
+
 }
 
 
-keys <- c("parcel_sfha", "bldg_sfha", "parcel_1in500", "bldg_1in500")
+dir.create("data/processed/variants", recursive = TRUE, showWarnings = FALSE)
 
-df_variants <- lapply(keys, \(k) finalize_firm_vars(sales_prepped_all, k))
-names(df_variants) <- keys
+keys <- names(specs)
 
-# Or if you want one stacked dataset:
-df_all_long <- bind_rows(df_variants)
+for (k in keys) {
+  df_k <- build_variant_dataset(df_base = sales_joined, key = k, specs = specs)
+  saveRDS(df_k, file.path("data/processed/variants", paste0("df_prep__", k, "notfiltered.rds")))
+}
