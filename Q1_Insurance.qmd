@@ -27,6 +27,18 @@ library(jtools) # for model table formatting
 library(skimr)  # for skim() command for descriptive statistics
 library(scales)
 library(modelsummary)
+
+source("R/helper_pins_to_drop.R")
+
+
+#df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.RDS")
+df_prep <- readRDS("data/processed/variants/df_prep__bldg_sfha.RDS") |> filter(!pin10 %in% drop_parcels)
+
+#df_prep <- read_rds("data/processed/variants/df_prep__bldg_sfhanotfiltered.RDS") |>   filter(!pin10 %in% drop_parcels)
+
+#df_prep <- readRDS("data/processed/df_prep_bldg_sfha_updated_arcgis_forQ1_assumptiontests.RDS") |> filter(!pin10 %in% drop_parcels)
+
+
 ```
 
 #### Effective FIRMs
@@ -143,8 +155,7 @@ feols(log(sale_price) ~ sw(addedto_eff_sfha*in_lomr) | pin + sale_year,
 ```{r}
 #| tbl-cap: "Observations per year. Includes the pre and post treatment sales for those that were added or removed from an EFFECTIVE SFHA"
 #| layout-ncol: 2
-#| include: false
-#| 
+
 
 table(df_prep$sale_year, df_prep$treat_year_add_eff)
 
@@ -202,7 +213,7 @@ table(df_prep$sale_year, df_prep$ins_req)
 ```{r}
 
 lomr_pins <- readRDS("./data/processed/df_allsales.rds")  |> 
-  filter(lomr_date != 0 ) |> 
+  filter(lomr_date != 0 & !is.na(lomr_date)) |> 
   select(pin, lomr_date) |> distinct()
 
 
