@@ -9,7 +9,6 @@ execute:
   echo: true
   warning: false
   error: true
-#  eval: false
 ---
 
 # Purpose
@@ -188,7 +187,17 @@ See `treat_group_prelim`
 
 ```{r}
 # created in Q1_final_variables.R script
-df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.RDS")
+# df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.RDS")
+
+# created in sfha_indicator_processing.R that uses arcgis and 2025 parcels 
+df_prep <- readRDS("data/processed/df_prep_bldg_sfha_updated_arcgis_forQ1_assumptiontests.RDS")
+
+source("R/helper_pins_to_drop.R")
+
+df_prep <- df_prep |> filter(!pin10 %in% drop_parcels  |          
+               (pin10 == "0113301013" & sale_year > 2014)
+             )
+
 
 table(df_prep$change_type)
 table(df_prep$change_type_prelim)
@@ -217,6 +226,113 @@ table(df_prep$sale_year, df_prep$pre_date, df_prep$removedfrom_prelim_sfha)
 
 ```
 
+## Step 2: Is TWFE messed up?
+
+Goodman-Bacon decomposition
+
+If your subset models are:
+
+full sample
+
+cohort 2015
+
+cohort 2019
+
+cohort 2021
+
+Those separate regressions are not what TWFE is averaging in a clean way. TWFE is mixing:
+
+2015 vs never
+
+2019 vs never
+
+2021 vs never
+
+2015 vs 2019
+
+2015 vs 2021
+
+2019 vs 2021
+
+
+```{r}
+#| eval: false
+library(bacondecomp)   # bacon-decomp doesn't work with unbalanced panels!
+# bd <- bacon(
+#   log_price ~ removedfrom_prelim_sfha,
+#   data = df_prep,
+#   id_var = "pin",
+#   time_var = "sale_year"
+# )
+# 
+# bd |> 
+#   dplyr::group_by(type) |> 
+#   dplyr::summarise(
+#     total_weight = sum(weight),
+#     avg_estimate = weighted.mean(estimate, weight)
+#   )
+```
+
+```{r}
+library(etwfe)
+
+
+mod1 = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  xvar = Triad, 
+  cgroup = "never",
+  gvar = treat_year_add_prelim, 
+  vcov = ~pin10, 
+  data = (df_prep|> 
+            filter(treat_year_remove_prelim==10000
+                   
+                   & change_type_prelim != "Always SFHA")
+          )
+  
+  )
+mod1
+
+
+emfx(mod1)
+
+
+emfx(mod1, type = "group")
+emfx(mod1, type = "event")
+plot(emfx(mod1))
+plot(emfx(mod1, type = "event"))
+
+```
+
+if not treated, then treat_year_remove_prelim == 0
+
+```{r}
+mod2 = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  xvar = Triad, 
+    cgroup = "never",
+
+  gvar = treat_year_remove_prelim, 
+  vcov = ~pin10, 
+  data = (df_prep|> 
+            # do not want treated properties that move in opposite direction. 
+            filter(treat_year_add_prelim==10000 |
+                     # and only want to compare to properties that were Always in the SFHA (also keeps properties that changed SFHA status), 
+                     change_type_prelim != "Never SFHA") 
+          )
+  )
+mod2
+emfx(mod2)
+emfx(mod2, type = "group")
+emfx(mod2, type = "event")
+plot(emfx(mod2))
+plot(emfx(mod2, type = "event"))
+
+
+```
 
 # Step 3: Estimate Group-Time ATT with Staggered Design Tools
 
@@ -261,12 +377,17 @@ table(df_es_removed$g_remove, df_es_removed$pre_date)
 
 With g_remove:
 
+_base_period == "universal" uses "long-differences" for pre-treatment coefficients as well as post-treatment coefficients._
+
 ```{r message=FALSE}
 prelim_remove_att_gt_out <- att_gt(yname = "log_price",
+                                 #  xformla = ~"pre_date_chr",
                      tname = "sale_year",
                      idname = "pin_num",
+                     #gname = "treated_group_prelim_remove",
                      gname = "g_remove",
                      clustervars = "pin10",
+                     base_period = "universal",
                      data = df_es_removed,
                      allow_unbalanced_panel = TRUE#,
                    # print_details = TRUE
@@ -313,7 +434,6 @@ These estimates compare parcels removed from the preliminary SFHA to parcels tha
 
 ```{r }
 #| label: create-added-rds-output
-#| eval: false
 
 
 df_es_added <- df_prep |>
@@ -337,6 +457,12 @@ df_es_added <- df_prep |>
 
 
 table(df_es_added$g_add)
+```
+
+
+```{r }
+#| eval: false
+#| include: false
 
 #takes a lot longer than the removed & always in SFHA model above. 
 prelim_add_att_gt_out <- att_gt(yname = "log_price",
@@ -383,6 +509,8 @@ Added to Preliminary SFHA graph is wrong though. It is grabbing 2022 as a treatm
 ```{r}
 #| label: fig-eventstudy-graphs-using-aggtedynamic
 #| fig-cap: "Event study version of cohort effects. Uses releative time to treatment."
+#| eval: false
+#| include: false
 
 prelim_add_att_gt_out <- read_rds("outputs/Q1_prelim_add_gt_out.rds")
 
