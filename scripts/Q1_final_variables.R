@@ -1,36 +1,27 @@
 ## Makes final variables for Q1_insurance,Q1_continuedstaggered,  and Question1.qmd
-
+library(tidyverse)
 source("./R/helper_pins_to_drop.R")
 
-df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_final.rds")  |>
-  filter(!pin10 %in% drop_parcels) |>
-  select(-c(clean_name.x, clean_name.y))
+# df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_final.rds")
+# df_prep <- readRDS("data/processed/targets/sales/df_prep_bldg_updated_final.rds")
 
+# new version with 2025 parcels
 
+df_prep <- readRDS("data/processed/targets/sales/df_prep_bldg_updated_arcgis.rds")
 
-df_prep <- df_prep |>
-  mutate(log_price = log(sale_price),
-    in_eff_sfha = in_eff_sfha == 1,
-    in_prelim_sfha = in_prelim_sfha == 1)
-
-df_prep <- df_prep |>
-  filter( # !is.na(high_ff_score) &
-    !is.na(eff_date) &
-      #     !is.na(clean_name) &
-      !is.na(pre_date) # &
-    #     !is.na(Triad)
-  )
-
-
-# are there pins that sell multiple times?
-# df_prep |> group_by(sale_year, pin) |> mutate(n = n()) |> filter(n > 1)
-# yes
-
-
+# df_prep <- read_rds("data/processed/Q1_redone_all_variables.RDS")
+# df_prep <- read_rds("data/processed/Q1_redone_data_bldgoutlines.RDS")
+# df_prep <- read_rds("data/processed/Q1_redone_data_landparcels.RDS")
 
 df_prep <- df_prep |>
 
   mutate(
+    log_price = log(sale_price),
+    sale_date = as.Date(sale_date),
+    sale_year = lubridate::year(sale_date),
+
+    eff_date = as.Date(EFF_DATE),
+    pre_date = as.Date(PRE_DATE),
     # so I can subset by FIRM date in later steps
     eff_date_chr = as.factor(eff_date),
     pre_date_chr = as.factor(pre_date)) |>
@@ -108,7 +99,7 @@ df_prep <- df_prep |>
     treated_group_prelim = (case_when(
       # for TREATED propertes in updated FIRMs!
       pre_date == "2005-01-01" & (addedto_prelim_sfha | removedfrom_prelim_sfha) ~ 0,
-      pre_date == "2015-02-12" &  (addedto_prelim_sfha | removedfrom_prelim_sfha) ~ 2015,
+      pre_date == "2015-02-12" & (addedto_prelim_sfha | removedfrom_prelim_sfha) ~ 2015,
       pre_date == "2019-07-01" & (addedto_prelim_sfha | removedfrom_prelim_sfha) ~ 2019,
       pre_date == "2021-09-22" & (addedto_prelim_sfha | removedfrom_prelim_sfha) ~ 2021,
       TRUE ~ 0)),
@@ -116,7 +107,7 @@ df_prep <- df_prep |>
     treated_group_prelim_add = (case_when(
       # for TREATED properties in updated FIRMs!
       pre_date == "2005-01-01" & (addedto_prelim_sfha) ~ 0,
-      pre_date == "2015-02-12" &  (addedto_prelim_sfha) ~ 2015,
+      pre_date == "2015-02-12" & (addedto_prelim_sfha) ~ 2015,
       pre_date == "2019-07-01" & (addedto_prelim_sfha) ~ 2019,
       pre_date == "2021-09-22" & (addedto_prelim_sfha) ~ 2021,
       TRUE ~ 0)),
@@ -124,7 +115,7 @@ df_prep <- df_prep |>
     treated_group_prelim_remove = (case_when(
       # for TREATED propertes in updated FIRMs!
       pre_date == "2005-01-01" & (removedfrom_prelim_sfha) ~ 0,
-      pre_date == "2015-02-12" &  (removedfrom_prelim_sfha) ~ 2015,
+      pre_date == "2015-02-12" & (removedfrom_prelim_sfha) ~ 2015,
       pre_date == "2019-07-01" & (removedfrom_prelim_sfha) ~ 2019,
       pre_date == "2021-09-22" & (removedfrom_prelim_sfha) ~ 2021,
       TRUE ~ 0))
@@ -162,5 +153,12 @@ df_prep <- df_prep |>
   ),
   Triad = factor(Triad, levels = c("South", "North", "City"))
   )
+saveRDS(df_prep, "data/processed/df_prep_bldg_sfha_updated_arcgis_forQ1_assumptiontests.RDS")
 
-saveRDS(df_prep, "data/processed/df_prep_forQ1_assumptiontests.RDS")
+# saveRDS(df_prep, "data/processed/df_prep_land_sfha_redone_forQ1_assumptiontests.RDS")
+
+# saveRDS(df_prep, "data/processed/df_prep_bldg_sfha_redone_forQ1_assumptiontests.RDS")
+
+# saveRDS(df_prep, "data/processed/df_prep_bldg_forQ1_assumptiontests.RDS")
+
+# saveRDS(df_prep, "data/processed/df_prep_forQ1_assumptiontests.RDS")
