@@ -27,7 +27,7 @@ library(rlang)
 library(flextable)
 
 
-data_version <- "targets" # targets or arcgis
+data_version <- "targets_hybrid"  # targets, targets_hybrid, or arcgis, arcgis_notfiltered
 
 
 
@@ -130,29 +130,29 @@ source("R/helper_pins_to_drop.R")
 # source("R/helper_pins_to_drop_forsure.R")
 
 
-if(data_version == "arcgis"){
+if(data_version == "arcgis" | data_version== "arcgis_notfiltered"){
   
   data_dir <- "data/processed/variants"
-
-  dataset_map <- c(
+  
+  if(data_version == "arcgis"){
+    dataset_map <- c(
+      
+      parcel_sfha  = "df_prep__parcel_sfha.rds",
+      bldg_sfha  = "df_prep__bldg_sfha.rds",
+      parcel_1in500     = "df_prep__parcel_1in500.rds",
+      bldg_1in500     = "df_prep__bldg_1in500.rds"
+    )
+  }else if(data_version == "arcgis_notfiltered"){
     
-    # parcel_sfha  = "df_prep__parcel_sfhanotfiltered.rds",
-    # 
-    # bldg_sfha  = "df_prep__bldg_sfhanotfiltered.rds",
-    # 
-    # parcel_1in500     = "df_prep__parcel_1in500notfiltered.rds",
-    # 
-    # bldg_1in500     = "df_prep__bldg_1in500notfiltered.rds"
-    
-    
-    parcel_sfha  = "df_prep__parcel_sfha.rds",
-
-    bldg_sfha  = "df_prep__bldg_sfha.rds",
-
-    parcel_1in500     = "df_prep__parcel_1in500.rds",
-
-    bldg_1in500     = "df_prep__bldg_1in500.rds"
-  )
+    dataset_map <- c(
+      
+      parcel_sfha  = "df_prep__parcel_sfhanotfiltered.rds",
+      bldg_sfha  = "df_prep__bldg_sfhanotfiltered.rds",
+      parcel_1in500     = "df_prep__parcel_1in500notfiltered.rds",
+      bldg_1in500     = "df_prep__bldg_1in500notfiltered.rds"
+    )
+  }
+  
   
   datasets <- lapply(names(dataset_map), function(id) {
     path <- file.path(data_dir, dataset_map[[id]])
@@ -194,41 +194,123 @@ if(data_version == "arcgis"){
   pretty_cols <- c(
     model_name = "Model",
     term       = "Term",
+    
     parcel_sfha  = "Parcel - SFHA",
-    
     bldg_sfha  = "Bldg - SFHA",
-    
     parcel_1in500     = "Parcel - 1 in 500",
-    
     bldg_1in500     = "Bldg - 1 in 500"
   )
-  
-
-} else if(data_version == "targets"){
+  }else if(data_version == "targets" | 
+           data_version == "targets_hybrid" | 
+           data_version == "targets_hybrid_2026sales"){
   
     data_dir <-  "data/processed/targets/sales"
 
-  dataset_map <- c(
-    # #  land_baseline    = "df_prep_land_baseline_final.rds",
-    # land_updated     = "df_prep_land_updated_final.rds",
-    # # bldg_baseline    = "df_prep_bldg_baseline_final.rds",
-    # bldg_updated     = "df_prep_bldg_updated_final.rds",
-    # #  ptaxsim_baseline = "df_prep_ptaxsim_baseline_final.rds",
-    # ptaxsim_updated  = "df_prep_ptaxsim_updated_final.rds",
-    # #  risk500_baseline = "df_prep_risk500_baseline_final.rds",
-    # risk500_updated  = "df_prep_risk500_updated_final.rds",
-    # #  risk500_land_baseline = "df_prep_risk500_land_baseline_final.rds",
-    # risk500_land_updated = "df_prep_risk500_land_updated_final.rds"
-    # 
-    # 
+    if(data_version == "targets"){
+      dataset_map <- c(
         #  land_baseline    = "df_prep_land_baseline_final.rds",
-    land_updated     = "df_prep_land_updated_arcgis.rds",
-    bldg_updated     = "df_prep_bldg_updated_arcgis.rds",
-    risk500_updated  = "df_prep_risk500_updated_arcgis.rds",
-    risk500_land_updated = "df_prep_risk500_land_updated_arcgis.rds"
+        land_updated     = "df_prep_land_updated_final.rds",
+        # bldg_baseline    = "df_prep_bldg_baseline_final.rds",
+        bldg_updated     = "df_prep_bldg_updated_final.rds",
+        #  ptaxsim_baseline = "df_prep_ptaxsim_baseline_final.rds",
+        ptaxsim_updated  = "df_prep_ptaxsim_updated_final.rds",
+        #  risk500_baseline = "df_prep_risk500_baseline_final.rds",
+        risk500_updated  = "df_prep_risk500_updated_final.rds",
+        #  risk500_land_baseline = "df_prep_risk500_land_baseline_final.rds",
+        risk500_land_updated = "df_prep_risk500_land_updated_final.rds"
+        
+      )
+      
+      col_order <- c(
+        "bldg_updated",
+        "land_updated",
+        "risk500_updated",
+        "risk500_land_updated",
+        "ptaxsim_updated"
+      )
+      
+  pretty_cols <- c(
+    model_name = "Model",
+    term       = "Term",
+
+    bldg_updated  = "Bldg - SFHA",
+    land_updated  = "10-dig Land - SFHA",
+    risk500_updated  = " Bldg - 1-in-500",
+    risk500_land_updated  = "Land - 1-in-500", 
+    ptaxsim_updated = "PTAX Bldg SFHA"
+
+  )
+    }else if(data_version == "targets_hybrid_2026sales"){
+        # note, "updated" names use the December 2025 download of sales.
+        # newest file is named with _2026_ in the title
+      dataset_map <- c(
+        bldg_updated     = "df_prep_bldg_2026_arcgis_forQ1_assumptiontests.rds",
+        land_updated     = "df_prep_land_2026_arcgis_forQ1_assumptiontests.rds",
+        risk500_updated  = "df_prep_risk500_2026_arcgis_forQ1_assumptiontests.rds",  # bldg polygon intersections
+        risk500_land_updated = "df_prep_risk500_land_2026_arcgis_forQ1_assumptiontests.rds"
+       
+        # commenting out because it does not have the for_Q1_assumptiontest variables created.
+        # ptaxsim_updated  = "df_prep_ptaxsim_updated_final.rds"
+
+      )
+      
+    col_order <- c(
+    "bldg_updated",
+    "land_updated",
+    "risk500_updated",
+    "risk500_land_updated",
+    "ptaxsim_updated"
   )
   
-  datasets <- lapply(names(dataset_map), function(id) {
+  pretty_cols <- c(
+    model_name = "Model",
+    term       = "Term",
+
+    bldg_updated  = "Bldg - SFHA",
+    land_updated  = "10-dig Land - SFHA",
+    risk500_updated  = " Bldg - 1-in-500",
+    risk500_land_updated  = "Land - 1-in-500",
+    ptaxsim_updated = "Ptaxsim w/ bldg, SFHA"
+
+  )
+    }else if(data_version == "targets_hybrid"){
+
+      dataset_map <- c(
+        # note, "updated" names use the December 2025 download of sales.
+        # newest file is named with _2026_ in the title
+        bldg_updated     = "df_prep_bldg_updated_arcgis_forQ1_assumptiontests.rds",
+        land_updated     = "df_prep_land_updated_arcgis_forQ1_assumptiontests.rds",
+        risk500_updated  = "df_prep_risk500_updated_arcgis_forQ1_assumptiontests.rds",  # bldg polygon intersections
+        risk500_land_updated = "df_prep_risk500_land_updated_arcgis_forQ1_assumptiontests.rds"
+      
+        # doesn't have newest variables yet that let it skip the slow variable creation chunk
+        #  ptaxsim_updated  = "df_prep_ptaxsim_updated_final.rds"
+      )
+      
+    col_order <- c(
+    "bldg_updated",
+    "land_updated",
+    "risk500_updated",
+    "risk500_land_updated",
+    "ptaxsim_updated"
+
+  )
+  
+  pretty_cols <- c(
+    model_name = "Model",
+    term       = "Term",
+
+    bldg_updated  = "Bldg - SFHA",
+    land_updated  = "10-dig Land - SFHA",
+    risk500_updated  = " Bldg - 1-in-500",
+    risk500_land_updated  = "Land - 1-in-500",  
+    ptaxsim_updated = "Ptaxsim w/ bldg, SFHA"
+
+  )
+    }
+   
+    
+    datasets <- lapply(names(dataset_map), function(id) {
     path <- file.path(data_dir, dataset_map[[id]])
     df <- readRDS(path)
     df$dataset_id <- id
@@ -255,36 +337,6 @@ if(data_version == "arcgis"){
   }) 
   
   names(datasets_og) <- names(dataset_map)
-  
-  col_order <- c(
-    #"land_baseline",
-    "bldg_updated",
-
-    "land_updated",
-    #  "bldg_baseline",
-    # "ptaxsim_baseline",
-  #  "ptaxsim_updated",
-    # "risk500_baseline",
-    "risk500_updated",
-    # "risk500_land_baseline", 
-    "risk500_land_updated"
-  )
-  
-  pretty_cols <- c(
-    model_name = "Model",
-    term       = "Term",
-
-    bldg_updated  = "Bldg - SFHA",
-    land_updated  = "10-dig Land - SFHA",
-    #  bldg_baseline = "Buildings (Baseline)",
-    
-    #  ptaxsim_baseline = "PTAXSIM (Baseline)",
-  #  ptaxsim_updated  = "PTAXSIM Polys",
-    # risk500_baseline = "Risk 1-in-500 (Baseline)",
-    risk500_updated  = " Bldg - 1-in-500",
-    # risk500_land_baseline = "Risk 1-in-500 Land (Baseline)",
-    risk500_land_updated  = "Land - 1-in-500"
-  )
   
 }
 
@@ -419,7 +471,15 @@ datasets2 <- lapply(datasets_og, function(df){
     )
 
     })
-write_rds(datasets2, "data/processed/combined_datasets_targets_2025parcels.rds")
+
+if(data_version == "targets_hybrid"){
+
+  write_rds(datasets2, "data/processed/combined_datasets_targets_2025parcels.rds")
+  
+  } else if(data_version == "targets_hybrid_2026sales"){
+    write_rds(datasets2, "data/processed/combined_datasets_targets_hybrid_2026sales.rds")
+    
+}
 ```
 
 
@@ -448,26 +508,26 @@ fit_effective_models <- function(df_prep) {
     
     run_by_cluster(
       log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_add_eff == 10000),
+      data = (df_prep |> filter(treat_year_add_eff == 10000)),
       clusters = clusters_county,
       prefix = "Eff County - R"
     ),
     run_by_cluster(
       log(sale_price) ~ removedfrom_eff_sfha * Triad | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_add_eff ==10000),
+      data = (df_prep |> filter(treat_year_add_eff ==10000)),
       clusters = clusters_county,
       prefix = "Eff Triads - R"
     ),
     
     run_by_cluster(
       log(sale_price) ~ addedto_eff_sfha | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_remove_eff == 10000),
+      data = (df_prep |> filter(treat_year_remove_eff == 10000)),
       clusters = clusters_county,
       prefix = "Eff County - Add"
     ),
     run_by_cluster(
       log(sale_price) ~ addedto_eff_sfha * Triad | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_remove_eff == 10000),
+      data = (df_prep |> filter(treat_year_remove_eff == 10000)),
       clusters = clusters_county,
       prefix = "Eff Triads - A"
     )
@@ -487,31 +547,31 @@ fit_prelim_models <- function(df_prep) {
       log(sale_price) ~ in_prelim_sfha*Triad | pin + sale_year,
       data = df_prep,
       clusters = clusters_county,
-      prefix = "Prelim Triad - Symmetric"
+      prefix = "Prelim Triads - Symmetric"
     ),
      
     run_by_cluster(
       log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_add_prelim == 10000),
+      data = (df_prep |> filter(treat_year_add_prelim == 10000)),
       clusters = clusters_county,
       prefix = "Prelim County - R"
     ),
        run_by_cluster(
       log(sale_price) ~ removedfrom_prelim_sfha * Triad | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_add_prelim == 10000),
+      data = (df_prep |> filter(treat_year_add_prelim == 10000)),
       clusters = clusters_county,
       prefix = "Prelim Triads - R"
     ),
     
     run_by_cluster(
       log(sale_price) ~ addedto_prelim_sfha | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_remove_prelim == 10000),
+      data = (df_prep |> filter(treat_year_remove_prelim == 10000)),
       clusters = clusters_county,
       prefix = "Prelim County - Add"
     ),
     run_by_cluster(
       log(sale_price) ~ addedto_prelim_sfha * Triad | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_remove_prelim == 10000),
+      data = (df_prep |> filter(treat_year_remove_prelim == 10000)),
       clusters = clusters_county,
       prefix = "Prelim Triads - A"
     )
@@ -519,20 +579,75 @@ fit_prelim_models <- function(df_prep) {
 }
 
 
+eff_and_prelim <- function(df_prep) {
+  bind_models(
+    fit_effective_models(df_prep),
+    fit_prelim_models(df_prep)
+  )
+}
 
+```
+
+```{r}
+#| eval: false
+#| include: false
+
+
+if (data_version %in% c("arcgis", "arcgis_notfiltered")) {
+  
+  effective_models <- lapply(datasets_og, fit_effective_models)
+  prelim_models    <- lapply(datasets_og, fit_prelim_models)
+  
+} else if (data_version %in% c("targets", "targets_hybrid", "targets_hybrid_2026sales")) {
+  
+  if (data_version == "targets") {
+    datasets2 <- read_rds("data/processed/combined_datasets.rds")
+  } else if (data_version == "targets_hybrid") {
+    datasets2 <- read_rds("data/processed/combined_datasets_targets_2025parcels.rds")
+  } else if (data_version == "targets_hybrid_2026sales") {
+    datasets2 <- read_rds("data/processed/combined_datasets_targets_hybrid_2026sales.rds")
+  }
+
+  datasets2 <- lapply(datasets2, function(df) {
+    df |>
+      filter(!pin10 %in% drop_parcels |
+               (pin10 == "0113301013" & sale_year > 2014))
+  })
+  
+  effective_models <- lapply(datasets2, fit_effective_models)
+  prelim_models    <- lapply(datasets2, fit_prelim_models)
+}
+```
+
+```{r}
+
+datasets2 <- datasets_og
+
+  effective_models <- lapply(datasets_og, fit_effective_models)
+  prelim_models    <- lapply(datasets_og, fit_prelim_models)
 ```
 
 
 ```{r}
+#| eval: false
+#| label: doesnotworkmaybe
 
-if(data_version == "arcgis"){
-
+if(data_version == "arcgis" | data_version == "arcgis_notfiltered"){
+  
   effective_models <- lapply(datasets_og, fit_effective_models)
   prelim_models    <- lapply(datasets_og, fit_prelim_models)
-
-} else if(data_version == "targets") {# use targets
-  # datasets2 <- read_rds("data/processed/combined_datasets.rds") 
+  
+} else if(data_version =="targets" | data_version == "targets_hybrid" | data_version == "targets_hybrid_2026sales"){
+ 
+  if (data_version == "targets") {# use targets
+  datasets2 <- read_rds("data/processed/combined_datasets.rds")
+  
+  } else if(data_version ==  "targets_hybrid") {
   datasets2 <- read_rds("data/processed/combined_datasets_targets_2025parcels.rds") 
+  
+  }else if(data_version == "targets_hybrid_2026sales") {
+  datasets2 <- read_rds("data/processed/combined_datasets_targets_hybrid_2026sales.rds") 
+  }
 
   datasets2 <- lapply(datasets2, function(df) {
     df |> 
@@ -550,6 +665,7 @@ if(data_version == "arcgis"){
 ```
 
 ```{r}
+
 eff_and_prelim <-  function(df_prep) {
   bind_models(
     run_by_cluster(
@@ -568,26 +684,26 @@ eff_and_prelim <-  function(df_prep) {
     
     run_by_cluster(
       log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_add_eff == 10000),
+      data = (df_prep |> filter(treat_year_add_eff == 10000)),
       clusters = clusters_county,
       prefix = "Eff County - R"
     ),
     run_by_cluster(
       log(sale_price) ~ removedfrom_eff_sfha * Triad | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_add_eff ==10000),
+      data = (df_prep |> filter(treat_year_add_eff ==10000)),
       clusters = clusters_county,
       prefix = "Eff Triads - R"
     ),
     
     run_by_cluster(
       log(sale_price) ~ addedto_eff_sfha | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_remove_eff == 10000),
+      data = (df_prep |> filter(treat_year_remove_eff == 10000)),
       clusters = clusters_county,
       prefix = "Eff County - Add"
     ),
     run_by_cluster(
       log(sale_price) ~ addedto_eff_sfha * Triad | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_remove_eff == 10000),
+      data = (df_prep |> filter(treat_year_remove_eff == 10000)),
       clusters = clusters_county,
       prefix = "Eff Triads - A"
     ),
@@ -603,31 +719,31 @@ eff_and_prelim <-  function(df_prep) {
       log(sale_price) ~ in_prelim_sfha*Triad | pin + sale_year,
       data = df_prep,
       clusters = clusters_county,
-      prefix = "Prelim Triad - Symmetric"
+      prefix = "Prelim Triads - Symmetric"
     ),
      
     run_by_cluster(
       log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_add_prelim == 10000),
+      data = (df_prep |> filter(treat_year_add_prelim == 10000)),
       clusters = clusters_county,
       prefix = "Prelim County - R"
     ),
        run_by_cluster(
       log(sale_price) ~ removedfrom_prelim_sfha * Triad | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_add_prelim == 10000),
+      data = (df_prep |> filter(treat_year_add_prelim == 10000)),
       clusters = clusters_county,
       prefix = "Prelim Triads - R"
     ),
     
     run_by_cluster(
       log(sale_price) ~ addedto_prelim_sfha | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_remove_prelim == 10000),
+      data = (df_prep |> filter(treat_year_remove_prelim == 10000)),
       clusters = clusters_county,
       prefix = "Prelim County - Add"
     ),
     run_by_cluster(
       log(sale_price) ~ addedto_prelim_sfha * Triad | pin + sale_year,
-      data = df_prep |> filter(df_prep$treat_year_remove_prelim == 10000),
+      data = (df_prep |> filter(treat_year_remove_prelim == 10000)),
       clusters = clusters_county,
       prefix = "Prelim Triads - A"
     )
@@ -829,43 +945,78 @@ tidy_df <- tidy_df |>
 }
 ```
 
-
 ```{r}
-# Pick the correct dataset list for the mega grid
-datasets_for_grid <- dplyr::case_when(
-  data_version == "arcgis"  ~ "arcgis",
-  data_version == "targets" ~ "targets",
-  TRUE ~ "nope"
-)
+dataset_family <- if (data_version %in% c("arcgis", "arcgis_notfiltered")) {
+  "arcgis"
+} else if (data_version %in% c("targets", "targets_hybrid", "targets_hybrid_2026sales")) {
+  "targets"
+} else {
+  stop("Unrecognized data_version: ", data_version)
+}
 
 datasets_for_grid <- switch(
-  datasets_for_grid,
+  dataset_family,
   arcgis  = datasets_og,
-  targets = datasets2,
-  stop("data_version must be 'targets' or 'arcgis'")
+  targets = datasets2
 )
 
-# Labels must match the *names* of the list you pass into lapply()
-dataset_labels <- switch(
-  data_version,
+all_labels <- switch(
+  dataset_family,
   arcgis = c(
     bldg_sfha     = "Bldg - SFHA",
     parcel_sfha   = "Parcel - SFHA",
-        bldg_1in500   = "Bldg - 1 in 500",
-
+    bldg_1in500   = "Bldg - 1 in 500",
     parcel_1in500 = "Parcel - 1 in 500"
   ),
   targets = c(
     bldg_updated         = "Bldg - SFHA",
-
     land_updated         = "Parcel - SFHA (2022 & 2018)",
     risk500_updated      = "Bldg - 1-in-500",
     risk500_land_updated = "Parcel - 1-in-500",
-
     ptaxsim_updated      = "PTAXSIM Parcels"
-  ),
-  stop("data_version must be 'targets' or 'arcgis'")
+  )
 )
+
+dataset_labels <- all_labels[names(datasets_for_grid)]
+
+# Build models for the mega grid
+eff_and_pre_models <- lapply(datasets_for_grid, eff_and_prelim)
+
+```
+
+```{r}
+#| eval: false
+#| label: mightnotwork
+
+if (data_version %in% c("arcgis", "arcgis_notfiltered")) {
+  datasets_for_grid <- "arcgis"
+} else if (data_version %in% c("targets", "targets_hybrid", "targets_hybrid_2026sales")) {
+  datasets_for_grid <- "targets"
+} else {
+  stop("Unrecognized data_version: ", data_version)
+}
+ 
+datasets_for_grid <- switch(
+  datasets_for_grid,
+  arcgis  = datasets_og,
+  targets = datasets2  )
+
+#Labels must match the *names* of the list you pass into lapply()
+dataset_labels <- switch(
+  datasets_for_grid,
+  arcgis = c(
+    bldg_sfha     = "Bldg - SFHA",
+    parcel_sfha   = "Parcel - SFHA",
+    bldg_1in500   = "Bldg - 1 in 500",
+    parcel_1in500 = "Parcel - 1 in 500"
+  ),
+  targets = c(
+    bldg_updated         = "Bldg - SFHA",
+    land_updated         = "Parcel - SFHA (2022 & 2018)",
+    risk500_updated      = "Bldg - 1-in-500",
+    risk500_land_updated = "Parcel - 1-in-500",
+    ptaxsim_updated      = "PTAXSIM Parcels"
+  ))
 
 # Build models for the mega grid
 eff_and_pre_models <- lapply(datasets_for_grid, eff_and_prelim)
@@ -875,8 +1026,6 @@ dataset_labels <- dataset_labels[names(dataset_labels) %in% names(datasets_for_g
 ```
 
 ```{r}
-
-
 
 grid_tbl <- make_eff_pre_grid(
   eff_and_pre_models = eff_and_pre_models,
@@ -1199,18 +1348,29 @@ pre_ft
 Restricts the control groups to the group it should be compared to (i.e. Removed compared to Always SFHA & Added compared to Never SFHA)
 
 ```{r}
-if(data_version == "arcgis"){
+#| eval: false
+#| include: false
 
-  datasets2 = datasets_og 
 
-} else if(data_version == "targets"){
-
-  # has the treatment variables used in the later section. 
- # datasets2 <- read_rds( "data/processed/combined_datasets.rds") 
+if(data_version == "arcgis" | data_version == "arcgis_notfiltered"){
   
+  datasets2 = datasets_og 
+  
+}else if(data_version == "targets" | data_version == "targets_hybrid"){
+  
+  # has the treatment variables used in the later section. 
+  if(data_version == "targets"){
+    
+    datasets2 <- read_rds( "data/processed/combined_datasets.rds")
+    
+  }else if(data_version == "targets_hybrid"){
+    
     datasets2 <- read_rds("data/processed/combined_datasets_targets_2025parcels.rds") 
-
-  datasets2 <-  lapply(datasets2, function(df) {
+  }else if (data_version == "targets_hybrid_2026sales") {
+    datasets2 <- read_rds("data/processed/combined_datasets_targets_hybrid_2026sales.rds")
+  }
+   
+  datasets2 <-  lapply(datasets2, function(df){
     df |> 
       mutate(
         Triad = case_when(
@@ -1224,7 +1384,8 @@ if(data_version == "arcgis"){
       )  |>
       filter(!is.na(in_eff_sfha) & !is.na(in_prelim_sfha)) |>
     filter(!pin10 %in% drop_parcels)
-    }) 
+    }
+    ) 
 }
  
 ```
@@ -1467,7 +1628,7 @@ treated_summary <- purrr::imap_dfr(datasets_h1a, function(df, id) {
 
 ```{r}
 
-if(data_version == "arcgis"){
+if(data_version == "arcgis" | data_version == "arcgis_notfiltered"){
 
 table(datasets_h1a$parcel_sfha$addedto_eff_sfha)
 
@@ -1702,15 +1863,21 @@ treated_summary_ft
 
 # FIRMs Updated Subsets
 
+```{r}
+if(data_version %in% c( "targets", "targets_hybrid", "targets_hybrid_2026sales")){
+  datasets2$bldg_sfha = datasets2$bldg_updated
+  datasets2$land_sfha = datasets2$land_updated
+}
+```
+
+
 ### Building Polygon Datset
 
 ```{r}
 #| error: true
 
-
-
 ## Without LOMRs
-df_sub <- datasets2$bldg_updated |> filter(change_type != "Never SFHA" & 
+df_sub <- datasets2$bldg_sfha |> filter(change_type_prelim != "Never SFHA" & 
                            # and properties that are never treated for being added to the SFHA
                            treat_year_add_eff == 10000 & treat_year_add_prelim == 10000)  
 
@@ -1756,7 +1923,7 @@ df2 |> feols(log(sale_price) ~ sw(removedfrom_prelim_sfha) | pin + sale_year,
 #| warning: true
 #| message: true
 
-df3 <- df3 |>
+df3 <-  datasets2$bldg_sfha |>
   mutate(  
     event_remapped = ifelse(sale_date < pre_date & treated_group_prelim != 0, "0.Pre",
       ifelse(sale_date > pre_date & treated_group_prelim != 0, "1.Post", "2.NotRemapped")),
@@ -1797,7 +1964,9 @@ extwfe_removed_prelim_bldg
 ## Added with Extended TWFE
 
 ```{r}
-df_sub <-   datasets2$bldg_updated  |> 
+#| error: true
+
+df_sub <-   datasets2$bldg_sfha  |> 
   filter(
     # be specific about the treated and control group in this model!
     # keep Always SFHA or Properties that Changed SFHA (but were not added to the SFHA)
@@ -1842,7 +2011,7 @@ extwfe_added_prelim_land
 ```
 
 ```{r}
-#| tbl-cap: "Added x sale year x cohort.With Land polygons"
+#| tbl-cap: "Added x sale year x cohort.With Bldg polygons"
 #| error: true
 #| warning: true
 #| message: true
@@ -1898,7 +2067,7 @@ prelim_extwfe_add_land <- modelsummary::modelsummary(prelim_extwfe_add,
 #| warning: true
 #| message: true
 #| eval: false
-df3 <- datasets2$bldg_updated |> 
+df3 <- datasets2$bldg_sfha |> 
   filter(change_type_prelim != "Always SFHA" & 
                            # and properties that are never treated for being added to the SFHA
                            treat_year_remove_prelim == 10000) |>
@@ -1941,6 +2110,7 @@ prelim_extwfe_add_bldg <- modelsummary::modelsummary(prelim_extwfe_add_bldg,
 #| eval: false
 #| error: true
 #| layout-ncol: 2
+
 prelim_extwfe_add_land
 prelim_extwfe_add_bldg
 
