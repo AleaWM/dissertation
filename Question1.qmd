@@ -2,9 +2,9 @@
 title: "Cook County Parcel Sales"
 subtitle: "Variant: `r params$variant_key`"
 params:
- variant_key: "bldg_sfha" # "bldg_sfha"   # options: parcel_sfha, bldg_sfha, parcel_1in500, bldg_1in500
- # bldg_updated, land_updated, ptaxsim_updated,risk500_land_updated, ri sk500_updated, df_prep_bldg_updated_arcgis,
- variants_dir: "data/processed/variants" # options: "data/processed/variants" or "data/processed/targets/sales"
+ variant_key: "bldg_1in500" # "bldg_sfha"   # options: parcel_sfha, bldg_sfha, parcel_1in500, bldg_1in500
+ # bldg_updated, land_updated, ptaxsim_updated, risk500_land_updated, risk500_updated, df_prep_bldg_updated_arcgis,
+
  
 format: 
   html:
@@ -45,10 +45,23 @@ source("R/helper_pins_to_drop.R")
 variant_key  <- params$variant_key
 variants_dir <- params$variants_dir
 
-variant_path <- file.path(
-  variants_dir,
-  paste0("df_prep_", variant_key, ".rds")
-)
+if(variant_key %in% c("parcel_sfha", "bldg_sfha", "parcel_1in500", "bldg_1in500")){
+  
+  variants_dir <-  "data/processed/variants"
+  
+  variant_path <- file.path(variants_dir,
+                            paste0("df_prep__", variant_key, ".rds")
+                            
+  )
+}else if (variant_key %in% c("bldg_updated", "land_updated", "ptaxsim_updated","risk500_land_updated", "risk500_updated", "df_prep_bldg_updated_arcgis")) {
+  
+  variants_dir <- "data/processed/targets/sales"
+  
+  variant_path <- file.path(
+    variants_dir,
+    paste0("df_prep_", variant_key, ".rds"))
+  
+}
 
 if (!file.exists(variant_path)) {
   stop("Variant file not found: ", variant_path)
@@ -57,7 +70,6 @@ if (!file.exists(variant_path)) {
 
 
 ```{r}
-#| eval: false
 
 df_prep <- readRDS(variant_path) |> filter(!pin10 %in% drop_parcels)
 
@@ -87,13 +99,12 @@ variant_label <- dplyr::case_when(
 variant_stamp <- paste0("[", variant_label, "]")
 
 
+```
 
 ::: {.callout-note}
 **Variant:** `r variant_label`
 **File loaded:** `r paste0("df_prep__", params$variant_key, ".rds")`
 :::
-
-```
 
 
 <!--- Can run from command line with: quarto::quarto_render("Question1.qmd", execute_params = list(variant_key = "bldg_sfha"))
@@ -109,6 +120,8 @@ variant_stamp <- paste0("[", variant_label, "]")
 df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_arcgis.rds") |> 
   filter(!pin10 %in%drop_parcels)
 
+
+
 df_prep |> filter(Triad == "City" & removedfrom_eff_sfha == TRUE) 
 df_prep |> filter(Triad == "City" & addedto_eff_sfha == TRUE)
 
@@ -120,9 +133,9 @@ df_prep |> filter(Triad == "City" & addedto_eff_sfha == TRUE) |> distinct(pin10)
 
 ```{r}
 
-source("R/helper_pins_to_drop.R")
+#source("R/helper_pins_to_drop.R")
 
-df_prep <- readRDS("data/processed/variants/df_prep__bldg_sfha.RDS") |> filter(!pin10 %in% drop_parcels)
+# df_prep <- readRDS("data/processed/variants/df_prep__bldg_sfha.RDS") |> filter(!pin10 %in% drop_parcels)
 
 #df_prep <- readRDS("data/processed/df_prep_bldg_sfha_updated_arcgis_forQ1_assumptiontests.RDS") |> filter(!pin10 %in% drop_parcels)
 
@@ -133,7 +146,7 @@ df_prep <- df_prep |>
    mutate(d_price_pct = round((sale_price-dplyr::lag(sale_price))/(dplyr::lag(sale_price)), digits = 2), .after = pin) |> ungroup()
 
 
-df_prep <-  df_prep |> filter(is.na(d_price_pct) | d_price_pct < 20 & sale_price > 20000) 
+df_prep <-  df_prep |> filter((is.na(d_price_pct) & sale_price > 20000) | ( d_price_pct < 20 & sale_price > 20000) )
 
 df_prep <- df_prep |> group_by(pin) |> 
   mutate(times_sold = n()) |> filter(times_sold > 1)
@@ -219,7 +232,11 @@ Concerns:
 Contributions to the literature: Many models model if SFHA status changes, but have it as one variable. this assumes that the effect of being added in or removed from an SFHA is the same in both directions. I model in_eff_sfha as one variable and separate it into added and removed to see if there are different effects.
 
 ```{r}
-#skim(df_prep)
+# skim(df_prep)
+```
+
+
+```{r}
 table(df_prep$pre_date)
 
 ```
@@ -409,7 +426,7 @@ table(df_prep$rel_year_remove_prelim)
 
 ```
 
-# Models
+ # Models
 
 ```{r fe-avgs}
 df_changes <- df_prep |>
