@@ -19,6 +19,7 @@
 #   • indicator_summary.csv   – a long format summary of how many
 #     unique pins are flagged in each indicator
 
+
 library(dplyr)
 library(readxl)
 library(stringr)
@@ -185,7 +186,9 @@ nfhl_indicators <- parcels_with_firm_dates |>
 source("R/sales_data_functions.R")
 source("R/sfha_targets_functions.R")
 
-sales_file <- "data/raw/Assessor_-_Parcel_Sales_20251229.csv"
+sales_file <- "data/raw/Assessor_-_Parcel_Sales_20260308.csv"
+
+# sales_file <- "data/raw/Assessor_-_Parcel_Sales_20251229.csv"
 
 sales <- read_sales_assessor(sales_file, min_year = 2008)
 
@@ -225,9 +228,12 @@ single_res_sales <- res_sales |>
   mutate(times_sold = n()) |>
   filter(times_sold == 1) |> ungroup()
 
-# single_res_sales |> filter(pin10 %in% indicator_combined$pin10[indicator_combined$parcel_sfha_2026 == TRUE] & pin10 %in% indicator_combined$pin10[indicator_combined$parcel_sfha_2018 == FALSE])
-# single_res_sales |> filter(pin10 %in% indicator_combined$pin10[indicator_combined$parcel_sfha_2018 == TRUE] & pin10 %in% indicator_combined$pin10[indicator_combined$parcel_sfha_2026 == FALSE])
-#
+# 900+ obs
+single_res_sales |> filter(pin10 %in% indicator_combined$pin10[indicator_combined$parcel_sfha_2026 == TRUE] & pin10 %in% indicator_combined$pin10[indicator_combined$parcel_sfha_2018 == FALSE])
+
+# 1000+ obs
+single_res_sales |> filter(pin10 %in% indicator_combined$pin10[indicator_combined$parcel_sfha_2018 == TRUE] & pin10 %in% indicator_combined$pin10[indicator_combined$parcel_sfha_2026 == FALSE])
+
 # single_res_sales |> filter(pin10 %in% indicator_combined$pin10[indicator_combined$bldg_sfha_2026 == TRUE])
 # single_res_sales |> filter(pin10 %in% indicator_combined$pin10[indicator_combined$bldg_sfha_2018 == TRUE])
 
@@ -244,7 +250,7 @@ sales_joined <- repeat_res_sales |>
 sales_joined |> filter(is.na(pin10)) # none missing, good.
 
 # parcels missing FIRM data. That is a lot.
-sales_joined |> filter(!pin10 %in% drop_parcels & is.na(FIRM_PAN)) |>
+sales_joined |> # filter(!pin10 %in% drop_parcels & is.na(FIRM_PAN)) |>
   group_by(pin10) |> summarize(n = n()) |> arrange(desc(n))
 
 
@@ -261,7 +267,7 @@ fallback_cols <- c(
   # "sfha2024", "sfha2018", "lomr2024", "LOMR_IDlomr2024", "LOMR_DATE",
   "land_sfha2026", "land_sfha2018"
 )
-# fill in missing valuesfrom old file that had its own flaws ------------------
+# fill in missing values from old file that had its own flaws ------------------
 # was made with archived parcel polygons from 2022 and 2018 and used R to make it
 # made in _targets before 2025 parcel polygons were downloaded
 # and before the 2026 effective NFHL was released
@@ -652,5 +658,5 @@ keys <- names(specs)
 
 for (k in keys) {
   df_k <- build_variant_dataset(df_base = sales_joined, key = k, specs = specs)
-  saveRDS(df_k, file.path("data/processed/variants", paste0("df_prep__", k, "notfiltered.rds")))
+  saveRDS(df_k, file.path("data/processed/variants", paste0("df_prep_", k, "2026sales_notfiltered.rds")))
 }
