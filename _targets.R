@@ -8,17 +8,22 @@ tar_option_set(
 
 
 sfha_methods <- tibble::tibble(
-  method   = c("land", "bldg", "ptaxsim", "risk500", "risk500_land"),
-  out_stub = c("land", "bldg", "ptaxsim", "risk500", "risk500_land")
+  method   = c("land", "bldg", # "ptaxsim",
+    "risk500", "risk500_land"),
+  out_stub = c("land", "bldg", # "ptaxsim",
+    "risk500", "risk500_land")
 )
 
 
 sales_versions <- data.frame(
   sales_label = c( # "baseline",
-    "updated"),
+    "updated",
+    "2026"
+  ),
   sales_file  = c(
     # "data/raw/Assessor_-_Parcel_Sales_20250709.csv",
-    "data/raw/Assessor_-_Parcel_Sales_20251229.csv"
+    "data/raw/Assessor_-_Parcel_Sales_20251229.csv",
+    "data/raw/Assessor_-_Parcel_Sales_20260308.csv"
   ),
   stringsAsFactors = FALSE
 )
@@ -27,7 +32,8 @@ sales_versions <- data.frame(
 source("R/sfha_targets_functions.R")
 source("R/sales_data_functions.R")
 source("R/indicator_final_functions.R")
-source("R/helper_pins_to_drop.R")
+source("R/q1_targets_functions.R")
+# source("R/helper_pins_to_drop.R")
 # source()
 
 targets_out_dir <- "data/processed/targets"
@@ -161,8 +167,6 @@ list(
         sf::st_as_sf(wkt = "geometry", crs = 4326) |>
         sf::st_transform(sf::st_crs(border)) |>
         sf::st_make_valid() |>
-        # dplyr::mutate(
-        #   geometry = sf::st_collection_extract(geometry, "POLYGON")) |>
         dplyr::filter(!sf::st_is_empty(geometry))
     }
   ),
@@ -202,14 +206,16 @@ list(
   ),
 
 
-  # --- Spatial polygons from NFHL geodatabases (State or County datasets, depending on vintage) ---
+  # --- Spatial polygons for property parcels ---------------------------------
+  # (Either downloaded  from Parcel Viewer backend data
+  # or Cook County data portal (assessor's archived parcel polygons))
 
   # parcel polygons as of tax year 2018, downloaded from Cook Open Data
-  tar_target(
-    parcels_2018_gdb,
-    "inputs/Historical_Parcels_-_2018.gdb/parcels_2018.gdb",
-    format = "file"
-  ),
+  # tar_target(
+  #   parcels_2018_gdb,
+  #   "inputs/Historical_Parcels_-_2018.gdb/parcels_2018.gdb",
+  #   format = "file"
+  # ),
 
   # parcel polygons as of tax year 2022, downloaded from Cook Open Data
   tar_target(
@@ -218,6 +224,32 @@ list(
     format = "file"
   ),
 
+  # parcel polygons as of tax year 2025, downloaded from Cook County Parcel Viewer datasets
+  tar_target(
+    parcels_2025_gdb,
+    "inputs/cook_parcels_2025.gpkg",
+    format = "file"
+  ),
+
+  # parcel polygons as of tax year 2018, downloaded from Cook County Parcel Viewer datasets
+  tar_target(
+    parcels_2018_gdb,
+    "inputs/cook_parcels_2018.gpkg",
+    format = "file"
+  ),
+
+  tar_target(
+    parcels_with_firms,
+    readxl::read_xlsx("data/processed/parcel_centroids_FIRM_PAN.xlsx") |>
+      select(pin10 = PIN10, FIRM_PAN) |> distinct() |> left_join(firm_dates)
+  ),
+
+  tar_target(
+    indicator_combined,
+    read_rds("data/processed/indicator_combined.RDS")
+  ),
+
+  # --- Spatial polygons from NFHL geodatabases (State or County datasets, depending on vintage) ---
 
   ## ---- Archived Polygons from Miyuki; 2018 NFHL ---------------------------
   # historic nfhl from 2018 (before FIRM updates)
@@ -227,29 +259,20 @@ list(
     format = "file"
   ),
 
-  ## NFHL geodatabase as of June 2024 (two batches of updated FIRMs) ----------
-  # downloaded from FEMA data available online
+
   tar_target(
-    nfhl_state_2024_gdb,
-    "inputs/Mapping_Firms/NFHL_17_20240628/Statewide_NFHL_17_20240628.gdb",
+    nfhl_2026_gdb,
+    "inputs/cook_2026_county_nfhl.gdb",
     format = "file"
   ),
 
   ## --- 2026 NFHL polygons -----------------------------------
-  # pending database for newest FIRM updates in Northern Cook county.
-  # Not a geodatabase but has spatial layers.
-  tar_target(
-    prelim_sfha_shp,
-    "inputs/Cook_2026_download/S_Fld_Haz_Ar.shp",
-    format = "file"
-  ),
 
-  ## FIRM panel polygons for most recent panels -------------------
-  # Will be merged with external file of FIRM panel Effective and preliminary dates later
-  # updated FIRM panels with their data. includes pending FIRMs for 2026
+  # now an official geodatabase since the maps became effective in northern cook in late January 2026
+  # now no longer need the 2024 geodatabase
   tar_target(
     firm_panels_2026_shp,
-    "inputs/Cook_2026_download/S_FIRM_Pan.shp",
+    "inputs/cook_2026_county_nfhl.gdb/S_FIRM_Pan.shp",
     format = "file"
   ),
 
@@ -277,48 +300,11 @@ list(
         sf::st_drop_geometry() |>
         dplyr::select(-dplyr::any_of(c("PCOMM", "PANEL", "SUFFIX", "ST_FIPS", "VERSION_ID",
           "SCALE", "PANEL_TYP", "PNP_REASON", "BASE_TYP", "DFIRM_ID", "EFF_DATE", "EFF_DAT",
-          "geometry"))) |>
-        dplyr::filter(!pin10 %in% drop_parcels)
+          "geometry")))
       x
     }
   ),
 
-  tar_target(
-    parcels_with_firms,
-    {
-      out <-  pin_centroids_clean |>
-        dplyr::left_join(firm_dates) |>
-        # mutate(FIRM_PAN = case_when(
-        #   pin10 %in% c("0427302008", "0427302009") ~ "17031C0229J",
-        #
-        #   pin10 %in% c(
-        #     "0633108005", "0633108006", "0633108007",
-        #     "0633108008", "0633108009",
-        #     "0633200015", "0633205020"
-        #   ) ~ "17031C0163K",
-        #
-        #   pin10 == "1705320076" ~ "17031C0418J",
-        #
-        #   pin10 %in% c("1710130027", "1710400054") ~ "17031C0438K",
-        #
-        #   pin10 %in% c("2226307004", "2226307005") ~ "17031C0587J",
-        #
-        #   pin10 == "2433302053" ~ "17031C0638J",
-        #
-        #   pin10 == "2730212019" ~ "17031C0684J",
-        #
-        #   pin10 == "28044drop00093" ~ "17031C0638J",
-        #
-        #   pin10 == "2130111028" ~ "17031C0539K",
-        #
-        #   TRUE ~ FIRM_PAN  # keep existing value if none match
-        # )
-        # ) |>
-        mutate(in_prelim_panels = ifelse(VERSION_ID == "2.6.3.6", TRUE, FALSE))
-
-      out
-    }
-  ),
 
 
   # --- read in parcel polygons that are used to identify parcels that overlap with SFHA ---
@@ -327,11 +313,20 @@ list(
     read_parcels_2018(parcels_2018_gdb, crs_out = sf::st_crs(border), border = border)
   ),
 
+  # still used for joining buildings for now
   tar_target(
     parcels_2022, # Used for 2024 NFHL SFHA areas and 2026 Pending FIRM areas
     read_parcels_2022(parcels_2022_gdb, crs_out = sf::st_crs(border), border = border)
   ),
 
+
+  # parcel polygons as of tax year 2025, downloaded from Cook County Parcel Viewer datasets
+  tar_target(
+    parcels_2025,
+    read_parcels_2025(parcels_2025_gdb, crs_out = sf::st_crs(border), border = border)
+    #  sf::st_read("inputs/cook_parcels_2025.gpkg", layer = "parcels_2025", quiet = TRUE) |>
+    # sf::st_transform(border)
+  ),
 
 
   # --- Hazard polygons for Cook County; multiple vintages  ---
@@ -342,16 +337,10 @@ list(
   ),
 
   tar_target(
-    sfha_2024_poly,
-    read_nfhl_sfha(nfhl_state_2024_gdb, layer = "S_FLD_HAZ_AR", border = border, sfha_tf_field = "SFHA_TF")
-  ),
-
-  # pending FIRM changes were not a geodatabase during initial data availability, only shapefile
-
-  tar_target(
     sfha_2026_poly,
-    read_prelim_sfha(prelim_sfha_shp,  border = border, crs_out = sf::st_crs(border))
+    read_nfhl_sfha(nfhl_2026_gdb, layer = "S_FLD_HAZ_AR", border = border, sfha_tf_field = "SFHA_TF")
   ),
+
 
   tar_target(
     lomr_2018_poly,
@@ -359,8 +348,8 @@ list(
   ),
 
   tar_target(
-    lomr_2024_poly,
-    read_nfhl_lomr(nfhl_state_2024_gdb, layer = "S_LOMR", border = border)
+    lomr_2026_poly,
+    read_nfhl_lomr(nfhl_2026_gdb, layer = "S_LOMR", border = border)
   ),
 
 
@@ -371,15 +360,8 @@ list(
   ),
 
   tar_target(
-    risk500_2024_poly,
-    read_nfhl_1in500(nfhl_state_2024_gdb, layer = "S_FLD_HAZ_AR", border = border, sfha_tf_field = "SFHA_TF")
-  ),
-
-  # pending FIRM changes were not a geodatabase during initial data availability, only shapefile
-
-  tar_target(
     risk500_2026_poly,
-    read_prelim_1in500(prelim_sfha_shp,  border = border, crs_out = sf::st_crs(border))
+    read_nfhl_1in500(nfhl_2026_gdb, layer = "S_FLD_HAZ_AR", border = border, sfha_tf_field = "SFHA_TF")
   ),
 
 
@@ -393,16 +375,10 @@ list(
   ),
 
   tar_target(
-    parcels_sfha_2024,
-    join_parcels_to_zone(parcels_2022, sfha_2024_poly, id_field = "DFIRM_ID")
+    parcels_sfha_2026,
+    join_parcels_to_zone(parcels_2025, sfha_2026_poly, id_field = "DFIRM_ID")
   ),
 
-  # only identifies parcels in SFHA for the pending FIRMs.
-  # Must back fill other parcels with 2024 NFHL data later
-  tar_target(
-    parcels_prelim_sfha,
-    join_parcels_to_zone(parcels_2022, sfha_2026_poly, id_field = "DFIRM_ID")
-  ),
 
   tar_target(
     parcels_lomr_2018,
@@ -410,8 +386,8 @@ list(
   ),
 
   tar_target(
-    parcels_lomr_2024,
-    join_parcels_to_zone(parcels_2022, lomr_2024_poly, id_field = "LOMR_ID")
+    parcels_lomr_2026,
+    join_parcels_to_zone(parcels_2025, lomr_2026_poly, id_field = "LOMR_ID")
   ),
 
 
@@ -421,13 +397,9 @@ list(
     join_parcels_to_zone(ptaxsim_parcels_sf, sfha_2018_poly, id_field = "DFIRM_ID")
   ),
 
-  tar_target(
-    ptaxsim_sfha_2024,
-    join_parcels_to_zone(ptaxsim_parcels_sf, sfha_2024_poly, id_field = "DFIRM_ID")
-  ),
 
   tar_target(
-    ptaxsim_prelim_sfha,
+    ptaxsim_sfha_2026,
     join_parcels_to_zone(ptaxsim_parcels_sf, sfha_2026_poly, id_field = "DFIRM_ID")
   ),
 
@@ -446,13 +418,9 @@ list(
     join_buildings_to_zone(buildings_with_pin, sfha_2018_poly, id_field = "DFIRM_ID")
   ),
 
-  tar_target(
-    buildings_sfha_2024,
-    join_buildings_to_zone(buildings_with_pin, sfha_2024_poly, id_field = "DFIRM_ID")
-  ),
 
   tar_target(
-    buildings_prelim_sfha,
+    buildings_sfha_2026,
     join_buildings_to_zone(buildings_with_pin, sfha_2026_poly, id_field = "DFIRM_ID")
   ),
 
@@ -462,19 +430,15 @@ list(
   ),
 
   tar_target(
-    buildings_lomr_2024,
-    join_buildings_to_zone(buildings_with_pin, lomr_2024_poly, id_field = "LOMR_ID")
+    buildings_lomr_2026,
+    join_buildings_to_zone(buildings_with_pin, lomr_2026_poly, id_field = "LOMR_ID")
   ),
+
 
   ## ---- Buildings in expanded Risk zones ----------------------------
   tar_target(
     buildings_risk500_2018,
     join_buildings_to_zone(buildings_with_pin, risk500_2018_poly, id_field = "DFIRM_ID")
-  ),
-
-  tar_target(
-    buildings_risk500_2024,
-    join_buildings_to_zone(buildings_with_pin, risk500_2024_poly, id_field = "DFIRM_ID")
   ),
 
   tar_target(
@@ -490,10 +454,6 @@ list(
     join_parcels_to_zone(ptaxsim_parcels_sf, risk500_2018_poly, id_field = "DFIRM_ID")
   ),
 
-  tar_target(
-    land_risk500_2024,
-    join_parcels_to_zone(ptaxsim_parcels_sf, risk500_2024_poly, id_field = "DFIRM_ID")
-  ),
 
   tar_target(
     land_risk500_2026,
@@ -507,22 +467,19 @@ list(
     sfha_indicator_land_parcels,
     make_sfha_indicator_parcels(
       parcels_sfha_2018,
-      parcels_sfha_2024,
-      parcels_prelim_sfha,
+      parcels_sfha_2026,
       parcels_lomr_2018,
-      parcels_lomr_2024
+      parcels_lomr_2026
     )
   ),
-
 
   tar_target(
     ptaxsim_sfha_indicator_parcel_polygons,
     make_sfha_indicator_parcels(
       ptaxsim_sfha_2018,
-      ptaxsim_sfha_2024,
-      ptaxsim_prelim_sfha,
+      ptaxsim_sfha_2026,
       parcels_lomr_2018,
-      parcels_lomr_2024
+      parcels_lomr_2026
     )
   ),
 
@@ -530,10 +487,9 @@ list(
     sfha_indicator_buildings,
     make_sfha_indicator_buildings(
       buildings_sfha_2018,
-      buildings_sfha_2024,
-      buildings_prelim_sfha,
+      buildings_sfha_2026,
       buildings_lomr_2018,
-      buildings_lomr_2024
+      buildings_lomr_2026
     )
   ),
 
@@ -541,10 +497,9 @@ list(
     risk500_indicator_buildings,
     make_sfha_indicator_buildings(
       buildings_risk500_2018,
-      buildings_risk500_2024,
       buildings_risk500_2026,
       buildings_lomr_2018,
-      buildings_lomr_2024
+      buildings_lomr_2026
     )
   ),
 
@@ -552,10 +507,9 @@ list(
     risk500_indicator_land,
     make_sfha_indicator_parcels(
       land_risk500_2018,
-      land_risk500_2024,
       land_risk500_2026,
       parcels_lomr_2018,
-      parcels_lomr_2024
+      parcels_lomr_2026
     )
   ),
 
@@ -566,8 +520,7 @@ list(
       parcels_with_firms = parcels_with_firms,
       indicator_df       = sfha_indicator_land_parcels,
       zone_2018          = "FLD_ZONE_2018",
-      zone_2024          = "FLD_ZONE_2024",
-      zone_2026          = "FLD_ZONE",  # is the 2026 pending firm values
+      zone_2026          = "FLD_ZONE_2026",
       lomr_date_col      = "lomr_date",
       out_prefix         = "land_sfha"
     )
@@ -580,8 +533,7 @@ list(
       parcels_with_firms = parcels_with_firms,
       indicator_df       = ptaxsim_sfha_indicator_parcel_polygons,
       zone_2018          = "FLD_ZONE_2018",
-      zone_2024          = "FLD_ZONE_2024",
-      zone_2026          = "FLD_ZONE",  # is the 2026 pending firm values
+      zone_2026          = "FLD_ZONE_2026",
       lomr_date_col      = "lomr_date",
       out_prefix         = "ptax_land_sfha"
     )
@@ -594,7 +546,6 @@ list(
       parcels_with_firms = parcels_with_firms,
       indicator_df       = sfha_indicator_buildings,
       zone_2018          = "bldg_FLD_ZONE_2018",
-      zone_2024          = "bldg_FLD_ZONE_2024",
       zone_2026          = "bldg_FLD_ZONE_2026",
       lomr_date_col      = "lomr_date",
       out_prefix         = "bldg_sfha"
@@ -609,7 +560,6 @@ list(
       parcels_with_firms,
       risk500_indicator_buildings,
       zone_2018 = "bldg_FLD_ZONE_2018",
-      zone_2024 = "bldg_FLD_ZONE_2024",
       zone_2026 = "bldg_FLD_ZONE_2026",
       out_prefix = "risk500_bldg_"
     )
@@ -623,84 +573,40 @@ list(
       parcels_with_firms,
       risk500_indicator_land,
       zone_2018 = "FLD_ZONE_2018",
-      zone_2024 = "FLD_ZONE_2024",
-      zone_2026 = "FLD_ZONE",
+      zone_2026 = "FLD_ZONE_2026",
       out_prefix = "risk500_land_"
     )
   ),
-
-
-  ## --- Checking Work ----
-
-  # tar_target(
-  #   sfha_compare_summary,
-  #   sfha_compare_pin10_fourway |>
-  #     dplyr::summarise(
-  #       n_pin10 = dplyr::n(),
-  #
-  #       # SFHA: counts
-  #       n_diff_sfha2018 = sum(.data$diff_sfha2018, na.rm = TRUE),
-  #       n_diff_sfha2024 = sum(.data$diff_sfha2024, na.rm = TRUE),
-  #       n_diff_sfha2026 = sum(.data$diff_sfha2026, na.rm = TRUE),
-  #
-  #       n_land_only_sfha2018 = sum(.data$land_only_sfha2018, na.rm = TRUE),
-  #       n_bldg_only_sfha2018 = sum(.data$bldg_only_sfha2018, na.rm = TRUE),
-  #
-  #       n_land_only_sfha2024 = sum(.data$land_only_sfha2024, na.rm = TRUE),
-  #       n_bldg_only_sfha2024 = sum(.data$bldg_only_sfha2024, na.rm = TRUE),
-  #
-  #       n_land_only_sfha2026 = sum(.data$land_only_sfha2026, na.rm = TRUE),
-  #       n_bldg_only_sfha2026 = sum(.data$bldg_only_sfha2026, na.rm = TRUE),
-  #
-  #       # LOMR: counts
-  #       n_diff_lomr2018 = sum(.data$diff_lomr2018, na.rm = TRUE),
-  #       n_diff_lomr2024 = sum(.data$diff_lomr2024, na.rm = TRUE),
-  #
-  #       n_land_only_lomr2018 = sum(.data$land_only_lomr2018, na.rm = TRUE),
-  #       n_bldg_only_lomr2018 = sum(.data$bldg_only_lomr2018, na.rm = TRUE),
-  #
-  #       n_land_only_lomr2024 = sum(.data$land_only_lomr2024, na.rm = TRUE),
-  #       n_bldg_only_lomr2024 = sum(.data$bldg_only_lomr2024, na.rm = TRUE),
-  #
-  #       # SFHA: rates
-  #       pct_diff_sfha2018 = n_diff_sfha2018 / n_pin10,
-  #       pct_diff_sfha2024 = n_diff_sfha2024 / n_pin10,
-  #       pct_diff_sfha2026 = n_diff_sfha2026 / n_pin10,
-  #
-  #       # LOMR: rates
-  #       pct_diff_lomr2018 = n_diff_lomr2018 / n_pin10,
-  #       pct_diff_lomr2024 = n_diff_lomr2024 / n_pin10
-  #     )
-  # ),
-
 
 
   # ----- Make combined indicator file -------------------------------
   tar_target(
     sfha_compare_pin10_fourway,
     sfha_indicator_final_land |>
-      dplyr::select(pin10, land_sfha2018, land_sfha2024, land_sfha2026, lomr_date, PRE_DATE, EFF_DATE, FIRM_PAN, VERSION_ID) |>
+      dplyr::select(pin10, land_sfha2018, land_sfha2026, lomr_date, PRE_DATE, EFF_DATE, FIRM_PAN, VERSION_ID) |>
       dplyr::left_join(
         sfha_indicator_final_buildings |>
-          dplyr::select(pin10, bldg_sfha2018, bldg_sfha2024, bldg_sfha2026, bldg_lomr_date = lomr_date),
+          dplyr::select(pin10, bldg_sfha2018, bldg_sfha2026, bldg_lomr_date = lomr_date),
         by = "pin10"
       ) |>
-      dplyr::left_join(
-        ptaxsim_sfha_indicator_final |>
-          dplyr::select(pin10, ptax_land_sfha2018, ptax_land_sfha2024, ptax_land_sfha2026),
-        by = "pin10"
-      ) |>
+      # dplyr::left_join(
+      #   ptaxsim_sfha_indicator_final |>
+      #     dplyr::select(pin10, ptax_land_sfha2018, ptax_land_sfha2024, ptax_land_sfha2026),
+      #   by = "pin10"
+      # ) |>
       dplyr::left_join(
         risk500_indicator_final_buildings |>
-          dplyr::select(pin10, risk500_bldg_2018, risk500_bldg_2024, risk500_bldg_2026),
-        by = "pin10") |>
+          dplyr::select(pin10, risk500_bldg_2018, risk500_bldg_2026),
+        by = "pin10")  |>
       dplyr::left_join(
         risk500_indicator_final_land |>
-          dplyr::select(pin10, risk500_land_2018, risk500_land_2024, risk500_land_2026),
-        by = "pin10")
+          dplyr::select(pin10, risk500_land_2018, risk500_land_2026),
+        by = "pin10") |>
+
+      group_by(pin10) |>
+      slice_head(n = 1) |>
+      ungroup()
   ),
-
-
 
   # ---- Prep Sales Data ----
 
@@ -748,8 +654,7 @@ list(
           tar_target(
             sales_prepped,
             make_sfha_timing_vars(
-              sales_joined  |>
-                filter(!pin10 %in% drop_parcels),
+              sales_joined,
               method = method,
               min_analysis_year = 2009,
               min_price = 5000
@@ -771,20 +676,64 @@ list(
           ),
 
 
+          # tar_target(
+          #   df_prep_final_rds,
+          #   {
+          #     dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
+          #     out_file <- file.path(
+          #       sales_out_dir,
+          #       paste0("df_prep_", out_stub, "_", sales_label, "_arcgis.rds")
+          #     )
+          #     saveRDS(df_prep_final, out_file)
+          #     out_file
+          #   },
+          #   format = "file"
+          # ),
+
           tar_target(
-            df_prep_final_rds,
+            q1_model_inputs,
+            add_q1_assumption_vars(
+              df_prep_final
+            )
+          ),
+
+          tar_target(
+            q1_model_inputs_rds,
             {
               dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
               out_file <- file.path(
                 sales_out_dir,
-                paste0("df_prep_", out_stub, "_", sales_label, "_final.rds")
+                paste0("df_prep_", out_stub, "_", sales_label, "_arcgis_forQ1_assumptiontests.rds")
               )
-              saveRDS(df_prep_final, out_file)
+              saveRDS(q1_model_inputs, out_file)
               out_file
             },
             format = "file"
           )
         )
     ))
-  )
+  ) # ,
+  # tar_target(
+  #   combined_datasets,
+  #   {
+  #     updated_map <- c(
+  #       bldg_updated = file.path(sales_out_dir, "df_prep_bldg_updated_arcgis_forQ1_assumptiontests.rds"),
+  #       land_updated = file.path(sales_out_dir, "df_prep_land_updated_arcgis_forQ1_assumptiontests.rds"),
+  #       risk500_updated = file.path(sales_out_dir, "df_prep_risk500_updated_arcgis_forQ1_assumptiontests.rds"),
+  #       risk500_land_updated = file.path(sales_out_dir, "df_prep_risk500_land_updated_arcgis_forQ1_assumptiontests.rds")
+  #     )
+  #
+  #     sales2026_map <- c(
+  #       bldg_updated = file.path(sales_out_dir, "df_prep_bldg_2026_arcgis_forQ1_assumptiontests.rds"),
+  #       land_updated = file.path(sales_out_dir, "df_prep_land_2026_arcgis_forQ1_assumptiontests.rds"),
+  #       risk500_updated = file.path(sales_out_dir, "df_prep_risk500_2026_arcgis_forQ1_assumptiontests.rds"),
+  #       risk500_land_updated = file.path(sales_out_dir, "df_prep_risk500_land_2026_arcgis_forQ1_assumptiontests.rds")
+  #     )
+  #
+  #     list(
+  #       updated = read_q1_dataset_bundle(updated_map),
+  #       sales_2026 = read_q1_dataset_bundle(sales2026_map)
+  #     )
+  #   }
+  # )
 )
