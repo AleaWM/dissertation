@@ -1,0 +1,1098 @@
+---
+title: "Dissertation Tables & Figures"
+format: 
+  html:
+    df-print: kable
+    code-fold: true
+    tbl-cap-location: margin
+    error: true
+    toc: true
+---
+
+
+```{r setup}
+library(tidyverse)
+library(fixest)
+
+library(didFF)   # for testing if functional form matters for the analysis. Tests if parallel trends assumption is sensitive to functional form (i.e. logged variable vs unlogged variable)
+library(did)  # for step 3 and 4
+options(scipen = 999)
+
+# bldg_sfha <- readRDS("data/processed/variants/df_prep__bldg_sfha.RDS")
+# 
+# parcels <- readRDS("data/processed/variants/df_prep__parcel_sfha.RDS")
+# 
+# bldg_1in500 <- readRDS("data/processed/variants/df_prep__bldg_1in500.RDS")
+
+source("R/helper_pins_to_drop.R")
+
+ 
+bldg_sfha <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS")
+
+parcels <- readRDS("data/processed/targets/sales/df_prep_land_v2026_03.RDS")
+
+bldg_1in500 <- readRDS("data/processed/targets/sales/df_prep_risk500_v2026_03.RDS")  |>
+  filter(!pin10 %in% drop_parcels  |
+               (pin10 == "0113301013" & sale_year > 2014))
+
+# bldg_sfha <- readRDS("data/processed/variants/df_prep__bldg_sfhaarcgis_redo_2026sales.RDS")
+# 
+# parcels <- readRDS("data/processed/variants/df_prep__parcel_sfhaarcgis_redo_2026sales.RDS")
+# 
+# bldg_1in500 <- readRDS("data/processed/variants/df_prep__bldg_1in500arcgis_redo_2026sales.RDS") |> 
+#   filter(!pin10 %in% drop_parcels  |          
+#            (pin10 == "0113301013" & sale_year > 2014))
+
+
+bldg_sfha <- bldg_sfha |> filter(!pin10 %in% drop_parcels  |
+               (pin10 == "0113301013" & sale_year > 2014)
+             )
+
+parcels <- parcels |> filter(!pin10 %in% drop_parcels  |
+               (pin10 == "0113301013" & sale_year > 2014)
+             )
+
+```
+
+
+```{r}
+
+table(bldg_sfha$prelim_sfha_category)
+table(bldg_sfha$change_type_prelim)
+
+df_es_added <- bldg_sfha |>
+  filter(prelim_sfha_category %in% c("Added to prelim SFHA", "Never SFHA")) |>
+  mutate(pin_num = as.numeric(pin)) |>
+  dplyr::arrange(pin_num, sale_year, sale_date) |>
+  dplyr::group_by(pin_num, sale_year, pre_date_chr) |>
+  dplyr::slice_tail(n = 1) |>
+  dplyr::ungroup() |>
+  mutate(treated = prelim_sfha_category == "Added to prelim SFHA") |> 
+  
+   group_by(pin_num) |>
+  mutate(
+    g_add = if (any(addedto_prelim_sfha == 1, na.rm = TRUE)) {
+      min(sale_year[addedto_prelim_sfha == 1], na.rm = TRUE)
+    } else {
+      0L
+    }
+  ) |>
+  ungroup()
+
+
+added_counts <- table(df_es_added$g_add, df_es_added$pre_date)
+
+```
+
+
+```{r}
+df_es_removed <- bldg_sfha |>
+  filter(prelim_sfha_category %in% c("Removed from prelim SFHA", "Always SFHA")) |>
+  mutate(pin_num = as.numeric(pin)) |>
+  dplyr::arrange(pin_num, sale_year, sale_date) |>
+  dplyr::group_by(pin_num, sale_year, pre_date_chr) |>
+  dplyr::slice_tail(n = 1) |>
+  dplyr::ungroup() |>
+  mutate(treated = prelim_sfha_category == "Removed from prelim SFHA") |> 
+  
+   group_by(pin_num) |>
+  mutate(
+    g_remove = if (any(removedfrom_prelim_sfha == TRUE, na.rm = TRUE)) {
+      min(sale_year[removedfrom_prelim_sfha == TRUE], na.rm = TRUE)
+    } else {
+      0L
+    }
+  ) |>
+  ungroup()
+
+
+removed_counts <- table(df_es_removed$g_remove, df_es_removed$pre_date)
+```
+
+```{r}
+#| label: tbl-treatedsalesbycohort
+#| tbl-cap: "Treated Sales by Cohort and Treatment Direction"
+#| layout-ncol: 2
+
+added_counts 
+removed_counts 
+```
+
+```{r}
+#| label: tbl-descriptivestatsforQ1
+#| tbl-cap: "Descriptive Statistics for Sample"
+
+sfha_category_stats <- bldg_sfha |>
+  group_by(pin) |> mutate(n_sales = n()) |> ungroup() |>
+  group_by(change_type_prelim) |>
+  summarize(
+    n_properties = n_distinct(pin),
+    avg_sales_per_property = mean(n_sales),
+    n_sales      = n(),
+    .groups = "drop"
+  ) |>
+  arrange(desc(n_properties))
+
+sfha_category_stats
+
+sfha_category_stats <- bldg_sfha |>
+    mutate(ever_firm_update =  ifelse(pre_date =="2005-01-01", FALSE, TRUE) ) |>
+  group_by(change_type_prelim) |>
+  summarize(
+    n_properties = n_distinct(pin),
+    #avg_sales_per_property = mean(n_sales),
+    n_sales      = n(),
+    avg_price = mean(sale_price),
+    median_price = median(sale_price)  ) |>
+  arrange(desc(n_properties))
+
+sfha_category_stats
+```
+
+```{r}
+#| label: tbl-effectofremapping
+#| tbl-cap: "Effect of Being Mapped Into or Out of a FEMA Flood Plain"
+#| error: true
+#| eval: false
+
+library(fixest)
+
+prelim_twfe <- list(
+
+  
+ "I" =  feols(
+    log(sale_price) ~ addedto_prelim_sfha  | pin + sale_year,
+    cluster = ~pin10,
+        data = bldg_sfha
+  ),
+
+    "I Subset" = feols(
+    log(sale_price) ~ addedto_prelim_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = (bldg_sfha |> filter(change_type_prelim != "Always SFHA" & treat_year_remove_prelim == 10000)),
+
+  ),
+
+  "II" =  feols(
+    log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_sfha,
+
+  ),
+
+
+  "II Subset" =  feols(
+    log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = (bldg_sfha |> filter(change_type_prelim != "Never SFHA" & treat_year_add_prelim == 10000)),
+
+  ),
+ 
+  # Symmetric effect of location in risk zone
+    "III" = feols(
+    log(sale_price) ~ in_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_sfha,
+  ),
+ 
+  # Asymmetric: added vs removed in one equation
+  "0" = feols(
+    log(sale_price) ~ addedto_prelim_sfha + removedfrom_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_sfha,
+  ),
+ 
+
+ "I-Eff" =  feols(
+    log(sale_price) ~ addedto_eff_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_sfha
+  ),
+
+    "I-Eff Subset" = feols(
+    log(sale_price) ~ addedto_eff_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = (bldg_sfha |> filter(change_type != "Always SFHA" & treat_year_remove_eff == 10000)),
+
+  ),
+
+  "II-Eff" =  feols(
+    log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_sfha,
+
+  ),
+
+
+  "II-Eff Subset" =  feols(
+    log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_sfha |> filter(change_type != "Never SFHA" & treat_year_add_prelim == 10000),
+
+  ),
+ 
+  # Symmetric effect of location in risk zone
+    "III-Eff" = feols(
+    log(sale_price) ~ in_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_sfha,
+
+  ),
+  # Asymmetric: added vs removed in one equation
+  "0-Eff" = feols(
+    log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_sfha,
+
+  )
+ 
+)
+
+all_models_formatted <- modelsummary::modelsummary(prelim_twfe,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+all_models_formatted
+```
+
+
+```{r}
+#| label: tbl-regionalheterogeneity
+#| tbl-cap: "Regional Hetergeneity for SFHA Changes due to Preliminary FIRM Updates"
+#| 
+
+models <- list(
+
+  # Heterogeneity by Triad: added/removed interacted with Triad
+  "I" = feols(
+    log(sale_price) ~ addedto_prelim_sfha*Triad | pin + sale_year,
+    data = bldg_sfha,
+    cluster = ~pin10,
+  ),
+
+      # Heterogeneity by Triad: added interacted with Triad
+ "I Subset" =  feols(
+    log(sale_price) ~ addedto_prelim_sfha*Triad  | pin + sale_year,
+    data = bldg_sfha |> filter(change_type_prelim != "Always SFHA" & treat_year_remove_prelim == 10000),
+    cluster = ~pin10,
+  ),
+  # Heterogeneity by Triad: added/removed interacted with Triad
+  "II" = feols(
+    log(sale_price) ~ removedfrom_prelim_sfha*Triad | pin + sale_year,
+    data = bldg_sfha,
+    cluster = ~pin10,
+  ),
+
+    # Heterogeneity by Triad: added interacted with Triad
+ "II Subset" =  feols(
+    log(sale_price) ~  removedfrom_prelim_sfha*Triad | pin + sale_year,
+    data = bldg_sfha |> filter(change_type_prelim != "Never SFHA" & treat_year_add_prelim == 10000),
+cluster = ~ pin10
+  ),
+    # Heterogeneity by Triad: added/removed interacted with Triad
+  "III" = feols(
+    log(sale_price) ~ in_prelim_sfha*Triad | pin + sale_year,
+    data = bldg_sfha,
+    cluster = ~pin10,
+  )
+  
+)
+
+all_models_formatted <- modelsummary::modelsummary(models,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+all_models_formatted
+
+```
+
+
+```{r}
+#| label: tbl-subset-removedfrom
+#| tbl-cap: "Mapped out of Preliminary SFHA - Restricted Samples"
+#| 
+
+# function with default options:
+fn_valid_cohorts <- function(df){
+  
+  df |> 
+    mutate(pre_date_chr = as.character(pre_date_chr)) |>
+    group_by(pre_date_chr) |>
+    summarise(
+      n = n(),
+      n_treated = sum(removedfrom_prelim_sfha == TRUE, na.rm = TRUE),
+      n_untreated = sum(removedfrom_prelim_sfha == FALSE, na.rm = TRUE),
+          .groups = "drop"
+
+      ) |>
+    filter(n_treated > 0,  n_untreated > 0) |>
+    pull(pre_date_chr)
+}
+
+
+
+#table(bldg_sfha$Triad, bldg_sfha$prelim_sfha_category)
+
+df_sub <- bldg_sfha |> 
+  filter(change_type_prelim != "Never SFHA" & 
+           # and properties that are never treated for being added to the SFHA
+           treat_year_add_prelim == 10000 & treat_year_add_eff == 10000)
+
+valid_cohorts_bldg <- fn_valid_cohorts(df_sub)
+bldgs_fsplit <- df_sub |> filter(pre_date_chr %in% valid_cohorts_bldg)
+
+
+#table(parcels$Triad, parcels$prelim_sfha_category)
+#table(parcels$removed_pre_thisyear, parcels$year)
+
+df_sub_parcels <- parcels |> 
+  filter(change_type_prelim != "Never SFHA" & 
+           # and properties that are never treated for being added to the SFHA
+           treat_year_add_prelim == 10000 & treat_year_add_eff == 10000)
+valid_cohorts_parcels <- fn_valid_cohorts(df = df_sub_parcels)
+parcels_fsplit <- df_sub_parcels |> filter(pre_date_chr %in% valid_cohorts_parcels)
+
+
+# 
+# table(bldg_1in500$removed_pre_thisyear, bldg_1in500$year)
+# table(bldg_1in500$removedfrom_prelim_sfha, bldg_1in500$year)
+# table(bldg_1in500$Triad, bldg_1in500$prelim_sfha_category)
+
+df_sub_1in500 <- bldg_1in500 |> 
+  filter(change_type_prelim != "Never SFHA" & 
+           # and properties that are never treated for being added to the SFHA
+           treat_year_add_prelim == 10000 & treat_year_add_eff == 10000)
+valid_cohorts_1in500 <- fn_valid_cohorts(df = df_sub_1in500)
+bldg_1in500_fsplit <- df_sub_1in500 |> filter(pre_date_chr %in% valid_cohorts_1in500)
+
+
+
+
+
+
+models <- list(
+ "Bldg SFHA" = feols(
+       log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
+
+   # log(sale_price) ~ event_remapped*ever_removed_prelim | pin + sale_year,
+    data = bldgs_fsplit,
+  fsplit = ~pre_date_chr,
+    cluster = ~pin10
+  ),
+ 
+  "Bldg 1in500" = feols(
+           log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
+
+  #  log(sale_price) ~ event_remapped*ever_removed_prelim | pin + sale_year,
+    data = bldg_1in500_fsplit,
+  fsplit = ~pre_date_chr,
+    cluster = ~pin10
+  
+  ),
+  
+  "Parcels" = feols(
+           log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
+
+  #  log(sale_price) ~ event_remapped*ever_removed_prelim | pin + sale_year,
+    data = parcels_fsplit,
+  fsplit = ~pre_date_chr,
+    cluster = ~pin10
+  
+  )
+)
+
+all_models_formatted <- modelsummary::modelsummary(models,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+all_models_formatted
+
+```
+
+```{r}
+#| label: tbl-effectiveSFHA-subset-removed
+#| tbl-cap: "Mapped out of EFFECTIVE SFHA - Restricted Sample"
+#| 
+
+#table(bldg_sfha$added_pre_thisyear, bldg_sfha$year)
+
+# function with default options:
+fn_valid_cohorts <- function(df){
+  
+  df |> 
+    mutate(eff_date_chr = as.character(eff_date_chr)) |>
+    group_by(eff_date_chr) |>
+    summarise(
+      n = n(),
+      n_treated = sum(removedfrom_eff_sfha == TRUE, na.rm = TRUE),
+      n_untreated = sum(removedfrom_eff_sfha == FALSE, na.rm = TRUE),
+          .groups = "drop"
+
+      ) |>
+    filter(n_treated > 0,  n_untreated > 0) |>
+    pull(eff_date_chr)
+}
+
+
+
+
+
+df_sub <- bldg_sfha |> 
+  filter(change_type_prelim != "Never SFHA" & 
+           # and properties that are never treated for being addedto from the SFHA
+           treat_year_add_prelim == 10000 & treat_year_add_eff == 10000)
+
+valid_cohorts_bldg <- fn_valid_cohorts(df_sub)
+bldgs_fsplit <- df_sub |> filter(eff_date_chr %in% valid_cohorts_bldg)
+
+
+# table(parcels$Triad, parcels$prelim_sfha_category)
+# table(parcels$removed_pre_thisyear, parcels$year)
+
+df_sub_parcels <- parcels |> 
+  filter(change_type_prelim != "Never SFHA" & 
+           # and properties that are never treated for being added to the SFHA
+           treat_year_add_prelim == 10000 & treat_year_add_eff == 10000)
+valid_cohorts_parcels <- fn_valid_cohorts(df = df_sub_parcels)
+parcels_fsplit <- df_sub_parcels |> filter(eff_date_chr %in% valid_cohorts_parcels)
+
+
+# 
+# table(bldg_1in500$removed_pre_thisyear, bldg_1in500$year)
+# table(bldg_1in500$removedfrom_prelim_sfha, bldg_1in500$year)
+# table(bldg_1in500$Triad, bldg_1in500$prelim_sfha_category)
+
+df_sub_1in500 <- bldg_1in500 |> 
+  filter(change_type_prelim != "Never SFHA" & 
+           # and properties that are never treated for being addedto the SFHA
+           treat_year_add_prelim == 10000 & treat_year_add_eff == 10000)
+valid_cohorts_1in500 <- fn_valid_cohorts(df = df_sub_1in500)
+bldg_1in500_fsplit <- df_sub_1in500 |> filter(eff_date_chr %in% valid_cohorts_1in500)
+
+
+
+
+models <- list(
+  
+  # "Buildings in SFHA" =  feols(
+  #   log(sale_price) ~ addedto_eff_sfha | pin + sale_year,
+  #   fsplit = ~eff_date_chr,
+  #   cluster = ~pin10,
+  #   data = bldgs_fsplit
+  # ),
+
+  "Buildings in SFHA" =  feols(
+    log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year,
+    fsplit = ~eff_date_chr,
+
+    cluster = ~pin10,
+    data = parcels_fsplit
+  ),
+
+  "Buildings - 1-in-500" =  feols(
+    log(sale_price) ~ removedfrom_eff_sfha | pin + year,
+    fsplit = ~eff_date_chr,
+    cluster = ~pin10,
+    data = bldg_1in500_fsplit
+  )
+)
+
+all_models_formatted <- modelsummary::modelsummary(models,
+                                                   output = "flextable",
+                                                   fmt = function(x) round(x, 2),
+                                                   
+                                                   stars = TRUE)
+
+all_models_formatted
+
+```
+
+> Just realized the control groups for the 1 in 500 risk areas are not reliable. I did not make an "always in 1 in 500 area" or never in 1 in 500 area" like I did with the "Always SFHA" and "Never SFHA".
+
+> So models that are subset and use 1 in 500 year flood zones are comparing to properties that were Always in the SFHA or Never in the SFHA which is quite different and probably worse than just not subsetting it?? 
+
+```{r}
+#| label: tbl-subset-prelim_addedto
+#| tbl-cap: "Mapped into Preliminary SFHA - Restricted Sample"
+#| 
+
+#table(bldg_sfha$added_pre_thisyear, bldg_sfha$year)
+
+# function with default options:
+fn_valid_cohorts <- function(df){
+  
+  df |>  
+    mutate(pre_date_chr = as.character(pre_date_chr)) |>
+    group_by(pre_date_chr) |>
+    summarise(
+      n = n(),
+      n_treated = sum(addedto_prelim_sfha == TRUE, na.rm = TRUE),
+      n_untreated = sum(addedto_prelim_sfha == FALSE, na.rm = TRUE),
+          .groups = "drop"
+
+      ) |>
+    filter(n_treated > 0,  n_untreated > 0) |>
+    pull(pre_date_chr)
+}
+
+
+
+
+table(bldg_sfha$Triad, bldg_sfha$prelim_sfha_category)
+
+df_sub <- bldg_sfha |> 
+  filter(change_type_prelim != "Always SFHA" & 
+           # and properties that are never treated for being removed from the SFHA
+           treat_year_remove_prelim == 10000 & treat_year_remove_eff == 10000)
+
+valid_cohorts_bldg <- fn_valid_cohorts(df_sub)
+bldgs_fsplit <- df_sub |> filter(pre_date_chr %in% valid_cohorts_bldg)
+
+
+# table(parcels$Triad, parcels$prelim_sfha_category)
+# table(parcels$removed_pre_thisyear, parcels$year)
+
+df_sub_parcels <- parcels |> 
+  filter(change_type_prelim != "Always SFHA" & 
+           # and properties that are never treated for being removed from the SFHA
+           treat_year_remove_prelim == 10000 & treat_year_remove_eff == 10000)
+valid_cohorts_parcels <- fn_valid_cohorts(df = df_sub_parcels)
+parcels_fsplit <- df_sub_parcels |> filter(pre_date_chr %in% valid_cohorts_parcels)
+
+
+# 
+# table(bldg_1in500$removed_pre_thisyear, bldg_1in500$year)
+# table(bldg_1in500$removedfrom_prelim_sfha, bldg_1in500$year)
+# table(bldg_1in500$Triad, bldg_1in500$prelim_sfha_category)
+
+df_sub_1in500 <- bldg_1in500 |> 
+  filter(change_type_prelim != "Always SFHA" & 
+           # and properties that are never treated for being removed from the SFHA
+           treat_year_remove_prelim == 10000 & treat_year_remove_eff == 10000)
+valid_cohorts_1in500 <- fn_valid_cohorts(df = df_sub_1in500)
+bldg_1in500_fsplit <- df_sub_1in500 |> filter(pre_date_chr %in% valid_cohorts_1in500)
+
+
+
+
+models <- list(
+  # Heterogeneity by Triad: added/removed interacted with Triad
+  # 
+  # # Heterogeneity by Triad: added/removed interacted with Triad
+  "Buildings in SFHA" =  feols(
+    log(sale_price) ~ addedto_prelim_sfha | pin + sale_year,
+    fsplit = ~pre_date_chr,
+    cluster = ~pin10,
+    data = bldgs_fsplit
+  ),
+
+  "Buildings in SFHA" =  feols(
+    log(sale_price) ~ addedto_prelim_sfha | pin + sale_year,
+    cluster = ~pin10,
+    data = bldg_sfha
+  ),
+
+  "Buildings - 1-in-500" =  feols(
+    log(sale_price) ~ addedto_prelim_sfha | pin + year,
+    fsplit = ~pre_date_chr,
+    cluster = ~pin10,
+    data = bldg_1in500_fsplit
+  ),
+
+  "Buildings - 1-in-500" =  feols(
+    log(sale_price) ~ addedto_prelim_sfha | pin + sale_year,
+    cluster = ~pin10,
+    data = bldg_1in500
+  )
+)
+
+all_models_formatted <- modelsummary::modelsummary(models,
+                                                   output = "flextable",
+                                                   fmt = function(x) round(x, 2),
+                                                   
+                                                   stars = TRUE)
+
+all_models_formatted
+
+```
+
+
+```{r}
+#| label: effectiveSFHA-subset-addedto
+#| tbl-cap: "Mapped into EFFECTIVE SFHA - Restricted Sample"
+#| 
+
+#table(bldg_sfha$added_pre_thisyear, bldg_sfha$year)
+
+# function with default options:
+fn_valid_cohorts <- function(df){
+  
+  df |> 
+    mutate(eff_date_chr = as.character(eff_date_chr)) |>
+    group_by(eff_date_chr) |>
+    summarise(
+      n = n(),
+      n_treated = sum(addedto_eff_sfha == TRUE, na.rm = TRUE),
+      n_untreated = sum(addedto_eff_sfha == FALSE, na.rm = TRUE),
+          .groups = "drop"
+
+      ) |>
+    filter(n_treated > 0,  n_untreated > 0) |>
+    pull(eff_date_chr)
+}
+
+
+
+
+table(bldg_sfha$Triad, bldg_sfha$prelim_sfha_category)
+
+df_sub <- bldg_sfha |> 
+  filter(change_type_prelim != "Always SFHA" & 
+           # and properties that are never treated for being removed from the SFHA
+           treat_year_remove_prelim == 10000 & treat_year_remove_eff == 10000)
+
+valid_cohorts_bldg <- fn_valid_cohorts(df_sub)
+bldgs_fsplit <- df_sub |> filter(eff_date_chr %in% valid_cohorts_bldg)
+
+
+# table(parcels$Triad, parcels$prelim_sfha_category)
+# table(parcels$removed_pre_thisyear, parcels$year)
+
+df_sub_parcels <- parcels |> 
+  filter(change_type_prelim != "Always SFHA" & 
+           # and properties that are never treated for being removed from the SFHA
+           treat_year_remove_prelim == 10000 & treat_year_remove_eff == 10000)
+valid_cohorts_parcels <- fn_valid_cohorts(df = df_sub_parcels)
+parcels_fsplit <- df_sub_parcels |> filter(eff_date_chr %in% valid_cohorts_parcels)
+
+
+# 
+# table(bldg_1in500$removed_pre_thisyear, bldg_1in500$year)
+# table(bldg_1in500$removedfrom_prelim_sfha, bldg_1in500$year)
+# table(bldg_1in500$Triad, bldg_1in500$prelim_sfha_category)
+
+df_sub_1in500 <- bldg_1in500 |> 
+  filter(change_type_prelim != "Always SFHA" & 
+           # and properties that are never treated for being removed from the SFHA
+           treat_year_remove_prelim == 10000 & treat_year_remove_eff == 10000)
+valid_cohorts_1in500 <- fn_valid_cohorts(df = df_sub_1in500)
+bldg_1in500_fsplit <- df_sub_1in500 |> filter(eff_date_chr %in% valid_cohorts_1in500)
+
+
+
+
+models <- list(
+
+  # "Buildings in SFHA" =  feols(
+  #   log(sale_price) ~ addedto_eff_sfha | pin + sale_year,
+  #   fsplit = ~eff_date_chr,
+  #   cluster = ~pin10,
+  #   data = bldgs_fsplit
+  # ),
+
+  "Buildings in SFHA" =  feols(
+    log(sale_price) ~ addedto_eff_sfha | pin + sale_year,
+    cluster = ~pin10,
+    data = bldg_sfha
+  ),
+
+  "Buildings - 1-in-500" =  feols(
+    log(sale_price) ~ addedto_eff_sfha | pin + year,
+    fsplit = ~eff_date_chr,
+    cluster = ~pin10,
+    data = bldg_1in500_fsplit
+  ),
+
+  "Buildings - 1-in-500" =  feols(
+    log(sale_price) ~ addedto_eff_sfha | pin + sale_year,
+    cluster = ~pin10,
+    data = bldg_1in500
+  )
+)
+
+all_models_formatted <- modelsummary::modelsummary(models,
+                                                   output = "flextable",
+                                                   fmt = function(x) round(x, 2),
+                                                   
+                                                   stars = TRUE)
+
+all_models_formatted
+
+```
+
+
+
+# Appendix Item - Extended TWFE
+
+
+
+```{r}
+library(etwfe)
+
+mod1 = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  xvar = Triad, 
+  cgroup = "never",
+  gvar = treat_year_add_prelim,
+  vcov = ~pin10, 
+  data = (bldg_sfha |> 
+            filter(treat_year_remove_prelim==10000
+                   
+                   & change_type_prelim != "Always SFHA")
+          )
+  
+  )
+mod1
+
+
+emfx(mod1)
+
+
+emfx(mod1, type = "group")
+emfx(mod1, type = "event")
+plot(emfx(mod1))
+plot(emfx(mod1, type = "event"))
+
+```
+
+if not treated, then treat_year_remove_prelim == 0
+
+```{r}
+mod2 = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  xvar = Triad, 
+    cgroup = "never",
+
+  gvar = treat_year_remove_prelim, 
+  vcov = ~pin10, 
+  data = (bldg_sfha|> 
+            # do not want treated properties that move in opposite direction. 
+            filter(treat_year_add_prelim==10000 |
+                     # and only want to compare to properties that were Always in the SFHA (also keeps properties that changed SFHA status), 
+                     change_type_prelim != "Never SFHA") 
+          )
+  )
+ mod2
+emfx(mod2)
+emfx(mod2, type = "group")
+emfx(mod2, type = "event")
+plot(emfx(mod2))
+plot(emfx(mod2, type = "event"))
+
+
+```
+
+
+## Extended TWFE attempts
+
+
+
+```{r}
+#| tbl-cap: "removedfrom_prelim_sfha*rel_year_remove_prelim*group_name_prelim"
+#| error: true
+#| warning: true
+#| message: true
+
+df3 <-  bldg_sfha |>
+  mutate(
+    sale_year_factor = factor(sale_year, exclude = "2014"),
+   # sale_year_factor = relevel(sale_year, ref = "2014),
+    remap_pre = ifelse(sale_date < pre_date, "0.Before", "1.After"),
+    remap_eff = ifelse(sale_date < eff_date, "0.Before", "1.After"),
+
+    sale_year = factor(sale_year),
+         rel_year_remove_prelim = factor(rel_year_remove_prelim, exclude = c("-1")),
+        treat_year_remove_prelim = factor(treat_year_remove_prelim, levels = c("10000", "2015","2019", "2021")),
+        treated_group_prelim = factor(treated_group_prelim),
+    
+             rel_year_remove_eff = factor(rel_year_remove_eff, exclude = c("-1")),
+        treat_year_remove_eff = factor(treat_year_remove_eff, levels = c("10000", "2019", "2021")),
+        treated_group_eff = factor(treated_group_eff)
+        )
+
+eff_extwfe_bldg <- list( 
+ 
+     mod1_all <- feols(log(sale_price) ~ remap_pre*treat_year_remove_prelim*Triad | pin + sale_year_factor,
+      data = df3,
+      cluster = ~pin10
+),
+   mod1_S <- feols(log(sale_price) ~ remap_pre*treat_year_remove_prelim | pin + sale_year_factor,
+      data = df3,
+      subset = ~Triad=="South",
+      cluster = ~pin10
+),
+  mod1_N <- feols(log(sale_price) ~ remap_pre*treat_year_remove_prelim | pin + sale_year_factor,
+      data = df3,
+      subset = ~Triad=="North",
+
+      cluster = ~pin10
+),
+
+  mod1_N <- feols(log(sale_price) ~ i(sale_year_factor, ref = "2020") + remap_pre*treat_year_remove_prelim | pin + sale_year_factor,
+      data = df3,
+      subset = ~Triad=="North",
+
+      cluster = ~pin10
+),
+  mod2_all <- feols(log(sale_price) ~ remap_eff*treat_year_remove_eff*Triad | pin + sale_year_factor,
+
+      data = df3,
+      cluster = ~pin10
+),
+ mod2_S <- feols(log(sale_price) ~ remap_eff*treat_year_remove_eff | pin + sale_year_factor,
+
+      data = df3,
+      subset = ~Triad == "South",
+      cluster = ~pin10
+)
+
+) 
+
+eff_extwfe_bldg <- modelsummary::modelsummary(eff_extwfe_bldg,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+eff_extwfe_bldg
+```
+
+
+```{r}
+#| error: true
+#| layout-ncol:  2
+
+extwfe_removed_prelim_bldg
+
+```
+
+
+## Added with Extended TWFE
+
+```{r}
+#| error: true
+
+df_sub <-   datasets_og$bldg_sfha  |> 
+  filter(
+    # be specific about the treated and control group in this model!
+    # keep Always SFHA or Properties that Changed SFHA (but were not added to the SFHA)
+    change_type != "Always SFHA" & 
+                           # and properties that are never treated for being added to the SFHA
+                           treat_year_remove_eff ==10000 & treat_year_remove_prelim == 10000)|>
+  mutate(sale_year = factor(sale_year),
+         rel_year_remove_prelim = factor(rel_year_remove_prelim, exclude = "-1"),
+
+         treat_year_remove_prelim = factor(treat_year_remove_prelim))
+
+valid_cohorts <- df_sub |>
+  group_by(pre_date_chr) |>
+  summarise(
+    n = n(),
+    n_treated = sum(addedto_prelim_sfha == TRUE, na.rm = TRUE),
+    n_untreated = sum(addedto_prelim_sfha == FALSE, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(n_treated > 0, n_untreated > 0) |>
+  pull(pre_date_chr)
+
+df3 <- df_sub |> filter(pre_date_chr %in% valid_cohorts)
+
+prelim_extwfe_land <- list( 
+  mod1 <- feols(log(sale_price) ~ treat_year_add_prelim*addedto_prelim_sfha| pin + sale_year,
+
+
+      data = df3,
+   # subset = ~pre_date_chr == "2015-02-15",
+      cluster = ~pin10
+)
+
+) 
+extwfe_added_prelim_land <- modelsummary::modelsummary(prelim_extwfe_land,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+extwfe_added_prelim_land
+```
+
+```{r}
+#| tbl-cap: "Added x sale year x cohort. With Bldg polygons"
+#| error: true
+#| warning: true
+#| message: true
+
+df3 <- bldg_sfha |> filter(change_type_prelim != "Always SFHA" & 
+                           # and properties that are never treated for being removed from the SFHA
+                           treat_year_remove_prelim == 10000) |>
+  mutate(sale_year = factor(sale_year),
+         rel_year_add_prelim = factor(rel_year_add_prelim, exclude = c("-1")),
+        treat_year_add_prelim = factor(treat_year_add_prelim
+                                       ),
+        treated_group_prelim = factor(treated_group_prelim))
+
+# 
+# valid_cohorts <- df3 |>
+#   group_by(pre_date_chr) |>
+#   summarise(
+#     n = n(),
+#     n_treated = sum(addedto_prelim_sfha == TRUE, na.rm = TRUE),
+#     n_untreated = sum(addedto_prelim_sfha == FALSE, na.rm = TRUE),
+#     .groups = "drop"
+#   ) |>
+#   filter(n_treated > 0, n_untreated > 0) |>
+#   pull(pre_date_chr)
+# 
+# df3 <- df3 |>filter(pre_date_chr %in% valid_cohorts)
+
+prelim_extwfe_add <- list( 
+
+  mod1 <- feols(log(sale_price) ~ rel_year_add_prelim*treat_year_add_prelim | pin + sale_year,
+      data = df3,
+  #  subset = ~pre_date_chr == "2015-02-15",
+      cluster = ~pin10
+)
+
+) 
+
+prelim_extwfe_add_land <- modelsummary::modelsummary(prelim_extwfe_add,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+
+
+```
+
+
+```{r}
+#| eval: false
+#| error: true
+#| layout-ncol: 2
+
+prelim_extwfe_add_land
+prelim_extwfe_add_bldg
+
+```
+
+## Appendix Item: Buildings in 1-in-500 Flood Zones
+
+```{r}
+#| label: tbl-bldg-in-1in500-fz
+#| tbl-cap: "Effect on Price of Buildings Mapped Into or Out of a 1-in-500 year Flood Plain"
+
+
+models_1in500_bldg <- list(
+
+  
+ "I" =  feols(
+    log(sale_price) ~ addedto_prelim_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500
+  ),
+
+    "I Subset" = feols(
+    log(sale_price) ~ addedto_prelim_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500 |> filter(change_type_prelim != "Always SFHA" & treat_year_remove_prelim == 10000),
+
+  ),
+
+  "II" =  feols(
+    log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500,
+
+  ),
+
+
+  "II Subset" =  feols(
+    log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500 |> filter(change_type_prelim != "Never SFHA" & treat_year_add_prelim == 10000),
+
+  ),
+ 
+  # Symmetric effect of location in risk zone
+    "III" = feols(
+    log(sale_price) ~ in_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500,
+
+  ),
+  # Asymmetric: added vs removed in one equation
+  "0" = feols(
+    log(sale_price) ~ addedto_prelim_sfha + removedfrom_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500,
+
+  ),
+ 
+ 
+ 
+   
+ "I-Eff" =  feols(
+    log(sale_price) ~ addedto_eff_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500
+  ),
+
+    "I-Eff Subset" = feols(
+    log(sale_price) ~ addedto_eff_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500 |> filter(change_type != "Always SFHA" & treat_year_remove_eff == 10000),
+
+  ),
+
+  "II-Eff" =  feols(
+    log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500,
+
+  ),
+
+
+  "II-Eff Subset" =  feols(
+    log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500 |> filter(change_type != "Never SFHA" & treat_year_add_prelim == 10000),
+
+  ),
+ 
+  # Symmetric effect of location in risk zone
+    "III-Eff" = feols(
+    log(sale_price) ~ in_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500,
+
+  ),
+  # Asymmetric: added vs removed in one equation
+  "0" = feols(
+    log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500,
+
+  )
+ 
+)
+
+models_1in500_bldg <- modelsummary::modelsummary(models_1in500_bldg,
+               output = "flextable",
+               fmt = function(x) round(x, 3),
+
+             stars = TRUE)
+
+models_1in500_bldg
+```
+
