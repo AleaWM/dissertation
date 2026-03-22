@@ -2,10 +2,14 @@
 title: "Cook County Parcel Sales"
 subtitle: "Variant: `r params$variant_key`"
 params:
- variant_key: "bldg_1in500" # "bldg_sfha"   # options: parcel_sfha, bldg_sfha, parcel_1in500, bldg_1in500
- # bldg_updated, land_updated, ptaxsim_updated, risk500_land_updated, risk500_updated, df_prep_bldg_updated_arcgis,
-
+  variant_key: "allsales_bldg_v2026_03"   # targets pipeline, most recent sales data, parcel polygons from 
  
+ #"bldg_v2025_12" 
+   
+ # options: parcel_sfha, bldg_sfha, parcel_1in500, bldg_1in500
+ # bldg_updated, land_updated, ptaxsim_updated, risk500_land_updated, risk500_updated, 
+ #df_prep_bldg_updated_arcgis,
+
 format: 
   html:
   #  theme: darkly
@@ -40,12 +44,14 @@ library(modelsummary)
 ```{r}
 source("R/helper_pins_to_drop.R")
 
-# source("R/helper_pins_to_drop_forsure.R")
+#source("R/helper_pins_to_drop_forsure.R")
 
 variant_key  <- params$variant_key
 variants_dir <- params$variants_dir
 
-if(variant_key %in% c("parcel_sfha", "bldg_sfha", "parcel_1in500", "bldg_1in500")){
+if(variant_key %in% c(
+ # old and used wrong spatial join for 2018 SFHA buildings:  # "parcel_sfha", "bldg_sfha", "parcel_1in500", "bldg_1in500",
+  "bldg_sfhaarcgis_redo_2026sales", "parcel_sfhaarcgis_redo_2026sales", "bldg_1in500arcgis_redo_2026sales", "parcel_1in500rcgis_redo_2026sales")){
   
   variants_dir <-  "data/processed/variants"
   
@@ -53,7 +59,7 @@ if(variant_key %in% c("parcel_sfha", "bldg_sfha", "parcel_1in500", "bldg_1in500"
                             paste0("df_prep__", variant_key, ".rds")
                             
   )
-}else if (variant_key %in% c("bldg_updated", "land_updated", "ptaxsim_updated","risk500_land_updated", "risk500_updated", "df_prep_bldg_updated_arcgis")) {
+}else if (variant_key %in% c("bldg_updated", "land_updated", "ptaxsim_updated", "risk500_land_updated", "risk500_updated", "df_prep_bldg_updated_arcgis")) {
   
   variants_dir <- "data/processed/targets/sales"
   
@@ -61,6 +67,24 @@ if(variant_key %in% c("parcel_sfha", "bldg_sfha", "parcel_1in500", "bldg_1in500"
     variants_dir,
     paste0("df_prep_", variant_key, ".rds"))
   
+}else if (variant_key %in% c(
+  "bldg_v2025_12", "land_v2025_12", "risk500_land_v2025_12", "risk500_v2025_12", 
+  "bldg_v2026_03", "land_v2026_03", "risk500_land_v2026_03", "risk500_v2026_03")
+  ) {
+  
+  variants_dir <- "data/processed/targets/sales"
+  
+  variant_path <- file.path(
+    variants_dir,
+    paste0("df_prep_", variant_key, ".rds"))
+  
+}else if(variant_key %in% c("allsales_bldg_v2026_03", "allsales_land_v2026_03", "allsales_risk500_land_v2026_03", "allsales_risk500_v2026_03")){
+ variants_dir <- "data/processed/targets/sales"
+  
+  variant_path <- file.path(
+    variants_dir,
+    paste0(variant_key, ".rds"))  
+
 }
 
 if (!file.exists(variant_path)) {
@@ -71,7 +95,8 @@ if (!file.exists(variant_path)) {
 
 ```{r}
 
-df_prep <- readRDS(variant_path) |> filter(!pin10 %in% drop_parcels)
+df_prep <- readRDS(variant_path) |> 
+  filter(!pin10 %in% drop_parcels)
 
 
 # helpful stamp
@@ -114,25 +139,6 @@ variant_stamp <- paste0("[", variant_label, "]")
 
 
 ```{r}
-#| include: false
-#| eval: false
-
-df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_arcgis.rds") |> 
-  filter(!pin10 %in%drop_parcels)
-
-
-
-df_prep |> filter(Triad == "City" & removedfrom_eff_sfha == TRUE) 
-df_prep |> filter(Triad == "City" & addedto_eff_sfha == TRUE)
-
-
-df_prep |> filter(Triad == "City" & removedfrom_eff_sfha == TRUE)  |> distinct(pin10)
-df_prep |> filter(Triad == "City" & addedto_eff_sfha == TRUE) |> distinct(pin10)
-```
-
-
-```{r}
-
 #source("R/helper_pins_to_drop.R")
 
 # df_prep <- readRDS("data/processed/variants/df_prep__bldg_sfha.RDS") |> filter(!pin10 %in% drop_parcels)
@@ -141,15 +147,73 @@ df_prep |> filter(Triad == "City" & addedto_eff_sfha == TRUE) |> distinct(pin10)
 
 #df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.rds") |> filter(!pin10 %in%drop_parcels)
 
+
+removed <- readxl::read_xlsx("data/processed/only_2018_redo2 - Bldg Removed from SFHA.xlsx")
+added <- readxl::read_xlsx("data/processed/only_2026_redo2_vs_2018 - Bldg Added to SFHA.xlsx")
+#
+# repeats_removed <- repeat_res_sales |> filter(pin10 %in% removed$PIN10)
+#
+# repeats_removed |> distinct(pin10) # 494 distinct pins, 325 distinct parcels
+#
+# repeats_added <- repeat_res_sales |>
+#   filter(pin10 %in% added$PIN10)
+#
+# repeats_added |> distinct(pin10) # 630 distinct pins, 40 distinct parcels
+df_prep |>
+  filter(
+   times_sold == 1 & pin10 %in% removed$PIN10 & sale_date > pre_date & pre_date_chr != "2005-01-01")
+
+df_prep |> 
+  filter(times_sold == 1 & (pin10 %in% added$PIN10) & (sale_date > eff_date)& eff_date_chr != "2008-08-19")
+
+df_prep |> 
+  filter(times_sold >1 & (pin10 %in% added$PIN10) & (sale_date > eff_date) & eff_date_chr != "2008-08-19")
+
+table(df_prep$change_type)
+table(df_prep$change_type_prelim)
+
+```
+
+
+```{r}
+df_prep <- df_prep |>
+  mutate(
+    removedfrom_prelim_sfha == ifelse(times_sold == 1 & (pin10 %in% removed$PIN10) & (sale_date > pre_date) & pre_date_chr != "2005-01-01", TRUE, removedfrom_prelim_sfha),
+    
+     addedto_prelim_sfha == ifelse(times_sold == 1 & pin10 %in% added$PIN10 & sale_date > pre_date & pre_date_chr != "2005-01-01", TRUE, addedto_prelim_sfha),
+    
+    
+        removedfrom_eff_sfha == ifelse(times_sold == 1 & pin10 %in% removed$PIN10 & sale_date > eff_date & eff_date_chr != "2008-08-19", TRUE, removedfrom_eff_sfha),
+    
+     addedto_eff_sfha == ifelse(times_sold == 1 & (pin10 %in% added$PIN10) & (sale_date > eff_date)  & eff_date_chr != "2008-08-19", TRUE, addedto_eff_sfha )
+    )
+
+table(df_prep$addedto_eff_sfha)
+table(df_prep$addedto_prelim_sfha)
+table(df_prep$removedfrom_prelim_sfha)
+table(df_prep$removedfrom_eff_sfha)
+
+table(df_prep$treated_group_eff)
+
+```
+
+
+```{r}
 df_prep <- df_prep |>
   group_by(pin) |>
    mutate(d_price_pct = round((sale_price-dplyr::lag(sale_price))/(dplyr::lag(sale_price)), digits = 2), .after = pin) |> ungroup()
 
 
-df_prep <-  df_prep |> filter((is.na(d_price_pct) & sale_price > 20000) | ( d_price_pct < 20 & sale_price > 20000) )
+df_prep <-  df_prep |> 
+  filter(
+    (is.na(d_price_pct) & sale_price > 20000) | 
+      ( d_price_pct < 20 & sale_price > 20000) 
+    )
 
-df_prep <- df_prep |> group_by(pin) |> 
-  mutate(times_sold = n()) |> filter(times_sold > 1)
+# df_prep <- df_prep |> group_by(pin) # |> 
+ # mutate(times_sold = n()) #|> filter(times_sold > 1)
+
+
 ```
 
 
@@ -341,9 +405,9 @@ df_prep |> filter(Triad == "City" & treat_year_remove_prelim == "2019") # |> gro
 #| label: tbl-chicago-obs-parcels
 #| tbl-cap: "Distinct buildings that changed status. These are most likely on the coast of Lake Michigan."
 
-df_prep |> filter(Triad == "City" & treat_year_add_prelim == "2019")  |> group_by(pin10) |> summarize(n = n())  
+df_prep |> filter(Triad == "City" & treat_year_add_eff == "2019")  |> group_by(pin10) |> summarize(n = n())  
 
-df_prep |> filter(Triad == "City" & treat_year_remove_prelim == "2019")  |> group_by(pin10) |> summarize(n = n())  
+df_prep |> filter(Triad == "City" & treat_year_remove_eff == "2019")  |> group_by(pin10) |> summarize(n = n())  
 ```
 
 
@@ -426,7 +490,8 @@ table(df_prep$rel_year_remove_prelim)
 
 ```
 
- # Models
+# Models
+
 
 ```{r fe-avgs}
 df_changes <- df_prep |>
@@ -455,6 +520,8 @@ mean(df_prep$sale_price[df_prep$sale_year==2013 & df_prep$in_prelim_sfha==TRUE])
 mean(df_prep$sale_price[df_prep$sale_year==2013 & df_prep$in_prelim_sfha==FALSE])
 
 ```
+
+**Demeaning approximation**
 
 ```{r}
 # deman by PIN
@@ -488,7 +555,19 @@ beta_hat
 ```
 
 
-Exact way of demeaning:
+**Exact way of double demeaning:**
+
+_Within the same parcel, after netting out overall market trends in that year, how much does log price shift when SFHA status shifts?_
+
+You are not comparing: different parcels in the same year
+
+You are comparing deviations from: parcel average amd year average
+
+
+**When a parcel enters the SFHA, does its price move differently than we would expect given:**
+- its own average price  
+- the overall market price that year   
+
 
 ```{r}
 df_fe <- df_prep |>
