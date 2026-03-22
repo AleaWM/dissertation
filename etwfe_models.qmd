@@ -1,0 +1,282 @@
+---
+title: "Extended TWFE Models"
+format: 
+  html: 
+    code-fold: true
+    toc: true
+    toc-location: left
+---
+
+# Setup
+
+```{r setup}
+library(tidyverse)
+library(fixest)
+
+library(didFF)   # for testing if functional form matters for the analysis. Tests if parallel trends assumption is sensitive to functional form (i.e. logged variable vs unlogged variable)
+library(did)  # for step 3 and 4
+library(etwfe)
+options(scipen = 999)
+```
+
+
+
+
+
+```{r}
+bldg_sfha <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS")
+
+#parcels <- readRDS("data/processed/targets/sales/df_prep_land_v2026_03.RDS")
+
+# bldg_1in500 <- readRDS("data/processed/targets/sales/df_prep_risk500_v2026_03.RDS")  |>
+#   filter(!pin10 %in% drop_parcels  |
+#                (pin10 == "0113301013" & sale_year > 2014))
+
+# bldg_sfha <- readRDS("data/processed/targets/sales/allsales_bldg_v2026_03.RDS")
+
+df_prep <- bldg_sfha
+
+
+source("R/helper_pins_to_drop.R")
+
+df_prep <- df_prep |> filter(!pin10 %in% drop_parcels  |          
+               (pin10 == "0113301013" & sale_year > 2014)
+             )
+
+
+table(df_prep$change_type)
+table(df_prep$change_type_prelim)
+
+table(df_prep$pre_date)
+table(df_prep$prelim_sfha_category)
+
+```
+
+
+
+Optional interacted categorical covariate for estimating heterogeneous treatment effects. Enables recovery of the marginal treatment effect for distinct levels of xvar, e.g. "child", "teenager", or "adult". Note that the "x" prefix in "xvar" represents a covariate that is interacted with treatment, as opposed to a regular control variable.
+
+# Added to Risk Zone
+
+```{r}
+#| label: tbl-etwfe-addedtozone-county
+#| tbl-cap: "**County-wide: Added to Risk Zone** Excludes Properties that were Always in the SFHA or were removed from the SFHA from the comparison group."
+
+mod1b = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  cgroup = "never",
+  gvar = treat_year_add_prelim, 
+  vcov = ~pin10, 
+  data = (df_prep|> 
+            filter(treat_year_remove_prelim==10000
+                   & change_type_prelim != "Always SFHA"
+                 )
+          )
+  )
+
+mod1b
+
+
+emfx(mod1b)
+
+
+emfx(mod1b, type = "group")
+plot(emfx(mod1b))
+plot(emfx(mod1b, type = "event"))
+
+```
+
+
+
+```{r}
+#| label: tbl-etwfe-addedtozone-filtered
+#| tbl-cap: "**Added to Risk Zone** Excludes Properties that were Always in the SFHA or were removed from the SFHA from the comparison group."
+
+mod1c = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  xvar = Triad, 
+  cgroup = "never",
+  gvar = treat_year_add_prelim, 
+  vcov = ~pin10, 
+  data = (df_prep|> 
+            filter(treat_year_remove_prelim==10000
+                   & change_type_prelim != "Always SFHA"
+                 )
+          )
+  )
+
+mod1c
+
+
+emfx(mod1c)
+
+
+emfx(mod1c, type = "group")
+plot(emfx(mod1c))
+plot(emfx(mod1c, type = "event"))
+
+```
+
+
+```{r}
+#| label: tbl-etwfe-addedtozone-bycohort-filtered
+#| tbl-cap: "**Added to Risk Zone** Excludes Properties that were Always in the SFHA or were removed from the SFHA from the comparison group."
+
+mod1d = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  xvar = group_name_prelim, 
+  cgroup = "never",
+  gvar = treat_year_add_prelim, 
+  vcov = ~pin10, 
+  data = (df_prep|> 
+            filter(treat_year_remove_prelim==10000
+                   & change_type_prelim != "Always SFHA"
+                 )
+          )
+  )
+
+mod1d
+
+
+emfx(mod1d)
+
+
+emfx(mod1d, type = "group")
+plot(emfx(mod1d))
+plot(emfx(mod1d, type = "event"))
+
+```
+
+if not treated, then treat_year_remove_prelim == 0
+
+
+# Removed from Risk Zone 
+
+```{r}
+#| label: tbl-etwfe-countywide-removedfromzone-filtered
+#| tbl-cap: "**County-wide: Removed from Risk Zone** Excludes properties that were added to the SFHA or were never in the SFHA from the comparison group. By Triad."
+
+mod2 = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  cgroup = "never",
+
+  gvar = treat_year_remove_prelim, 
+  vcov = ~pin10, 
+  data = (df_prep|> 
+            # do not want treated properties that move in opposite direction. 
+            filter(treat_year_add_prelim==10000 &
+                     # and only want to compare to properties that were Always in the SFHA (also keeps properties that changed SFHA status), 
+                     change_type_prelim != "Never SFHA"
+                  ) 
+          )
+  )
+mod2
+emfx(mod2)
+emfx(mod2, type = "group")
+plot(emfx(mod2))
+plot(emfx(mod2, type = "event"))
+
+
+```
+
+
+```{r}
+#| label: tbl-etwfe-removedfromzone-filtered
+#| tbl-cap: "**Removed from Risk Zone** Excludes properties that were added to the SFHA or were never in the SFHA from the comparison group. By Triad."
+
+mod2b = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  xvar = Triad, 
+  cgroup = "never",
+
+  gvar = treat_year_remove_prelim, 
+  vcov = ~pin10, 
+  data = (df_prep|> 
+            # do not want treated properties that move in opposite direction. 
+            filter(treat_year_add_prelim==10000 &
+                     # and only want to compare to properties that were Always in the SFHA (also keeps properties that changed SFHA status), 
+                     change_type_prelim != "Never SFHA"
+                  ) 
+          )
+  )
+mod2b
+emfx(mod2b)
+emfx(mod2b, type = "group")
+plot(emfx(mod2b))
+plot(emfx(mod2b, type = "event"))
+
+
+```
+
+```{r}
+#| label: tbl-etwfe-removedfromzone-bycohort-filtered
+#| tbl-cap: "**Removed from Risk Zone** Excludes properties that were added to the SFHA or were never in the SFHA from the comparison group. By cohort."
+
+mod3_data <- (df_prep|> 
+            # do not want treated properties that move in opposite direction. 
+            filter(treat_year_add_prelim==10000 &
+                     # and only want to compare to properties that were Always in the SFHA (also keeps properties that changed SFHA status), 
+                     change_type_prelim != "Never SFHA"
+                  ) 
+          )
+
+mod2c = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  xvar = group_name_prelim, 
+  cgroup = "never",
+
+  gvar = treat_year_remove_prelim, 
+  vcov = ~pin10, 
+  data = mod3_data
+  )
+mod2c
+emfx(mod2c)
+emfx(mod2c, type = "group")
+plot(emfx(mod2c))
+plot(emfx(mod2c, type = "event"))
+
+
+```
+
+### Not filtered: Includes properties Never in SFHA in control group
+
+```{r}
+#| label: tbl-etwfe-removedfromzone-bycohort
+#| tbl-cap: "**Removed from Risk Zone** Excludes Properties that were added to the SFHA from the comparison group. By Cohort. Still includes properties that were never in the SFHA to increase comparison group sample size. (Pretty sure never treated properties, aka both never in sfha and always in sfha, had parallel trends overall so you can combine them as a comparison group. I just didn't want to.)"
+
+
+mod2d = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  xvar = group_name_prelim, 
+  cgroup = "never",
+
+  gvar = treat_year_remove_prelim, 
+  vcov = ~pin10, 
+  data = (df_prep|> 
+            # do not want treated properties that move in opposite direction. 
+            filter(treat_year_add_prelim==10000
+                  ) 
+          )
+  )
+mod2d
+#emfx(mod2d)
+emfx(mod2d, type = "group")
+plot(emfx(mod2d))
+plot(emfx(mod2d, type = "event"))
+
+
+```
