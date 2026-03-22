@@ -20,6 +20,7 @@ Additional variables created in the `descriptive_stats_singlefam.qmd` file with 
     - `parcels_wFIRMS.csv` from `pull_parcel_sfs.R`. Uses XY coordinates for parcel centroids from ptaxsim.db and intersects with 2024 FIRM polygons.
     - CSV version of 2024 FIRMs in `S_FIRM_PAN.csv`
   - [ ] **Need to manually add preliminary dates**  -- Partially done  
+    - use EXCEL version of S_FIRM_PAN.xlsx. Join back to FIRMs_wparcels.csv to add manually updated dates back in   
   - [ ] Create variable for each pin-year: 
     - [ ] if year < pre_date, then preliminary update == 0
     - [ ] if year >= pre_date, then preliminary update == 1
