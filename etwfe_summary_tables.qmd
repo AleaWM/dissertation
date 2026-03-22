@@ -1,0 +1,391 @@
+---
+title: "ETWFE Summary Tables"
+format:
+  html:
+    code-fold: true
+    toc: true
+    toc-location: left
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(tidyverse)
+library(etwfe)
+library(gt)
+options(scipen = 999)
+```
+
+## Purpose
+
+This file runs a common set of ETWFE models across multiple datasets and produces three summary tables:
+
+1. Overall ATT-style summaries by dataset
+2. Heterogeneity by Triad
+3. Heterogeneity by cohort
+
+This version uses `group_name_prelim` and `group_name_eff` instead of raw date variables.
+
+## Read data
+
+```{r read-data}
+source("R/helper_pins_to_drop.R")
+
+bldg_sfha <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS") |>
+  filter(!pin10 %in% drop_parcels |
+           (pin10 == "0113301013" & sale_year > 2014))
+
+# Uncomment and edit these as needed.
+parcel_sfha <- readRDS("data/processed/targets/sales/df_prep_land_v2026_03.RDS") |>
+  filter(!pin10 %in% drop_parcels |
+           (pin10 == "0113301013" & sale_year > 2014))
+
+bldg_1in500 <- readRDS("data/processed/targets/sales/df_prep_risk500_v2026_03.RDS") |>
+  filter(!pin10 %in% drop_parcels |
+           (pin10 == "0113301013" & sale_year > 2014))
+
+ parcel_1in500 <- readRDS("data/processed/targets/sales/df_prep_risk500_land_v2026_03.RDS") |>
+   filter(!pin10 %in% drop_parcels |
+            (pin10 == "0113301013" & sale_year > 2014))
+
+# Put whichever datasets you want into this list.
+datasets <- list(
+  bldg_sfha = bldg_sfha
+   , parcel_sfha   = parcel_sfha
+   , bldg_1in500   = bldg_1in500
+   , parcel_1in500 = parcel_1in500
+)
+
+dataset_labels <- c(
+  bldg_sfha     = "Buildings - SFHA",
+  parcel_sfha   = "Parcels - SFHA",
+  bldg_1in500   = "Buildings - 1 in 500",
+  parcel_1in500 = "Parcels - 1 in 500"
+)
+```
+
+
+## Sample filters
+
+```{r sample-filters}
+prep_added_sample_prelim <- function(df) {
+  df |>
+    filter(
+      treat_year_remove_prelim == 10000 &
+      change_type_prelim != "Always SFHA"
+    )
+}
+
+prep_removed_sample_prelim <- function(df) {
+  df |>
+    filter(
+      treat_year_add_prelim == 10000 &
+        change_type_prelim != "Never SFHA"
+    )
+}
+
+prep_removed_sample_prelim_nofilt <- function(df) {
+  df |>
+    filter(
+      treat_year_add_prelim == 10000 
+    )
+}
+
+prep_added_sample_eff <- function(df) {
+  df |>
+    filter(
+      treat_year_remove_eff == 10000 &
+      change_type != "Always SFHA"
+    )
+}
+
+prep_added_sample_eff_nofilt <- function(df) {
+  df |>
+    filter(
+      treat_year_remove_eff == 10000)
+}
+
+prep_removed_sample_eff <- function(df) {
+  df |>
+    filter(
+      treat_year_add_eff == 10000 &
+        change_type != "Never SFHA"
+    )
+}
+```
+
+## ETWFE helpers
+
+```{r helpers}
+get_xvar <- function(heterogeneity, map_version) {
+  case_when(
+    heterogeneity == "overall" ~ NA_character_,
+    heterogeneity == "triad" ~ "Triad",
+    heterogeneity == "cohort" & map_version == "prelim" ~ "group_name_prelim",
+    heterogeneity == "cohort" & map_version == "eff" ~ "group_name_eff",
+    TRUE ~ NA_character_
+  )
+}
+
+run_etwfe_model <- function(df,
+                            direction = c("added", "removed"),
+                            heterogeneity = c("overall", "triad", "cohort"),
+                            map_version = c("prelim", "eff")) {
+  direction <- match.arg(direction)
+  heterogeneity <- match.arg(heterogeneity)
+  map_version <- match.arg(map_version)
+
+  df_use <- case_when(
+    direction == "added" & map_version == "prelim" ~ list(prep_added_sample_prelim(df)),
+    direction == "removed" & map_version == "prelim" ~ list(prep_removed_sample_prelim(df)),
+    direction == "added" & map_version == "eff" ~ list(prep_added_sample_eff(df)),
+    direction == "removed" & map_version == "eff" ~ list(prep_removed_sample_eff(df))
+  ) |>
+    purrr::pluck(1)
+
+  gvar <- case_when(
+    direction == "added" & map_version == "prelim" ~ "treat_year_add_prelim",
+    direction == "removed" & map_version == "prelim" ~ "treat_year_remove_prelim",
+    direction == "added" & map_version == "eff" ~ "treat_year_add_eff",
+    direction == "removed" & map_version == "eff" ~ "treat_year_remove_eff"
+  )
+
+  xvar <- get_xvar(heterogeneity = heterogeneity, map_version = map_version)
+
+  if (is.na(xvar)) {
+    etwfe(
+      fml = log_price ~ 1,
+      tvar = sale_year,
+      ivar = pin,
+      cgroup = "never",
+      gvar = gvar,
+      vcov = ~ pin10,
+      data = df_use
+    )
+  } else {
+    etwfe(
+      fml = log_price ~ 1,
+      tvar = sale_year,
+      ivar = pin,
+      xvar = xvar,
+      cgroup = "never",
+      gvar = gvar,
+      vcov = ~ pin10,
+      data = df_use
+    )
+  }
+}
+
+extract_emfx <- function(model, heterogeneity) {
+  if (heterogeneity == "overall") {
+    out <- emfx(model)
+  } else {
+    out <- emfx(model, type = "group")
+  }
+
+  out |>
+    as_tibble()
+}
+
+normalize_emfx_cols <- function(df) {
+  nm <- names(df)
+
+  if (!"estimate" %in% nm) {
+    est_match <- nm[str_detect(nm, regex("estimate", ignore_case = TRUE))]
+    if (length(est_match) > 0) df <- df |> rename(estimate = all_of(est_match[1]))
+  }
+
+  if (!"std.error" %in% nm) {
+    se_match <- nm[str_detect(nm, regex("std\\.?error|std_error|se$", ignore_case = TRUE))]
+    if (length(se_match) > 0) df <- df |> rename(std.error = all_of(se_match[1]))
+  }
+
+  if (!"group_value" %in% names(df)) {
+    grp_candidates <- c("group", "Triad", "group_name_prelim", "group_name_eff", "xvar")
+    grp_match <- grp_candidates[grp_candidates %in% names(df)]
+    if (length(grp_match) > 0) {
+      df <- df |> rename(group_value = all_of(grp_match[1]))
+    }
+  }
+
+  df
+}
+
+fmt_est_se <- function(est, se, digits = 3) {
+  ifelse(
+    is.na(est),
+    "—",
+    paste0(
+      formatC(est, digits = digits, format = "f"),
+      "\n(",
+      formatC(se, digits = digits, format = "f"),
+      ")"
+    )
+  )
+}
+```
+
+## Model grid
+
+```{r model-grid}
+# Set map_version = "prelim" if you want the preliminary-map treatment timing.
+# Switch to "eff" if you want the effective-map version instead.
+map_version_to_run <- "prelim"
+
+model_grid <- tribble(
+  ~direction, ~heterogeneity,
+  "added",   "overall",
+  "removed", "overall",
+  "added",   "triad",
+  "removed", "triad",
+  "added",   "cohort",
+  "removed", "cohort"
+)
+```
+
+## Run all models
+
+```{r run-models}
+all_models <- tidyr::crossing(
+  dataset_name = names(datasets),
+  model_id = seq_len(nrow(model_grid))
+) |>
+  mutate(
+    dataset = datasets[dataset_name],
+    direction = model_grid$direction[model_id],
+    heterogeneity = model_grid$heterogeneity[model_id],
+    model = purrr::pmap(
+      list(dataset, direction, heterogeneity),
+      function(dataset, direction, heterogeneity) {
+        run_etwfe_model(
+          df = dataset,
+          direction = direction,
+          heterogeneity = heterogeneity,
+          map_version = map_version_to_run
+        )
+      }
+    ),
+    results = purrr::map2(model, heterogeneity, extract_emfx),
+    results = purrr::map(results, normalize_emfx_cols)
+  )
+```
+
+## Build one long results object
+
+```{r tidy-results}
+all_results <- all_models |>
+  select(dataset_name, direction, heterogeneity, results) |>
+  unnest(results) |>
+  mutate(
+    dataset_label = recode(dataset_name, !!!dataset_labels),
+    direction_label = recode(
+      direction,
+      added = "Added",
+      removed = "Removed"
+    ),
+    cell = fmt_est_se(estimate, std.error)
+  )
+
+all_results |> DT::datatable(rownames = FALSE)
+```
+
+## Table 1: overall ATT-style summaries
+
+```{r tbl-overall}
+table1_df <- all_results |>
+  filter(heterogeneity == "overall") |>
+  mutate(
+    direction_label = recode(
+      direction,
+      added = "Added - County",
+      removed = "Removed - County"
+    )
+  ) |>
+  select(dataset_label, direction_label, cell) |>
+  distinct() |>
+  pivot_wider(
+    names_from = direction_label,
+    values_from = cell
+  ) |>
+  arrange(factor(dataset_label, levels = unname(dataset_labels)))
+
+table1_df |>
+  gt() |>
+  tab_header(
+    title = md("**Table 1. Overall ATT-style summaries**")
+  )
+```
+
+## Table 2: heterogeneity by Triad
+
+```{r tbl-triad}
+table2_df <- all_results |>
+  filter(heterogeneity == "triad") |>
+  mutate(
+    direction_label = recode(
+      direction,
+      added = "Added - Triad",
+      removed = "Removed - Triad"
+    )
+  ) |>
+  select(dataset_label, group_value, direction_label, cell) |>
+  distinct() |>
+  pivot_wider(
+    names_from = direction_label,
+    values_from = cell
+  ) |>
+  arrange(
+    factor(dataset_label, levels = unname(dataset_labels)),
+    group_value
+  )
+
+table2_df |>
+  gt(groupname_col = "dataset_label") |>
+  cols_label(group_value = "Triad") |>
+  tab_header(
+    title = md("**Table 2. Heterogeneity by Triad**")
+  )
+```
+
+## Table 3: heterogeneity by cohort
+
+```{r tbl-cohort}
+table3_df <- all_results |>
+  filter(heterogeneity == "cohort") |>
+  mutate(
+    direction_label = recode(
+      direction,
+      added = "Added - Cohort",
+      removed = "Removed - Cohort"
+    )
+  ) |>
+  select(dataset_label, group_value, direction_label, cell) |>
+  distinct() |>
+  pivot_wider(
+    names_from = direction_label,
+    values_from = cell
+  ) |>
+  arrange(
+    factor(dataset_label, levels = unname(dataset_labels)),
+    group_value
+  )
+
+table3_df |>
+  gt(groupname_col = "dataset_label") |>
+  cols_label(group_value = "Cohort") |>
+  tab_header(
+    title = md("**Table 3. Heterogeneity by cohort**")
+  )
+```
+
+## Optional diagnostics
+
+
+## Notes
+
+- Right now the removed-sample logic uses the more restrictive comparison group:
+  - for preliminary maps: `treat_year_add_prelim == 10000 & change_type_prelim != "Never SFHA"`
+  - for effective maps: `treat_year_add_eff == 10000 & change_type != "Never SFHA"`
+- If you want the larger removed-sample comparison group instead, change `prep_removed_sample_prelim_nofilt()` and `prep_removed_sample_eff_nofilt()`.  
+- inspect `all_results` once after the first run to check column names
