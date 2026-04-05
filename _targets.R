@@ -8,7 +8,7 @@ tar_option_set(
 
 
 sfha_methods <- tibble::tibble(
-  method   = c("land", "bldg", # "ptaxsim",
+  method   = c("land", "bldg",  # "ptaxsim",
     "risk500", "risk500_land"),
   out_stub = c("land", "bldg", # "ptaxsim",
     "risk500", "risk500_land")
@@ -17,12 +17,12 @@ sfha_methods <- tibble::tibble(
 
 sales_versions <- data.frame(
   sales_label = c( # "baseline",
-    "updated",
-    "2026"
+    #  "v2025_12",
+    "v2026_03"
   ),
   sales_file  = c(
     # "data/raw/Assessor_-_Parcel_Sales_20250709.csv",
-    "data/raw/Assessor_-_Parcel_Sales_20251229.csv",
+    # "data/raw/Assessor_-_Parcel_Sales_20251229.csv",
     "data/raw/Assessor_-_Parcel_Sales_20260308.csv"
   ),
   stringsAsFactors = FALSE
@@ -136,7 +136,7 @@ list(
     read_border(cook_border_file, crs_out = 6454)
   ),
 
-  tar_target(common_crs, sf::st_crs(border)),
+  # tar_target(common_crs, sf::st_crs(border)),
 
 
   ## ----- PTAXSIM parcel centroids and parcel polygons ------
@@ -173,37 +173,37 @@ list(
 
 
   # technically is 10 digit land parcels, not 14-digit PIN
-  tar_target(
-    pin_centroids_raw,
-    {
-      con <- DBI::dbConnect(RSQLite::SQLite(), ptaxsim_db_file)
-      on.exit(DBI::dbDisconnect(con), add = TRUE)
-
-      DBI::dbGetQuery(
-        con,
-        glue::glue_sql(
-          "SELECT DISTINCT pin10, start_year, end_year, longitude, latitude
-           FROM pin_geometry_raw",
-          .con = con
-        )
-      )
-    }
-  ),
+  # tar_target(
+  #   pin_centroids_raw,
+  #   {
+  #     con <- DBI::dbConnect(RSQLite::SQLite(), ptaxsim_db_file)
+  #     on.exit(DBI::dbDisconnect(con), add = TRUE)
+  #
+  #     DBI::dbGetQuery(
+  #       con,
+  #       glue::glue_sql(
+  #         "SELECT DISTINCT pin10, start_year, end_year, longitude, latitude
+  #          FROM pin_geometry_raw",
+  #         .con = con
+  #       )
+  #     )
+  #   }
+  # ),
 
   # some parcels appear twice with broken up start and stop dates
   # keeps unique parcel with last (most recent) longitude and latitude and combines start and stop years
-  tar_target(
-    pin_centroids,
-    pin_centroids_raw |>
-      dplyr::group_by(pin10) |>
-      dplyr::summarize(
-        longitude  = dplyr::last(longitude),
-        latitude   = dplyr::last(latitude),
-        start_year = min(start_year, na.rm = TRUE),
-        end_year   = max(end_year,   na.rm = TRUE)
-      ) |>
-      sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326, remove = FALSE)
-  ),
+  # tar_target(
+  #   pin_centroids,
+  #   pin_centroids_raw |>
+  #     dplyr::group_by(pin10) |>
+  #     dplyr::summarize(
+  #       longitude  = dplyr::last(longitude),
+  #       latitude   = dplyr::last(latitude),
+  #       start_year = min(start_year, na.rm = TRUE),
+  #       end_year   = max(end_year,   na.rm = TRUE)
+  #     ) |>
+  #     sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326, remove = FALSE)
+  # ),
 
 
   # --- Spatial polygons for property parcels ---------------------------------
@@ -218,11 +218,11 @@ list(
   # ),
 
   # parcel polygons as of tax year 2022, downloaded from Cook Open Data
-  tar_target(
-    parcels_2022_gdb,
-    "inputs/Mapping_Firms/Historical_Parcels_-_2022.gdb/ccao_2022parcels.gdb",
-    format = "file"
-  ),
+  # tar_target(
+  #   parcels_2022_gdb,
+  #   "inputs/Mapping_Firms/Historical_Parcels_-_2022.gdb/ccao_2022parcels.gdb",
+  #   format = "file"
+  # ),
 
   # parcel polygons as of tax year 2025, downloaded from Cook County Parcel Viewer datasets
   tar_target(
@@ -240,6 +240,7 @@ list(
 
   tar_target(
     parcels_with_firms,
+    # reads in new file that doesn't appear in targets pipeine. Parcel centroids from arcgis centroid tool
     readxl::read_xlsx("data/processed/parcel_centroids_FIRM_PAN.xlsx") |>
       select(pin10 = PIN10, FIRM_PAN) |> distinct() |> left_join(firm_dates)
   ),
@@ -270,40 +271,40 @@ list(
 
   # now an official geodatabase since the maps became effective in northern cook in late January 2026
   # now no longer need the 2024 geodatabase
-  tar_target(
-    firm_panels_2026_shp,
-    "inputs/cook_2026_county_nfhl.gdb/S_FIRM_Pan.shp",
-    format = "file"
-  ),
+  # tar_target(
+  #   firm_panels_2026_shp,
+  #   "inputs/cook_2026_county_nfhl.gdb/S_FIRM_Pan.shp",
+  #   format = "file"
+  # ),
 
 
   # ------ Clean Parcel Data and Identify FIRM panel each parcel is in --------------
   # Uses PIN centroid and FIRM polygon because it is much faster and panels are large squares
-  tar_target(
-    firm_panels_2026,
-    read_firm_panels_shp(
-      shp_path = firm_panels_2026_shp,
-      border   = border,
-      crs_out  = sf::st_crs(border))
-  ),
+  # tar_target(
+  #   firm_panels_2026,
+  #   read_firm_panels_shp(
+  #     shp_path = firm_panels_2026_shp,
+  #     border   = border,
+  #     crs_out  = sf::st_crs(border))
+  # ),
 
-  tar_target(
-    pin_centroids_joined,
-    # crs project matters for centroids to match polygon
-    sf::st_join(pin_centroids, (firm_panels_2026 |> st_transform("EPSG:4326")), join = sf::st_within)
-  ),
+  # tar_target(
+  #   pin_centroids_joined,
+  #   # crs project matters for centroids to match polygon
+  #   sf::st_join(pin_centroids, (firm_panels_2026 |> st_transform("EPSG:4326")), join = sf::st_within)
+  # ),
 
-  tar_target(
-    pin_centroids_clean,
-    {
-      x <- pin_centroids_joined |>
-        sf::st_drop_geometry() |>
-        dplyr::select(-dplyr::any_of(c("PCOMM", "PANEL", "SUFFIX", "ST_FIPS", "VERSION_ID",
-          "SCALE", "PANEL_TYP", "PNP_REASON", "BASE_TYP", "DFIRM_ID", "EFF_DATE", "EFF_DAT",
-          "geometry")))
-      x
-    }
-  ),
+  # tar_target(
+  #   pin_centroids_clean,
+  #   {
+  #     x <- pin_centroids_joined |>
+  #       sf::st_drop_geometry() |>
+  #       dplyr::select(-dplyr::any_of(c("PCOMM", "PANEL", "SUFFIX", "ST_FIPS", "VERSION_ID",
+  #         "SCALE", "PANEL_TYP", "PNP_REASON", "BASE_TYP", "DFIRM_ID", "EFF_DATE", "EFF_DAT",
+  #         "geometry")))
+  #     x
+  #   }
+  # ),
 
 
 
@@ -314,10 +315,10 @@ list(
   ),
 
   # still used for joining buildings for now
-  tar_target(
-    parcels_2022, # Used for 2024 NFHL SFHA areas and 2026 Pending FIRM areas
-    read_parcels_2022(parcels_2022_gdb, crs_out = sf::st_crs(border), border = border)
-  ),
+  # tar_target(
+  #   parcels_2022, # Used for 2024 NFHL SFHA areas and 2026 Pending FIRM areas
+  #   read_parcels_2022(parcels_2022_gdb, crs_out = sf::st_crs(border), border = border)
+  # ),
 
 
   # parcel polygons as of tax year 2025, downloaded from Cook County Parcel Viewer datasets
@@ -407,59 +408,83 @@ list(
   ## ---- Building Polygons for Flag variables  ----
 
   ### ---- Combine building polygons and parcel polygons so that buildings have Parcel number
+  # tar_target(
+  #   buildings_with_pin,
+  #   assign_buildings_to_parcels(buildings_raw, parcels_2022, parcel_pin_field = "pin")
+  # ),
+
   tar_target(
-    buildings_with_pin,
-    assign_buildings_to_parcels(buildings_raw, parcels_2022, parcel_pin_field = "pin")
+    buildings_with_2018_parcel,
+    assign_buildings_to_parcels(buildings_raw, parcels_2018, parcel_pin_field = "pin")
+  ),
+
+  tar_target(
+    buildings_with_2025_parcel,
+    assign_buildings_to_parcels(buildings_raw, parcels_2025, parcel_pin_field = "pin")
   ),
 
   ### ---- Join buildings to risk polygon: Keep intersecting parcels -------------------------------
   tar_target(
     buildings_sfha_2018,
-    join_buildings_to_zone(buildings_with_pin, sfha_2018_poly, id_field = "DFIRM_ID")
+    join_buildings_to_zone(buildings_with_2018_parcel, sfha_2018_poly, id_field = "DFIRM_ID")
   ),
 
 
   tar_target(
     buildings_sfha_2026,
-    join_buildings_to_zone(buildings_with_pin, sfha_2026_poly, id_field = "DFIRM_ID")
+    join_buildings_to_zone(buildings_with_2025_parcel, sfha_2026_poly, id_field = "DFIRM_ID")
   ),
 
   tar_target(
     buildings_lomr_2018,
-    join_buildings_to_zone(buildings_with_pin, lomr_2018_poly, id_field = "LOMR_ID")
+    join_buildings_to_zone(buildings_with_2018_parcel, lomr_2018_poly, id_field = "LOMR_ID")
   ),
 
   tar_target(
     buildings_lomr_2026,
-    join_buildings_to_zone(buildings_with_pin, lomr_2026_poly, id_field = "LOMR_ID")
+    join_buildings_to_zone(buildings_with_2025_parcel, lomr_2026_poly, id_field = "LOMR_ID")
   ),
 
 
   ## ---- Buildings in expanded Risk zones ----------------------------
   tar_target(
     buildings_risk500_2018,
-    join_buildings_to_zone(buildings_with_pin, risk500_2018_poly, id_field = "DFIRM_ID")
+    join_buildings_to_zone(buildings_with_2018_parcel, risk500_2018_poly, id_field = "DFIRM_ID")
   ),
 
   tar_target(
     buildings_risk500_2026,
-    join_buildings_to_zone(buildings_with_pin, risk500_2026_poly, id_field = "DFIRM_ID")
+    join_buildings_to_zone(buildings_with_2025_parcel, risk500_2026_poly, id_field = "DFIRM_ID")
   ),
 
 
 
   ## ---- Land Parcels that intersect expanded Risk zones ----------------------------
+  ## Based on PTAXSIM polygons only
   tar_target(
-    land_risk500_2018,
+    parcels_ptax_risk500_2018,
     join_parcels_to_zone(ptaxsim_parcels_sf, risk500_2018_poly, id_field = "DFIRM_ID")
   ),
 
 
   tar_target(
-    land_risk500_2026,
+    parcels_ptax_risk500_2026,
     join_parcels_to_zone(ptaxsim_parcels_sf, risk500_2026_poly, id_field = "DFIRM_ID")
   ),
 
+
+  ## Added March 15 2026: ###
+  tar_target(
+    parcels_risk500_2018,
+    join_parcels_to_zone(parcels_2018, risk500_2018_poly, id_field = "DFIRM_ID")
+  ),
+
+
+  tar_target(
+    parcels_risk500_2026,
+    join_parcels_to_zone(parcels_2025, risk500_2026_poly, id_field = "DFIRM_ID")
+  ),
+  ## ^^ Added March 15 2026 ##
 
 
   # ---------- SFHA indicator files (this is “hits-only”) -------------
@@ -478,8 +503,8 @@ list(
     make_sfha_indicator_parcels(
       ptaxsim_sfha_2018,
       ptaxsim_sfha_2026,
-      parcels_lomr_2018,
-      parcels_lomr_2026
+      parcels_lomr_2018,  # made with other parcel polygons but eh,  low priority  issue and runtime is costly
+      parcels_lomr_2026   # made with other parcel polygons but eh,  low priority issue and runtime is costly
     )
   ),
 
@@ -506,8 +531,8 @@ list(
   tar_target(
     risk500_indicator_land,
     make_sfha_indicator_parcels(
-      land_risk500_2018,
-      land_risk500_2026,
+      parcels_risk500_2018,  # should be parcels_risk500_2018
+      parcels_risk500_2026,  # should be parcels_risk500_2026
       parcels_lomr_2018,
       parcels_lomr_2026
     )
@@ -652,88 +677,104 @@ list(
         names  = out_stub,   # creates branches named land / bldg / ptaxsim
         list(
           tar_target(
-            sales_prepped,
+            sales,
             make_sfha_timing_vars(
               sales_joined,
               method = method,
               min_analysis_year = 2009,
-              min_price = 5000
+              min_price = 20000
             )
           ),
 
           tar_target(
             repeat_sales,
-            make_repeat_sales(sales_prepped)
-          ),
-
-          tar_target(
-            df_prep_final,  # make df_prep includes keep_df_prep_filters and nbhd_fill functions
-            make_df_prep(repeat_sales, pin_muni_key_tbl) |>
+            sales |>
+              make_repeat_sales() |>
+              make_df_prep(pin_muni_key_tbl) |>
               left_join(manual_flood_scores, by = "pin10") |>
               mutate(flood_factor_score = ifelse(is.na(env_flood_fs_factor), flood_factor_score, env_flood_fs_factor),
                 clean_name = ifelse(is.na(clean_name.x), clean_name.y, clean_name.x),
                 high_ff_score = ifelse(env_flood_fs_factor > 4 | flood_factor_score > 4, TRUE, FALSE))
           ),
 
-
-          # tar_target(
-          #   df_prep_final_rds,
-          #   {
-          #     dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
-          #     out_file <- file.path(
-          #       sales_out_dir,
-          #       paste0("df_prep_", out_stub, "_", sales_label, "_arcgis.rds")
-          #     )
-          #     saveRDS(df_prep_final, out_file)
-          #     out_file
-          #   },
-          #   format = "file"
-          # ),
-
           tar_target(
-            q1_model_inputs,
-            add_q1_assumption_vars(
-              df_prep_final
-            )
-          ),
-
-          tar_target(
-            q1_model_inputs_rds,
-            {
-              dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
-              out_file <- file.path(
-                sales_out_dir,
-                paste0("df_prep_", out_stub, "_", sales_label, "_arcgis_forQ1_assumptiontests.rds")
-              )
-              saveRDS(q1_model_inputs, out_file)
-              out_file
-            },
-            format = "file"
+            all_sales,
+            sales |>
+              make_df_prep(pin_muni_key_tbl) |>
+              left_join(manual_flood_scores, by = "pin10") |>
+              mutate(flood_factor_score = ifelse(is.na(env_flood_fs_factor), flood_factor_score, env_flood_fs_factor),
+                clean_name = ifelse(is.na(clean_name.x), clean_name.y, clean_name.x),
+                high_ff_score = ifelse(env_flood_fs_factor > 4 | flood_factor_score > 4, TRUE, FALSE))
           )
+        ),
+
+        # tar_target(
+        #   repeats_prepped,  # make df_prep includes keep_df_prep_filters and nbhd_fill functions
+        #   make_df_prep(repeat_sales, pin_muni_key_tbl) |>
+        #     left_join(manual_flood_scores, by = "pin10") |>
+        #     mutate(flood_factor_score = ifelse(is.na(env_flood_fs_factor), flood_factor_score, env_flood_fs_factor),
+        #       clean_name = ifelse(is.na(clean_name.x), clean_name.y, clean_name.x),
+        #       high_ff_score = ifelse(env_flood_fs_factor > 4 | flood_factor_score > 4, TRUE, FALSE))
+        # ),
+
+
+        # tar_target(
+        #   df_prep_final_rds,
+        #   {
+        #     dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
+        #     out_file <- file.path(
+        #       sales_out_dir,
+        #       paste0("df_prep_", out_stub, "_", sales_label, "_arcgis.rds")
+        #     )
+        #     saveRDS(df_prep_final, out_file)
+        #     out_file
+        #   },
+        #   format = "file"
+        # ),
+
+        tar_target(
+          q1_inputs,
+          add_q1_assumption_vars(all_sales)
+        ),
+
+        tar_target(
+          q1_inputs_rds,
+          {
+            dir.create(sales_out_dir, recursive = TRUE, showWarnings = FALSE)
+            out_file <- file.path(
+              sales_out_dir,
+              paste0("allsales_", out_stub, "_", sales_label, ".rds")
+            )
+            saveRDS(q1_inputs, out_file)
+            out_file
+          },
+          format = "file"
         )
-    ))
-  ) # ,
-  # tar_target(
-  #   combined_datasets,
-  #   {
-  #     updated_map <- c(
-  #       bldg_updated = file.path(sales_out_dir, "df_prep_bldg_updated_arcgis_forQ1_assumptiontests.rds"),
-  #       land_updated = file.path(sales_out_dir, "df_prep_land_updated_arcgis_forQ1_assumptiontests.rds"),
-  #       risk500_updated = file.path(sales_out_dir, "df_prep_risk500_updated_arcgis_forQ1_assumptiontests.rds"),
-  #       risk500_land_updated = file.path(sales_out_dir, "df_prep_risk500_land_updated_arcgis_forQ1_assumptiontests.rds")
-  #     )
-  #
-  #     sales2026_map <- c(
-  #       bldg_updated = file.path(sales_out_dir, "df_prep_bldg_2026_arcgis_forQ1_assumptiontests.rds"),
-  #       land_updated = file.path(sales_out_dir, "df_prep_land_2026_arcgis_forQ1_assumptiontests.rds"),
-  #       risk500_updated = file.path(sales_out_dir, "df_prep_risk500_2026_arcgis_forQ1_assumptiontests.rds"),
-  #       risk500_land_updated = file.path(sales_out_dir, "df_prep_risk500_land_2026_arcgis_forQ1_assumptiontests.rds")
-  #     )
-  #
-  #     list(
-  #       updated = read_q1_dataset_bundle(updated_map),
-  #       sales_2026 = read_q1_dataset_bundle(sales2026_map)
-  #     )
-  #   }
-  # )
+      )
+  ))
 )
+# ,
+# tar_target(
+#   combined_datasets,
+#   {
+#     updated_map <- c(
+#       bldg_updated = file.path(sales_out_dir, "df_prep_bldg_updated_arcgis_forQ1_assumptiontests.rds"),
+#       land_updated = file.path(sales_out_dir, "df_prep_land_updated_arcgis_forQ1_assumptiontests.rds"),
+#       risk500_updated = file.path(sales_out_dir, "df_prep_risk500_updated_arcgis_forQ1_assumptiontests.rds"),
+#       risk500_land_updated = file.path(sales_out_dir, "df_prep_risk500_land_updated_arcgis_forQ1_assumptiontests.rds")
+#     )
+#
+#     sales2026_map <- c(
+#       bldg_updated = file.path(sales_out_dir, "df_prep_bldg_2026_arcgis_forQ1_assumptiontests.rds"),
+#       land_updated = file.path(sales_out_dir, "df_prep_land_2026_arcgis_forQ1_assumptiontests.rds"),
+#       risk500_updated = file.path(sales_out_dir, "df_prep_risk500_2026_arcgis_forQ1_assumptiontests.rds"),
+#       risk500_land_updated = file.path(sales_out_dir, "df_prep_risk500_land_2026_arcgis_forQ1_assumptiontests.rds")
+#     )
+#
+#     list(
+#       updated = read_q1_dataset_bundle(updated_map),
+#       sales_2026 = read_q1_dataset_bundle(sales2026_map)
+#     )
+#   }
+# )
+# )
