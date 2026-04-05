@@ -32,7 +32,7 @@ source("R/helper_pins_to_drop.R")
 
 
 #df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.RDS")
-df_prep <- readRDS("data/processed/variants/df_prep__bldg_sfha.RDS") |> filter(!pin10 %in% drop_parcels)
+df_prep <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS") |> filter(!pin10 %in% drop_parcels)
 
 #df_prep <- read_rds("data/processed/variants/df_prep__bldg_sfhanotfiltered.RDS") |>   filter(!pin10 %in% drop_parcels)
 
@@ -86,7 +86,6 @@ I also included alternative specifications, such as including binary indicators 
 
 All models clustered standard errors at the parcel level to account for repeated observations of the same land polygon.
 
--   Robustness checks: cluster at eff_date or muni level, vcov = "hetero", etc.
 
 Notes:
 
@@ -106,7 +105,7 @@ Contributions to the literature: Many models model if SFHA status changes, but h
 skim(df_prep)
 ```
 
-## Comparison of Prelim and Eff FIRM Counts
+## Basic TWFE Effective FIRMs
 
 
 ```{r}
