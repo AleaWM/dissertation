@@ -14,6 +14,7 @@ execute:
 library(tidyverse)
 library(etwfe)
 library(gt)
+library(DT)
 options(scipen = 999)
 ```
 
@@ -34,20 +35,23 @@ source("R/helper_pins_to_drop.R")
 
 bldg_sfha <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS") |>
   filter(!pin10 %in% drop_parcels |
-           (pin10 == "0113301013" & sale_year > 2014))
+           (pin10 == "0113301013" & sale_year > 2014)) |> 
+   select(pin, sale_date, sale_price, ins_req, in_eff_sfha, in_prelim_sfha, in_lomr, addedto_eff_sfha:removedfrom_prelim_sfha, condo, FIRM_PAN, nbhd_code, zip_code, event, change_type, change_type_prelim, Triad, clean_name, pin10, log_price, eff_date_chr, pre_date_chr,treat_year_add_eff, treat_year_add_prelim, treat_year_remove_prelim, treat_year_remove_eff, qtr, year, sale_year, sale_qtr_dec, group_name_eff, group_name_prelim, treated_group_eff:prelim_sfha_category)
 
-# Uncomment and edit these as needed.
 parcel_sfha <- readRDS("data/processed/targets/sales/df_prep_land_v2026_03.RDS") |>
   filter(!pin10 %in% drop_parcels |
-           (pin10 == "0113301013" & sale_year > 2014))
+           (pin10 == "0113301013" & sale_year > 2014)) |> 
+   select(pin, sale_date, sale_price, ins_req, in_eff_sfha, in_prelim_sfha, in_lomr, addedto_eff_sfha:removedfrom_prelim_sfha, condo, FIRM_PAN, nbhd_code, zip_code, event, change_type, change_type_prelim, Triad, clean_name, pin10, log_price, eff_date_chr, pre_date_chr,treat_year_add_eff, treat_year_add_prelim, treat_year_remove_prelim, treat_year_remove_eff, qtr, year, sale_year, sale_qtr_dec, group_name_eff, group_name_prelim, treated_group_eff:prelim_sfha_category)
 
 bldg_1in500 <- readRDS("data/processed/targets/sales/df_prep_risk500_v2026_03.RDS") |>
   filter(!pin10 %in% drop_parcels |
-           (pin10 == "0113301013" & sale_year > 2014))
+           (pin10 == "0113301013" & sale_year > 2014)) |> 
+   select(pin, sale_date, sale_price, ins_req, in_eff_sfha, in_prelim_sfha, in_lomr, addedto_eff_sfha:removedfrom_prelim_sfha, condo, FIRM_PAN, nbhd_code, zip_code, event, change_type, change_type_prelim, Triad, clean_name, pin10, log_price, eff_date_chr, pre_date_chr,treat_year_add_eff, treat_year_add_prelim, treat_year_remove_prelim, treat_year_remove_eff, qtr, year, sale_year, sale_qtr_dec, group_name_eff, group_name_prelim, treated_group_eff:prelim_sfha_category)
 
- parcel_1in500 <- readRDS("data/processed/targets/sales/df_prep_risk500_land_v2026_03.RDS") |>
+parcel_1in500 <- readRDS("data/processed/targets/sales/df_prep_risk500_land_v2026_03.RDS") |>
    filter(!pin10 %in% drop_parcels |
-            (pin10 == "0113301013" & sale_year > 2014))
+            (pin10 == "0113301013" & sale_year > 2014)) |> 
+   select(pin, sale_date, sale_price, ins_req, in_eff_sfha, in_prelim_sfha, in_lomr, addedto_eff_sfha:removedfrom_prelim_sfha, condo, FIRM_PAN, nbhd_code, zip_code, event, change_type, change_type_prelim, Triad, clean_name, pin10, log_price, eff_date_chr, pre_date_chr,treat_year_add_eff, treat_year_add_prelim, treat_year_remove_prelim, treat_year_remove_eff, qtr, year, sale_year, sale_qtr_dec, group_name_eff, group_name_prelim, treated_group_eff:prelim_sfha_category)
 
 # Put whichever datasets you want into this list.
 datasets <- list(
@@ -60,8 +64,8 @@ datasets <- list(
 dataset_labels <- c(
   bldg_sfha     = "Buildings - SFHA",
   parcel_sfha   = "Parcels - SFHA",
-  bldg_1in500   = "Buildings - 1 in 500",
-  parcel_1in500 = "Parcels - 1 in 500"
+  bldg_1in500   = "Buildings - 1 in 500"
+  , parcel_1in500 = "Parcels - 1 in 500"
 )
 ```
 
@@ -71,7 +75,10 @@ dataset_labels <- c(
 ```{r sample-filters}
 prep_added_sample_prelim <- function(df) {
   df |>
+      mutate(group_name_eff = factor(group_name_eff, levels = c("0", "2019", "2021"))) |>
+
     filter(
+      Triad != "City" &
       treat_year_remove_prelim == 10000 &
       change_type_prelim != "Always SFHA"
     )
@@ -79,36 +86,35 @@ prep_added_sample_prelim <- function(df) {
 
 prep_removed_sample_prelim <- function(df) {
   df |>
+      mutate(group_name_eff = factor(group_name_eff, levels = c("0", "2019", "2021")))|>
     filter(
+            Triad != "City" &
+
       treat_year_add_prelim == 10000 &
         change_type_prelim != "Never SFHA"
     )
 }
 
-prep_removed_sample_prelim_nofilt <- function(df) {
-  df |>
-    filter(
-      treat_year_add_prelim == 10000 
-    )
-}
 
 prep_added_sample_eff <- function(df) {
   df |>
+          mutate(group_name_eff = factor(group_name_eff, levels = c("0", "2019", "2021")))|>
+
     filter(
+            Triad != "City" &
+
       treat_year_remove_eff == 10000 &
       change_type != "Always SFHA"
     )
 }
 
-prep_added_sample_eff_nofilt <- function(df) {
-  df |>
-    filter(
-      treat_year_remove_eff == 10000)
-}
-
 prep_removed_sample_eff <- function(df) {
   df |>
+          mutate(group_name_eff = factor(group_name_eff, levels = c("0", "2019", "2021")))|>
+
     filter(
+            Triad != "City" &
+
       treat_year_add_eff == 10000 &
         change_type != "Never SFHA"
     )
@@ -118,6 +124,17 @@ prep_removed_sample_eff <- function(df) {
 ## ETWFE helpers
 
 ```{r helpers}
+add_stars <- function(p) {
+  case_when(
+    is.na(p)      ~ "",
+    p < 0.01      ~ "***",
+    p < 0.05      ~ "**",
+    p < 0.1       ~ "*",
+    TRUE          ~ ""
+  )
+}
+
+
 get_xvar <- function(heterogeneity, map_version) {
   case_when(
     heterogeneity == "overall" ~ NA_character_,
@@ -177,56 +194,79 @@ run_etwfe_model <- function(df,
   }
 }
 
+
 extract_emfx <- function(model, heterogeneity) {
-  if (heterogeneity == "overall") {
-    out <- emfx(model)
+  out <- if (heterogeneity == "overall") {
+    emfx(model)
   } else {
-    out <- emfx(model, type = "group")
+    emfx(model, type = "group")
   }
 
-  out |>
-    as_tibble()
+  out <- tibble::as_tibble(out)
+
+  if (heterogeneity == "overall") {
+    out$group_value <- "Overall"
+  }
+
+  out
 }
+
 
 normalize_emfx_cols <- function(df) {
   nm <- names(df)
 
   if (!"estimate" %in% nm) {
-    est_match <- nm[str_detect(nm, regex("estimate", ignore_case = TRUE))]
-    if (length(est_match) > 0) df <- df |> rename(estimate = all_of(est_match[1]))
-  }
-
-  if (!"std.error" %in% nm) {
-    se_match <- nm[str_detect(nm, regex("std\\.?error|std_error|se$", ignore_case = TRUE))]
-    if (length(se_match) > 0) df <- df |> rename(std.error = all_of(se_match[1]))
-  }
-
-  if (!"group_value" %in% names(df)) {
-    grp_candidates <- c("group", "Triad", "group_name_prelim", "group_name_eff", "xvar")
-    grp_match <- grp_candidates[grp_candidates %in% names(df)]
-    if (length(grp_match) > 0) {
-      df <- df |> rename(group_value = all_of(grp_match[1]))
+    est_match <- nm[stringr::str_detect(nm, stringr::regex("estimate", ignore_case = TRUE))]
+    if (length(est_match) > 0) {
+      df <- dplyr::rename(df, estimate = dplyr::all_of(est_match[1]))
     }
   }
 
-  df
+  if (!"std.error" %in% names(df)) {
+    se_match <- nm[stringr::str_detect(
+      nm,
+      stringr::regex("std\\.?error|std_error|se$", ignore_case = TRUE)
+    )]
+    if (length(se_match) > 0) {
+      df <- dplyr::rename(df, std.error = dplyr::all_of(se_match[1]))
+    }
+  }
+
+  if (!"p.value" %in% names(df)) {
+    p_match <- intersect(c("p.value", "p_value", "Pr(>|t|)"), names(df))
+    if (length(p_match) > 0) {
+      df <- dplyr::rename(df, p.value = dplyr::all_of(p_match[1]))
+    }
+  }
+
+  if (!"group_value" %in% names(df)) {
+    grp_match <- intersect(c("group_value", "group", "Triad", "group_name_prelim", "group_name_eff", "xvar", "by"), names(df))
+    if (length(grp_match) > 0) {
+      df <- dplyr::rename(df, group_value = dplyr::all_of(grp_match[1]))
+    } else {
+      df <- dplyr::mutate(df, group_value = NA_character_)
+    }
+  }
+
+  df |>
+    dplyr::mutate(group_value = as.character(group_value))
 }
 
-fmt_est_se <- function(est, se, digits = 3) {
-  ifelse(
-    is.na(est),
-    "—",
-    paste0(
-      formatC(est, digits = digits, format = "f"),
-      "\n(",
-      formatC(se, digits = digits, format = "f"),
-      ")"
-    )
+
+
+fmt_est_se <- function(est, se, p, digits = 3) {
+  paste0(
+formatC(est, digits = 3, format = "f", flag = "0"),
+    add_stars(p),
+    "\n(",
+formatC(se, digits = 3, format = "f", flag = "0"),
+    ")"
   )
 }
+
 ```
 
-## Model grid
+## Preliminary Model grid
 
 ```{r model-grid}
 # Set map_version = "prelim" if you want the preliminary-map treatment timing.
@@ -247,19 +287,23 @@ model_grid <- tribble(
 ## Run all models
 
 ```{r run-models}
+#| eval: false
+
 all_models <- tidyr::crossing(
   dataset_name = names(datasets),
   model_id = seq_len(nrow(model_grid))
 ) |>
   mutate(
-    dataset = datasets[dataset_name],
     direction = model_grid$direction[model_id],
     heterogeneity = model_grid$heterogeneity[model_id],
+     n_obs_raw = purrr::map_int(dataset_name, ~nrow(datasets[[.x]])),
+    n_pin_raw = purrr::map_int(dataset_name, ~dplyr::n_distinct(datasets[[.x]]$pin)),
+  
     model = purrr::pmap(
-      list(dataset, direction, heterogeneity),
-      function(dataset, direction, heterogeneity) {
+      list(dataset_name, direction, heterogeneity),
+      function(dataset_name, direction, heterogeneity) {
         run_etwfe_model(
-          df = dataset,
+          df = datasets[[dataset_name]],
           direction = direction,
           heterogeneity = heterogeneity,
           map_version = map_version_to_run
@@ -268,7 +312,18 @@ all_models <- tidyr::crossing(
     ),
     results = purrr::map2(model, heterogeneity, extract_emfx),
     results = purrr::map(results, normalize_emfx_cols)
-  )
+    )
+
+saveRDS(all_models, "outputs/q1_all_models_prelim_etwfe_noChicago.RDS", compress = FALSE)
+```
+
+
+```{r readin-models}
+all_models <- readRDS("outputs/q1_all_models_prelim_etwfe_noChicago.RDS")
+
+
+#all_models <- readRDS("outputs/q1_all_models_prelim_etwfe.RDS")
+
 ```
 
 ## Build one long results object
@@ -284,10 +339,17 @@ all_results <- all_models |>
       added = "Added",
       removed = "Removed"
     ),
-    cell = fmt_est_se(estimate, std.error)
-  )
+cell = fmt_est_se(estimate, std.error, p.value)  )
 
-all_results |> DT::datatable(rownames = FALSE)
+num_cols <- all_results |>
+  select(where(is.numeric)) |>
+  names()
+
+all_results |> select(-c(term)) |> 
+  mutate(p.value = round(p.value, digits = 3)) |>
+  DT::datatable(rownames = FALSE) |>
+  DT::formatRound(columns = num_cols, digits = 3)
+
 ```
 
 ## Table 1: overall ATT-style summaries
@@ -303,7 +365,7 @@ table1_df <- all_results |>
     )
   ) |>
   select(dataset_label, direction_label, cell) |>
-  distinct() |>
+#  distinct() |>
   pivot_wider(
     names_from = direction_label,
     values_from = cell
@@ -331,6 +393,34 @@ table2_df <- all_results |>
   ) |>
   select(dataset_label, group_value, direction_label, cell) |>
   distinct() |>
+  pivot_wider(
+    names_from = direction_label,
+    values_from = cell
+  ) |>
+  arrange(
+    factor(dataset_label, levels = unname(dataset_labels)),
+    group_value
+  )
+
+table2_df |>
+  gt(groupname_col = "dataset_label") |>
+  cols_label(group_value = "Triad") |>
+  tab_header(
+    title = md("**Table 2. Heterogeneity by Triad**")
+  )
+
+
+table2_df <- all_results |>
+  filter(heterogeneity == "triad") |>
+  mutate(
+    direction_label = recode(
+      direction,
+      added = "Added - Triad",
+      removed = "Removed - Triad"
+    )
+  ) |>
+  select(dataset_label, group_value, direction_label, cell) |>
+  # distinct() |>
   pivot_wider(
     names_from = direction_label,
     values_from = cell
@@ -378,6 +468,203 @@ table3_df |>
     title = md("**Table 3. Heterogeneity by cohort**")
   )
 ```
+
+
+# Effective Models
+
+## Effective Model grid
+
+```{r model-grid-eff}
+# Set map_version = "prelim" if you want the preliminary-map treatment timing.
+# Switch to "eff" if you want the effective-map version instead.
+map_version_to_run <- "eff"
+
+model_grid <- tribble(
+  ~direction, ~heterogeneity,
+  "added",   "overall",
+  "removed", "overall",
+  "added",   "triad",
+  "removed", "triad",
+  "added",   "cohort",
+  "removed", "cohort"
+)
+```
+
+## Run all models
+
+```{r run-models-eff}
+#| eval: false
+
+
+all_models_eff <- tidyr::crossing( 
+  dataset_name = names(datasets),
+  model_id = seq_len(nrow(model_grid))
+) |>
+  mutate(
+    direction = model_grid$direction[model_id],
+    heterogeneity = model_grid$heterogeneity[model_id],
+     n_obs_raw = purrr::map_int(dataset_name, ~nrow(datasets[[.x]])),
+    n_pin_raw = purrr::map_int(dataset_name, ~dplyr::n_distinct(datasets[[.x]]$pin)),
+  
+    model = purrr::pmap(
+      list(dataset_name, direction, heterogeneity),
+      function(dataset_name, direction, heterogeneity) {
+        run_etwfe_model(
+          df = datasets[[dataset_name]],
+          direction = direction,
+          heterogeneity = heterogeneity,
+          map_version = map_version_to_run
+        )
+      }
+    ),
+    results = purrr::map2(model, heterogeneity, extract_emfx),
+    results = purrr::map(results, normalize_emfx_cols)
+    )
+
+saveRDS(all_models_eff, "outputs/q1_all_models_eff_etwfe_noChicago.RDS", compress = FALSE)
+
+```
+
+## Build one long results object
+
+
+```{r tidy-results-eff}
+all_models_eff <- readRDS("outputs/q1_all_models_eff_etwfe.RDS")
+
+all_models_eff <- readRDS("outputs/q1_all_models_eff_etwfe_noChicago.RDS")
+
+all_results <- all_models_eff |>
+  select(dataset_name, direction, heterogeneity, results) |>
+  unnest(results) |>
+ 
+  mutate(
+    dataset_label = recode(dataset_name, !!!dataset_labels),
+    direction_label = recode(
+      direction,
+      added = "Added",
+      removed = "Removed"
+    ),
+cell = fmt_est_se(estimate, std.error, p.value)  )
+
+num_cols <- all_results |>
+  select(where(is.numeric)) |>
+  names()
+
+all_results|>  
+  mutate(p.value = round(p.value, digits = 3)) |>
+  DT::datatable(rownames = FALSE) |>
+  DT::formatRound(columns = num_cols, digits = 3)
+
+```
+
+
+## Table 4: Effective overall ATT-style summaries
+
+```{r tbl-overall-eff}
+table1_df <- all_results |>
+  filter(heterogeneity == "overall") |>
+  mutate(
+    direction_label = recode(
+      direction,
+      added = "Added - County",
+      removed = "Removed - County"
+    )
+  ) |>
+  select(dataset_label, direction_label, cell) |>
+  distinct() |>
+  pivot_wider(
+    names_from = direction_label,
+    values_from = cell
+  ) |>
+  arrange(factor(dataset_label, levels = unname(dataset_labels)))
+
+table1_df |>
+  gt() |>
+  tab_header(
+    title = md("**Table 4. Overall ATT-style summaries**")
+  )  |>
+  tab_options(
+    data_row.padding = px(8),
+    column_labels.padding = px(10)
+  ) |>
+  tab_source_note(
+    source_note = md("*p* < 0.1, **p** < 0.05, ***p*** < 0.01")
+  )
+```
+
+## Table 5: Effective heterogeneity by Triad
+
+```{r tbl-triad-eff}
+table2_df <- all_results|>
+  filter(heterogeneity == "triad") |>
+  mutate(
+    direction_label = recode(
+      direction,
+      added = "Added - Triad",
+      removed = "Removed - Triad"
+    )
+  ) |>
+  select(dataset_label, group_value, direction_label, cell) |>
+  distinct() |>
+  pivot_wider(
+    names_from = direction_label,
+    values_from = cell
+  ) |>
+  arrange(
+    factor(dataset_label, levels = unname(dataset_labels)),
+    group_value
+  )
+
+table2_df |>
+  gt(groupname_col = "dataset_label") |>
+  cols_label(group_value = "Triad") |>
+  tab_header(
+    title = md("**Table 5. Heterogeneity by Triad**")
+  )  |>
+  tab_options(
+    data_row.padding = px(8),
+    column_labels.padding = px(10)
+  )|>
+  tab_source_note(
+    source_note = md("*p* < 0.1, **p** < 0.05, ***p*** < 0.01")
+  )
+```
+
+## Table 6: heterogeneity by cohort
+
+```{r tbl-cohort-eff}
+table3_df <- all_results |>
+  filter(heterogeneity == "cohort") |>
+  mutate(
+    direction_label = recode(
+      direction,
+      added = "Added - Cohort",
+      removed = "Removed - Cohort"
+    )
+  ) |>
+  select(dataset_label, group_value, direction_label, cell) |>
+  distinct() |>
+  pivot_wider(
+    names_from = direction_label,
+    values_from = cell
+  ) |>
+  arrange(
+    factor(dataset_label, levels = unname(dataset_labels)),
+    group_value
+  )
+
+table3_df |>
+  gt(groupname_col = "dataset_label") |>
+  cols_label(group_value = "Cohort") |>
+  tab_header(
+    title = md("**Table 6. Heterogeneity by cohort**")
+  )|>
+  tab_source_note(
+    source_note = md("*p* < 0.1, **p** < 0.05, ***p*** < 0.01")
+  )
+```
+
+
 
 ## Optional diagnostics
 
