@@ -28,20 +28,22 @@ bldg_sfha <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS")
 
 #parcels <- readRDS("data/processed/targets/sales/df_prep_land_v2026_03.RDS")
 
-# bldg_1in500 <- readRDS("data/processed/targets/sales/df_prep_risk500_v2026_03.RDS")  |>
+# bldg_1in500 <- readRDS("data/processed/targets/sales/df_prep_risk500_v2026_03.RDS") # |>
 #   filter(!pin10 %in% drop_parcels  |
 #                (pin10 == "0113301013" & sale_year > 2014))
 
 # bldg_sfha <- readRDS("data/processed/targets/sales/allsales_bldg_v2026_03.RDS")
 
 df_prep <- bldg_sfha
+#df_prep <- bldg_1in500
 
 
 source("R/helper_pins_to_drop.R")
 
 df_prep <- df_prep |> filter(!pin10 %in% drop_parcels  |          
                (pin10 == "0113301013" & sale_year > 2014)
-             )
+             ) |>
+  mutate(group_name_eff = factor(group_name_eff, levels = c("0", "2019", "2021")))
 
 
 table(df_prep$change_type)
@@ -49,25 +51,152 @@ table(df_prep$change_type_prelim)
 
 table(df_prep$pre_date)
 table(df_prep$prelim_sfha_category)
+table(df_prep$group_name_prelim)
 
+table(df_prep$group_name_eff)
+class(df_prep$group_name_eff)
 ```
 
 
 
 Optional interacted categorical covariate for estimating heterogeneous treatment effects. Enables recovery of the marginal treatment effect for distinct levels of xvar, e.g. "child", "teenager", or "adult". Note that the "x" prefix in "xvar" represents a covariate that is interacted with treatment, as opposed to a regular control variable.
 
+
+```{r}
+
+make_control_groups <- function(df, 
+                                ever_added,
+                                ever_removed,
+                    pre_eff_change_type, 
+                    type = c("pre", "eff")
+                                ){
+  
+  # Treated Group A: Added to Risk Zone
+  group_T_A <- df |>
+    filter( {{ever_added}} == TRUE )
+  
+  # Treated Group B: Removed from Risk Zone
+  group_T_B <- df |> 
+      filter( {{ever_removed}}  == TRUE)
+
+  # Control Group A:  Never in SFHA, FIRM panels never updated
+    
+   if(type == "pre"){
+   group_C_A <- df |> 
+      filter(
+        {{pre_eff_change_type}} == "Never SFHA" &
+             pre_date_chr %in% c("2005-01-01")
+         )
+  }else if(type == "eff"){  # for effective maps
+  group_C_A <- df |> 
+      filter(
+        {{pre_eff_change_type}} == "Never SFHA" &
+         eff_date_chr %in% c("2008-08-19") 
+         ) 
+  }  
+
+    # Control Group B: Never in SFHA, FIRM Panels are updated
+    group_C_B  <- df |> 
+      filter( 
+        {{pre_eff_change_type}} == "Never SFHA" &
+         (eff_date_chr %in% c("2019-11-01", "2021-09-10") | 
+             pre_date_chr %in% c("2015-02-12", "2019-07-01", "2021-09-22")
+         )
+         )
+
+    # Control Group C: Always in SFHA, FIRM Panels are not updated 
+    if(type == "pre"){
+    group_C_C <- df |> 
+      filter(
+        {{pre_eff_change_type}} == "Always SFHA" &             
+          pre_date_chr %in% c("2005-01-01")
+      )}
+    else if(type == "eff") {  # this probably is tainted by prelim map cohort in 2021 though....
+    group_C_C <- df |> 
+      filter(
+        {{pre_eff_change_type}} == "Always SFHA" &
+         (eff_date_chr %in% c("2008-08-19") )
+      )
+    
+    group_C_C_alt <- df |> 
+      filter(
+        {{pre_eff_change_type}} == "Always SFHA" &
+         (eff_date_chr %in% c("2008-08-19") | 
+            pre_date_chr %in% c("2005-01-01")
+          )
+      )
+    }
+    
+    # Always in SFHA but FIRM panels have been recently updated
+   
+    if(type == "eff") {
+      group_C_D <- df |> 
+        filter(
+        {{pre_eff_change_type}} == "Always SFHA" &
+         (eff_date_chr %in% c("2019-11-01", "2021-09-10"))
+         )
+      
+       group_C_D_alt <- df |> 
+        filter(
+        {{pre_eff_change_type}} == "Always SFHA" &
+         (eff_date_chr %in% c("2019-11-01", "2021-09-10") | 
+             pre_date_chr %in% c("2015-02-12", "2019-07-01", "2021-09-22")
+             )
+         )
+    } else if (type == "pre") {
+      group_C_D <- df |> 
+         filter(
+        {{pre_eff_change_type}} == "Always SFHA" &
+             pre_date_chr %in% c("2015-02-12", "2019-07-01", "2021-09-22")
+         )
+    }
+      list(
+    group_T_A = group_T_A,
+    group_T_B = group_T_B,
+    group_C_A = group_C_A,
+    group_C_B = group_C_B,
+    group_C_C = group_C_C,
+    group_C_D = group_C_D
+
+  )
+
+}
+
+groups <- make_control_groups(df = bldg_sfha, 
+                    ever_added = ever_added_prelim, 
+                    ever_removed = ever_removed_prelim, 
+                    pre_eff_change_type = change_type_prelim, 
+                    type = "pre")
+
+groups_long <- imap_dfr(groups, ~ {
+  .x |>
+    mutate(group = .y)
+})
+
+groups_long |>
+  group_by(group) |>
+  summarise(
+    n = n(),
+    n_properties = n_distinct(pin),
+    mean_price = mean(sale_price, na.rm = TRUE),
+    mean_log_price = mean(log_price, na.rm = TRUE)
+  )
+```
+
 # Added to Risk Zone
 
 ```{r}
 #| label: tbl-etwfe-addedtozone-county
-#| tbl-cap: "**County-wide: Added to Risk Zone** Excludes Properties that were Always in the SFHA or were removed from the SFHA from the comparison group."
 
 mod1b = etwfe(
   fml = log_price ~ 1, 
   tvar = sale_year, 
   ivar = pin, 
   cgroup = "never",
+ # xvar = group_name_prelim,
   gvar = treat_year_add_prelim, 
+ gref = 10000,
+ window = 5,
   vcov = ~pin10, 
   data = (df_prep|> 
             filter(treat_year_remove_prelim==10000
@@ -76,7 +205,7 @@ mod1b = etwfe(
           )
   )
 
-mod1b
+# mod1b
 
 
 emfx(mod1b)
@@ -187,6 +316,28 @@ plot(emfx(mod2, type = "event"))
 
 ```
 
+```{r}
+#| tbl-cap: "**County-wide by muni: Removed from Risk Zone** Excludes properties that were added to the SFHA or were never in the SFHA from the comparison group. By Triad."
+
+mod2 = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  cgroup = "never",
+  xvar = FIRM_PAN,
+  gvar = treat_year_remove_prelim, 
+  vcov = ~pin10, 
+  data = (df_prep)
+  )
+
+mod2
+emfx(mod2)
+emfx(mod2, type = "group")
+plot(emfx(mod2))
+plot(emfx(mod2, type = "event"))
+
+
+```
 
 ```{r}
 #| label: tbl-etwfe-removedfromzone-filtered
@@ -280,3 +431,5 @@ plot(emfx(mod2d, type = "event"))
 
 
 ```
+
+
