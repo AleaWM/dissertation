@@ -27,12 +27,23 @@ library(skimr)
 library(cobalt)
 library(did)
 
-df_prep <- read_rds("./data/processed/df_prep.RDS")  
+#df_prep <- read_rds("./data/processed/df_prep.RDS")  
+#df_prep <- read_rds("./data/processed/df_prep_buildings_TEST.RDS") 
+#df_prep <- readRDS("data/processed/df_prep_parcels_20260109.rds") |> 
+#df_prep <- readRDS("data/processed/targets/sales/df_prep_land_updated_final.rds") 
+
+source("R/helper_pins_to_drop.R")
+
+
+#df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.RDS")
+df_prep <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS") |> filter(!pin10 %in% drop_parcels)
+
 
 
 df_prep <- df_prep |>
   mutate(
     log_price = log(sale_price),
+    high_ff_score_ever = high_ff_score,
     high_ff_score = ifelse(high_ff_score == TRUE & sale_date > new_info_released, "1", "0"),
    sale_year_decimal = year(sale_date) + (quarter(sale_date) - 1) / 4,  # gives 2012.0, 2012.25, etc
     sale_label = paste0(year(sale_date), " Q", quarter(sale_date)),
@@ -49,14 +60,6 @@ df_prep <- df_prep |>
 ```
 
 ```{r remove-missingvalues}
-df_prep <- df_prep |>
-  filter(
-    !is.na(high_ff_score) &
-           !is.na(eff_date) &
-           !is.na(clean_name) &
-           !is.na(pre_date) &
-           !is.na(Triad)
-         )
 
 around_event <- df_prep |> group_by(pin) |>
   filter(any(sale_date < new_info_released ) & any(sale_date > new_info_released) )
@@ -70,12 +73,28 @@ The interaction between sale year and in_eff_sfha should not be significant if t
 
 ```{r}
 predata <- df_prep |> 
-  filter(sale_date < new_info_released) |>
-  mutate(Triad = relevel(factor(Triad), ref = "North"))
+  filter(sale_date < new_info_released &
+           change_type %in% c("Always SFHA", "Never SFHA")) |>
+  mutate(Triad = relevel(factor(Triad), ref = "South"))
 
 models <- list(
+   m1 = lm(log_price ~ sale_year * change_type, data = predata)
+)
+
+modelsummary::modelsummary(models, stars = TRUE)
+
+
+models <- list(
+  m1 = lm(log_price ~ sale_year * change_type, data = predata),
+  m1 = lm(log_price ~ sale_year * change_type + Triad, data = predata),
+  
+  m1 = lm(sale_price ~ sale_year * change_type, data = predata),
+  m1 = lm(sale_price ~ sale_year * change_type + Triad, data = predata),
+  
+  
   m1 = lm(log_price ~ sale_year * in_eff_sfha, data = predata),
   m2 = lm(log_price ~ sale_year * in_eff_sfha + Triad, data= predata)
+ # m2 = lm(log_price ~ sale_year * in_eff_sfha*Triad, data= predata)
 
 )
 
@@ -106,6 +125,9 @@ modelsummary::modelsummary(models, stars = TRUE)
 
 
 ```{r}
+#| label: make-relyear
+
+
 df_prep <- df_prep |>
   mutate(rel_year = sale_year - 2020)
 #  mutate(rel_year = sale_year_decimal - 2020.5)
@@ -136,8 +158,8 @@ SFHA × HighFF = extra level difference at year −1 for High-FF in SFHA beyond 
 
 rel_year k × SFHA × HighFF = extra change at year k for High-FF in SFHA beyond all lower-order pieces.
 
-```{r}
-#| eval: false 
+```{r, eval=FALSE}
+
 
 m <- lm(log_price ~ rel_year * in_eff_sfha * high_ff_score, data = df_prep)
 modelsummary::modelsummary(m, stars = TRUE)
@@ -155,17 +177,56 @@ Non-SFHA, High-FF: β(rel_year k) + β(rel_year k × HighFF)
 
 SFHA, High-FF: β(rel_year k) + β(rel_year k × SFHA) + β(rel_year k × HighFF) + β(rel_year k × SFHA × HighFF)
 
+```{r}
+
+eventstudy <- feols(log(sale_price) ~ i(factor(sale_year), high_ff_score_ever, ref = "2018")*change_type | pin + sale_year,
+      cluster = ~pin10,
+      df_prep) 
+
+
+iplot(eventstudy,  main = "Event Study of Flood Factor Information")
+
+
+eventstudy_in <- feols(log(sale_price) ~ i(factor(sale_year), high_ff_score_ever, ref = "2018") | pin + sale_year,
+      cluster = ~pin10,
+      df_prep|> filter(change_type=="Always SFHA")) 
+eventstudy_out <- feols(log(sale_price) ~ i(factor(sale_year), high_ff_score_ever, ref = "2018") | pin + sale_year,
+      cluster = ~pin10,
+      df_prep|> filter(change_type=="Never SFHA")) 
+
+
+iplot(list("Always SFHA"= eventstudy_in, "Never SFHA" = eventstudy_out),  main = "Event Study of Flood Factor Information",
+      legend = TRUE)
+
+```
+
+
 ### Fixed Effects with Relative Year
 
 ```{r}
 #| eval: false
 
-# Estimate event study with -1 as baseline
-est <- feols(
-  log_price ~ i(rel_year, in_eff_sfha, ref = -1)*high_ff_score |
+df_prep$in_eff_sfha2 <- ifelse(df_prep$in_eff_sfha, "1", "0")
+df_prep$high_ff_score_ever2 <- ifelse(df_prep$high_ff_score_ever, "1", "0")
+
+#Estimate event study with -1 as baseline
+# est <- feols(
+#   log_price ~ rel_year:in_eff_sfha2:high_ff_score_ever |
+#               pin + sale_year,
+#   data = df_prep
+# )
+
+est <- feols(log_price ~ rel_year*in_eff_sfha2*high_ff_score_ever2 |
               pin + sale_year,
-  data = df_prep
-)
+  data = df_prep)
+
+
+# est <- feols(
+#   log_price ~ i(rel_year, high_ff_score_ever, ref = -1)*in_eff_sfha2 |
+#               pin + sale_year,
+#   data = df_prep
+# )
+# modelsummary::modelsummary(est)
 
 tidy_est <- broom::tidy(est, conf.int = TRUE)
 
@@ -173,21 +234,31 @@ tidy_est <- broom::tidy(est, conf.int = TRUE)
 plotdat <- tidy_est %>%
   mutate(
     # Extract rel_year number
-    rel_year = as.numeric(gsub(".*rel_year::(-?\\d+).*", "\\1", term)),
-    # SFHA indicator
-    sfha = ifelse(grepl("in_eff_sfha::Not SFHA", term), "Not SFHA", "In SFHA"),
-    # High FF indicator
-    ff = ifelse(grepl("high_ff_score1", term), "High FF Score", "Low FF Score"))
-  
+    rel_year = as.numeric(gsub(".*rel_year(-?\\d+).*", "\\1", term)),
+     # # High FF indicator
+        ff = case_when(
+      grepl("high_ff_score_ever21", term) ~ "High FF Score",
+           T ~ "Low FF Score"),
+     # grepl("high_ff_score_ever20", term) ~ "Low FF Score",
+     # T ~ "NA"),
+    
+        # SFHA indicator
+    sfha = case_when(
+      grepl("in_eff_sfha21", term) ~ "In SFHA",
+      T ~"Not SFHA"
+      # grepl("in_eff_sfha20", term) ~ "Not in SFHA",
+      # T ~ NA
+    )
+    )
+# plotdat <- plotdat |>group_by(rel_year) |> 
 
-plotdat <- plotdat |> slice(c(1:15, 17:31))
-
+plotdat <- plotdat |> filter(!is.na(rel_year) & !is.na(high_ff_score) & !is.na(in_eff_Sfha) & rel_year > -6) 
 
 ggplot(plotdat, aes(x = rel_year, y = estimate, color = ff, group = ff)) +
   geom_line() +
   geom_point() +
 #  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = ff), alpha = 0.2, color = NA) +
- facet_wrap(~sfha) +
+  facet_wrap(~sfha) +
   geom_vline(xintercept = -1, linetype = "dashed") +
   geom_hline(yintercept = 0, color = "black") +
   labs(
@@ -203,10 +274,11 @@ ggplot(plotdat, aes(x = rel_year, y = estimate, color = ff, group = ff)) +
 
 ### Both Variables
 
+#### Linear Model and filter out other coefficients
 
 ```{r}
 #| label: fig-bothvariables
-#| fig-cap: "If high_ff_score == 1 only after the information release, then coefficients look like this."
+#| fig-cap: "If high_ff_score == 1 before and after the information risk (to separate true risk from awareness of risk), then coefficients look like this."
 #| layout-ncol: 2
 #| eval: false
 
@@ -216,32 +288,37 @@ df_summary <- df_prep |>
          rel_year  = factor(rel_year),
          rel_year = relevel(rel_year, ref = "-1")) |>
   
-  group_by(rel_year, in_eff_sfha, high_ff_score) |> 
+  group_by(rel_year, in_eff_sfha2, high_ff_score_ever2) |> 
   summarize(avg_log_price = mean(log_price, na.rm=TRUE),
-    median_log_price = median(log_price, na.rm = TRUE), .groups = "drop")
+    median_log_price = median(log_price)) |> ungroup()
 
 
-m <- lm(median_log_price ~ rel_year*in_eff_sfha*high_ff_score, data = df_summary)
+m <- lm(median_log_price ~ rel_year*in_eff_sfha2*high_ff_score_ever2, data = df_summary)
 
-summary(m)
+#summary(m)
 
 
-est <- tidy(m, conf.int = TRUE)
+tidy_est <- tidy(m, conf.int = TRUE)
 
-plot_data <- est |>
-    filter(grepl("rel_year", term) ) |>
+plot_data <- tidy_est |>
+  #  filter(grepl("rel_year", term) ) |>
 
   mutate(
     rel_num = as.integer(sub(".*rel_year(-?\\d+).*", "\\1", term)),
     treatment_group = case_when(
-      grepl("high_ff_score1", term) ~ "High FF Score",
-      TRUE ~ "Low FF Score"
+      grepl("high_ff_score_ever21", term) ~ "High FF Score",
+      grepl("high_ff_score_ever20", term)~ "Low FF Score",
+      T ~ NA
     ),
     sfha_group = case_when(
-      grepl("in_eff_sfha", term) ~ "In SFHA",
-      TRUE ~ "Not in SFHA"
+      grepl("in_eff_sfha21", term) ~ "In SFHA",
+      grepl("in_eff_sfha20", term) ~ "Not in SFHA",
+      T ~ NA
     )
   )
+
+plot_data <- plot_data |> filter(!is.na(rel_num) & !is.na(treatment_group) & !is.na(sfha_group))
+
 
 ggplot(plot_data, aes(x = rel_num, y = estimate, color = treatment_group)) +
   geom_point() +
@@ -279,11 +356,14 @@ Observations that do not vary still anchor the averages for the year and other f
 - If the dataset had properties that sold only once, those sale still contribute to the fixed effect intercepts. Also impacts degrees of freedom if pins without variation are left in the sample. 
 
 ```{r}
+#| label: tbl-eff-v-precomparison
+
+
 #table(df_prep$sale_year, df_prep$high_ff_score)
 table(df_prep$Triad, df_prep$in_eff_sfha)
 
 
-df_prep <- df_prep |> mutate(Triad = factor(Triad, levels = c("North", "South", "City"))) |>
+df_prep <- df_prep |> mutate(Triad = factor(Triad, levels = c("South", "North", "City"))) |>
   filter(!is.na(Triad))
 
 models <- list(
@@ -310,6 +390,42 @@ modelsummary::modelsummary(models, stars = TRUE)
 
 
 ```{r}
+#| label: tbl-actualonesinpaper
+
+
+#table(df_prep$sale_year, df_prep$high_ff_score)
+table(df_prep$Triad, df_prep$in_eff_sfha)
+
+
+df_prep <- df_prep |> mutate(Triad = factor(Triad, levels = c("South", "North", "City"))) |>
+  filter(!is.na(Triad))
+
+models <- list(
+    "FF Score" = feols(log_price ~ high_ff_score | pin + sale_year + sale_quarter, df_prep,
+                   cluster = ~pin10     ),
+  
+  "FF Score" = feols(log_price ~ high_ff_score * event | pin + sale_year + sale_quarter, df_prep,
+                   cluster = ~pin10     ),
+  
+    "FF Score x Prelim SFHA Type" = feols(log_price ~ high_ff_score  * change_type_prelim | pin + sale_year + sale_quarter, df_prep,
+                   cluster = ~pin10     ),
+
+
+  # Change Type is categorical variable that does not change over time.
+  "FF Score x EFF Change Type" = feols(log_price ~ high_ff_score * change_type | pin + sale_year + sale_quarter, 
+                                   df_prep,
+                                   vcov = ~pin10     )
+ )
+
+
+modelsummary::modelsummary(models, stars = TRUE)
+
+```
+
+```{r}
+#| label: tbl-altmodels
+
+
 models <- list(
  "With Triads & LOMRs" = feols(log_price ~ high_ff_score  * in_eff_sfha * Triad * in_lomr | pin + sale_year + sale_quarter, df_prep,
                                 vcov = "hetero"  ))
@@ -325,8 +441,15 @@ modelsummary::modelsummary(models, stars = TRUE)
 ## Geographic Controls in Models
 
 ```{r}
+#| label: tbl-tables-bytriad
+
+
 models <- list(
- "With Triads & Muni FE" = feols(log_price ~ high_ff_score  * in_eff_sfha  | pin + sale_year + clean_name, df_prep,
+   "With Triads & Muni FE" = feols(log_price ~ high_ff_score  * in_eff_sfha  | pin + sale_year + clean_name, df_prep,
+                                 cluster = ~pin10),
+ 
+ "With Triads & Muni FE" = feols(log_price ~ high_ff_score  * in_eff_sfha * Triad | pin + sale_year + clean_name, 
+                                 df_prep,
                                  se = "twoway"),
  
   "With Triads & Muni FE" = feols(log_price ~ high_ff_score  * in_eff_sfha  | pin + sale_year + clean_name, df_prep,
@@ -352,22 +475,50 @@ modelsummary::modelsummary(models, stars = TRUE)
 
 ## TWFE example
 
-```{r}
+```{r tbl-twfe-example}
 df_prep <- df_prep |> 
   group_by(pin) |> 
-  mutate(high_ff_score2 = ifelse(any(high_ff_score  == "1"), "1", "0") )
+  mutate(high_ff_score2 = ifelse(any(high_ff_score  == TRUE), "1", "0") )
 
 
 
 mod1 = feols(log_price ~ in_eff_sfha + i(rel_year, high_ff_score2, -1)  | pin + rel_year, df_prep,
-                                 vcov = "hetero")
+                                 vcov = "pin10")
 
 modelsummary::modelsummary(mod1, stars = TRUE)
 ```
 
 ## Placebo test
 
-```{r}
+```{r error = TRUE}
+#| label: tbl-placebotest-2019
+
+df_prep <- df_prep |>
+  mutate(high_ff_score2019 = ifelse(env_flood_fs_factor > 4 & sale_year > 2019, "1", "0"))
+
+#table(df_prep$sale_year,df_prep$high_ff_score)
+#table(df_prep$sale_year, df_prep$high_ff_score2017)
+
+models <- list(
+  "Placebo Event=2019" = feols(log_price ~ high_ff_score2019*in_eff_sfha | pin + sale_year + sale_quarter, df_prep,
+                               vcov = "hetero"  ),
+  
+  "Placebo Event=2019" = feols(log_price ~ high_ff_score2019*in_eff_sfha | pin + sale_year + sale_quarter, df_prep,
+                               cluster = ~ pin10 ),
+  
+  "Event=2020" = feols(log_price ~ high_ff_score*in_eff_sfha | pin + sale_year + sale_quarter, df_prep,
+                       vcov = "hetero"  ),
+  "Event=2020" = feols(log_price ~ high_ff_score*in_eff_sfha | pin + sale_year + sale_quarter, df_prep,
+                       cluster = ~ pin10 )
+)
+
+  
+modelsummary::modelsummary(models, stars = TRUE)
+
+```
+
+```{r error = TRUE}
+#| label: tbl-placebotest
 
 df_prep <- df_prep |>
   mutate(high_ff_score2017 = ifelse(env_flood_fs_factor > 4 & sale_year > 2017, "1", "0"))
@@ -379,8 +530,14 @@ models <- list(
 "Placebo Event=2017" = feols(log_price ~ high_ff_score2017*in_eff_sfha | pin + sale_year + sale_quarter, df_prep,
                              vcov = "hetero"  ),
 
+"Placebo Event=2017" = feols(log_price ~ high_ff_score2017*in_eff_sfha | pin + sale_year + sale_quarter, df_prep,
+                             cluster = ~ pin10 ),
+
 "Event=2020" = feols(log_price ~ high_ff_score*in_eff_sfha | pin + sale_year + sale_quarter, df_prep,
-                        vcov = "hetero"  ) )
+                        vcov = "hetero"  ),
+"Event=2020" = feols(log_price ~ high_ff_score*in_eff_sfha | pin + sale_year + sale_quarter, df_prep,
+                       cluster = ~ pin10 )
+)
   
   
 modelsummary::modelsummary(models, stars = TRUE)
@@ -388,13 +545,23 @@ modelsummary::modelsummary(models, stars = TRUE)
 ```
 
 
+
+## Using Preliminary FIRM Date
+
+
 ```{r}
+#| label: tbl-compare-prelim-eff
+
+
 models <- list(
-"Event=2017" = feols(log_price ~ high_ff_score2017 + in_eff_sfha + high_ff_score2017:in_eff_sfha | pin + sale_year + sale_quarter, 
+"Event=2017" = feols(log_price ~ high_ff_score2017 + in_prelim_sfha + high_ff_score2017:in_prelim_sfha | pin + sale_year + sale_quarter, 
+                      cluster = ~ pin10,
                      data = (df_prep |> filter( sale_year<2020)) ),
 
 
-"Event = 2020" = feols(log_price ~ high_ff_score + in_eff_sfha + high_ff_score:in_eff_sfha | pin + sale_year+ sale_quarter, df_prep))
+"Event = 2020" = feols(log_price ~ high_ff_score + in_prelim_sfha + high_ff_score:in_prelim_sfha | pin + sale_year+ sale_quarter, 
+                        cluster = ~ pin10,
+                       data = df_prep))
 
 modelsummary::modelsummary(models, stars = TRUE)
 ```
