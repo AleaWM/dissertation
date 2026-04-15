@@ -96,6 +96,8 @@ make_sfha_lineplot <- function(
   group_vars = c("event_remapped", "prelim_sfha_category"),
   facet_vars = c("pre_date_chr"),     # can be length 0, 1, or more
   color_var = "prelim_sfha_category", # set NULL for no color mapping
+  shape_var = c("prelim_sfha_category"), # set NULL for no color mapping
+
   linetype_var = "event_remapped",    # set NULL for no linetype mapping
   title = "Pre- and Post-Event Slopes by SFHA Status",
   y_label = NULL,
@@ -135,7 +137,11 @@ make_sfha_lineplot <- function(
   aes_base <- ggplot2::aes(
     x = sale_year,
     y = avg_value,
-    group = .series
+          group = .series,
+      linetype = prelim_sfha_category,
+      shape = prelim_sfha_category
+
+    # group = .series
   )
 
   if (!is.null(color_var))    aes_base$colour   <- rlang::sym(color_var)
@@ -166,6 +172,7 @@ make_sfha_lineplot <- function(
       x = NULL,
       y = y_label
     ) +
+    
     ggplot2::scale_x_continuous(breaks = x_breaks, limits = x_limits) +
     ggplot2::theme_classic() +
     ggplot2::theme(legend.position = "bottom")
@@ -189,21 +196,51 @@ See `treat_group_prelim`
 # created in Q1_final_variables.R script
 # df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.RDS")
 
-# created in sfha_indicator_processing.R that uses arcgis and 2025 parcels 
-df_prep <- readRDS("data/processed/df_prep_bldg_sfha_updated_arcgis_forQ1_assumptiontests.RDS")
 
+bldg_sfha <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS")
+
+
+
+#parcels <- readRDS("data/processed/targets/sales/df_prep_land_v2026_03.RDS")
+
+# bldg_1in500 <- readRDS("data/processed/targets/sales/df_prep_risk500_v2026_03.RDS")  |>
+#   filter(!pin10 %in% drop_parcels  |
+#                (pin10 == "0113301013" & sale_year > 2014))
 source("R/helper_pins_to_drop.R")
 
-df_prep <- df_prep |> filter(!pin10 %in% drop_parcels  |          
+bldg_sfha <- bldg_sfha |> filter(!pin10 %in% drop_parcels  |          
                (pin10 == "0113301013" & sale_year > 2014)
              )
 
+lake100ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within100ft_ExportTable_TableToExcel.xlsx")
+lake500ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within500ft_ExportTable_TableToExcel.xlsx")
+
+df_prep <- bldg_sfha |>
+  mutate(coastal_100 = pin10 %in% lake100ft$PIN10,
+         coastal_500 = pin10 %in% lake500ft$PIN10)
+
+# 
+# coastal_pins <- df_prep |>
+#   mutate(coastal = substr(pin, 1, 2) %in% c("05", "11", "14", "17", "20", "21") & condo == "Condo") |>
+#   filter(coastal == TRUE)
+# coastal_pins |> group_by(pin10) |> summarize(sales_per_parcel = n())|>arrange(desc(sales_per_parcel))
+# 
+# coastal_pins |> distinct(nbhd_code)
+
+# df |> filter(coastal ==TRUE) |> group_by(pin10) |>distinct()
+
+table(df_prep$coastal_500)
+table(df_prep$coastal_100)
 
 table(df_prep$change_type)
 table(df_prep$change_type_prelim)
 
 table(df_prep$pre_date)
 table(df_prep$prelim_sfha_category)
+table(df_prep$coastal_100, df_prep$prelim_sfha_category)
+
+table(df_prep$coastal_500, df_prep$prelim_sfha_category)
+
 ```
 
 
@@ -215,18 +252,24 @@ table(df_prep$prelim_sfha_category)
 
 table(df_prep$sale_year, df_prep$addedto_prelim_sfha)
 table(df_prep$sale_year, df_prep$removedfrom_prelim_sfha)
+table(df_prep$sale_year, df_prep$pre_date)
 
 
+df_prep |> group_by(pre_date, sale_year) |>
+  summarize(n= n()) |>
+  pivot_wider(names_from = pre_date, values_from = n)
 ```
 
 ```{r}
 #| include: false
-table(df_prep$sale_year, df_prep$pre_date, df_prep$addedto_prelim_sfha)
-table(df_prep$sale_year, df_prep$pre_date, df_prep$removedfrom_prelim_sfha)
+#| eval: false
+table(df_prep$year, df_prep$pre_date, df_prep$addedto_prelim_sfha)
+
+table(df_prep$year, df_prep$pre_date, df_prep$removedfrom_prelim_sfha)
 
 ```
 
-## Step 2: Is TWFE messed up?
+# Step 2: Is TWFE messed up?
 
 Goodman-Bacon decomposition
 
@@ -288,7 +331,8 @@ mod1 = etwfe(
   data = (df_prep|> 
             filter(treat_year_remove_prelim==10000
                    
-                   & change_type_prelim != "Always SFHA")
+                   & change_type_prelim != "Always SFHA"
+                 )
           )
   
   )
@@ -296,12 +340,10 @@ mod1
 
 
 emfx(mod1)
-
-
 emfx(mod1, type = "group")
 emfx(mod1, type = "event")
-plot(emfx(mod1))
-plot(emfx(mod1, type = "event"))
+plot(emfx(mod1), pch = c(16, 15, 18))
+plot(emfx(mod1, type = "event"), pch = c(16, 15, 18))
 
 ```
 
@@ -319,7 +361,7 @@ mod2 = etwfe(
   vcov = ~pin10, 
   data = (df_prep|> 
             # do not want treated properties that move in opposite direction. 
-            filter(treat_year_add_prelim==10000 |
+            filter(treat_year_add_prelim==10000 &
                      # and only want to compare to properties that were Always in the SFHA (also keeps properties that changed SFHA status), 
                      change_type_prelim != "Never SFHA") 
           )
@@ -328,11 +370,46 @@ mod2
 emfx(mod2)
 emfx(mod2, type = "group")
 emfx(mod2, type = "event")
-plot(emfx(mod2))
-plot(emfx(mod2, type = "event"))
+plot(emfx(mod2), pch = c(16, 15, 18))
+plot(emfx(mod2, type = "event"), pch = c(16, 15, 18))
 
 
 ```
+
+```{r}
+mod2 = etwfe(
+  fml = log_price ~ 1, 
+  tvar = sale_year, 
+  ivar = pin, 
+  xvar = group_name_prelim, 
+    cgroup = "never",
+
+  gvar = treat_year_remove_prelim, 
+  vcov = ~pin10, 
+  data = (df_prep|> 
+            # do not want treated properties that move in opposite direction. 
+            filter(treat_year_add_prelim==10000 &
+                     # and only want to compare to properties that were Always in the SFHA (also keeps properties that changed SFHA status), 
+                     change_type_prelim != "Never SFHA") 
+          )
+  )
+mod2
+emfx(mod2)
+
+
+emfx(mod2, type = "group") 
+
+emfx(mod2, type = "event")
+
+plot(emfx(mod2), pch = c(16, 15, 18, 19))
+
+
+plot(emfx(mod2, type = "event"), pch = c(16, 15, 18, 19)) 
+
+
+
+```
+
 
 # Step 3: Estimate Group-Time ATT with Staggered Design Tools
 
@@ -372,7 +449,7 @@ df_es_removed <- df_prep |>
   ungroup()
 
 
-table(df_es_removed$g_remove, df_es_removed$pre_date)
+table(df_es_removed$sale_year, df_es_removed$g_remove, df_es_removed$pre_date)
 ```
 
 With g_remove:
@@ -384,15 +461,14 @@ prelim_remove_att_gt_out <- att_gt(yname = "log_price",
                                  #  xformla = ~"pre_date_chr",
                      tname = "sale_year",
                      idname = "pin_num",
-                     #gname = "treated_group_prelim_remove",
-                     gname = "g_remove",
+                     gname = "treated_group_prelim_remove",
+                    # gname = "g_remove",
                      clustervars = "pin10",
-                     base_period = "universal",
+                    base_period = "universal",
                      data = df_es_removed,
                      allow_unbalanced_panel = TRUE#,
                    # print_details = TRUE
                     )
-
 summary(prelim_remove_att_gt_out)
 
 # looks like nothing, too bunched together, doesn't show cohorts.
@@ -406,10 +482,6 @@ ggdid(agg_group)
 
 ```
 
-
-2015 removals massively outperform always-SFHA parcels
-
-2021 removals massively underperform always-SFHA parcels. Much smaller sample size
 
 
 ```{r}
@@ -462,7 +534,6 @@ table(df_es_added$g_add)
 
 ```{r }
 #| eval: false
-#| include: false
 
 #takes a lot longer than the removed & always in SFHA model above. 
 prelim_add_att_gt_out <- att_gt(yname = "log_price",
@@ -478,22 +549,7 @@ prelim_add_att_gt_out <- att_gt(yname = "log_price",
 saveRDS(prelim_add_att_gt_out, file = "outputs/Q1_prelim_add_gt_out.rds")
 ```
 
-**skipping ggdid versions of event studies. Go to next section instead.**
 
-```{r}
-#| eval: false
-#| include: false
-#| 
-prelim_add_att_gt_out <- read_rds("outputs/Q1_prelim_add_gt_out.rds")
-summary(prelim_add_att_gt_out)
-ggdid(prelim_add_att_gt_out)
-
-agg_group <- aggte(prelim_add_att_gt_out, type = "group", na.rm = TRUE)
-summary(agg_group)  
-ggdid(agg_group)
-
-
-```
 
 
 # Step 4: Visualize Event Study
@@ -504,23 +560,26 @@ ggdid(agg_group)
 
 ## Using Callaway & Santana did package
 
-Added to Preliminary SFHA graph is wrong though. It is grabbing 2022 as a treatment year even though that is false. 
+Due to structure of the data and how treatment is defined, Callaway and Sant'Anna's DID package was not able to identify the cohort level effects of treatment. The group indicator is supposed to represent when the treatment occurs, but for my data, the sales happen in non-treatment years. Their package  does not seem to work with repeat sales that occur in non-treated years. For example,  grabbing 2022 as a treatment year even though that is false. 
 
 ```{r}
 #| label: fig-eventstudy-graphs-using-aggtedynamic
 #| fig-cap: "Event study version of cohort effects. Uses releative time to treatment."
 #| eval: false
-#| include: false
 
-prelim_add_att_gt_out <- read_rds("outputs/Q1_prelim_add_gt_out.rds")
-
+# prelim_add_att_gt_out <- read_rds("outputs/Q1_prelim_add_gt_out.rds")
+# 
 agg_es <- aggte(prelim_remove_att_gt_out, type = "dynamic", na.rm=TRUE)
 summary(agg_es)
 ggdid(agg_es)
+# 
+# agg_es <- aggte(prelim_add_att_gt_out, type = "dynamic", na.rm=TRUE)
+# summary(agg_es)
+# saveRDS(agg_es, "outputs/Q1_assumption_tests_prelim_add_eventstudy.rds")
 
-agg_es <- aggte(prelim_add_att_gt_out, type = "dynamic", na.rm=TRUE)
-summary(agg_es)
-ggdid(agg_es)
+agg_es2 <- readRDS("outputs/Q1_assumption_tests_prelim_add_eventstudy.rds")
+summary(agg_es2)
+ggdid(agg_es2)
 ```
 
 
@@ -558,13 +617,20 @@ df_es_add <- df_prep |>
   mutate(treated = prelim_sfha_category == "Added to prelim SFHA")
 
 # ---- (A) event-study regression ----
-# base model, no flexible fixed effects
+# Binned base model, no flexible fixed effects
 mod_es_add_none <- feols(
   log(sale_price) ~ i(event_time_binned, treated, ref = -1) | pin + sale_year,
   cluster = ~ pin10,
   data = df_es_add
 )
+# ----  plot ----
+iplot(mod_es_add_none, xlab = "Years relative to map year", main = "Event Study: Added (Binned)")
 
+mod_es_add_none <- feols(
+  log(sale_price) ~ i(event_time, treated, ref = -1) | pin + sale_year,
+  cluster = ~ pin10,
+  data = df_es_add
+)
 
 # ----  plot ----
 iplot(mod_es_add_none, xlab = "Years relative to map year", main = "Event Study: Added")
@@ -586,7 +652,7 @@ pretrends
 wald(mod_es_add_none, keep = "event_time_binned::-(5|4|3|2)")
 ```
 
-There is no evidence of differential pre-trends between treated and control units in the periods before treatment.
+There **is** evidence of differential pre-trends between treated and control units in the periods before treatment.
 
 
 This gets better when Triad fixed effects are added below!
@@ -597,8 +663,22 @@ This gets better when Triad fixed effects are added below!
 
 To relax the assumption of countywide parallel trends, event-study models are augmented with cohort-specific time trends, implemented as interactions between sale year and assessment triad or preliminary map cohort. This allows price trajectories to vary flexibly across institutional groupings while preserving identification from within-cohort deviations around the map update.
 
+Using "^" essentially makes year-cohort (or year-triad) fixed effects. Each year's fixed effects would instead by separate estimates for each triad or cohort. It is NOT the same as allowing slopes to varyby group.
+
 
 ```{r}
+# mod_es_add_triad <- feols(
+#   log(sale_price) ~ i(event_time_binned, treated, ref = -1) |
+#     pin + sale_year,
+#   cluster = ~ pin10,
+#   data = (df_es_add |> filter(Triad == "South") )
+# )
+# mod_es_add_triad <- feols(
+#   log(sale_price) ~ i(event_time_binned, treated, ref = -1) |
+#     pin + sale_year,
+#   cluster = ~ pin10,
+#   data = (df_es_add |> filter(Triad == "North") )
+# )
 
 # ----  EVENT STUDY WITH FLEXIBLE TRENDS ----
 
@@ -640,7 +720,6 @@ iplot(
 
 ```
 
-Still passes pre-trend test!
 
 
 ```{r}
@@ -667,6 +746,89 @@ coef_map <- broom::tidy(mod_es_add_none) |>
 modelsummary::modelsummary(
   mods,
   coef_map = coef_map,
+  estimate  = "{estimate}{stars}",
+  statistic = "({std.error})",
+  stars = c("*" = .10, "**" = .05, "***" = .01),
+  gof_omit = "Adj|Pseudo|Within|RMSE|AIC|BIC"
+)
+```
+```{r}
+# mod_es_add_triad <- feols(
+#   log(sale_price) ~ i(event_time_binned, treated, ref = -1) |
+#     pin + sale_year,
+#   cluster = ~ pin10,
+#   data = (df_es_add |> filter(Triad == "South") )
+# )
+mod_es_add_none <- feols(
+  log(sale_price) ~ i(event_time_binned, treated, ref = -1) |
+    pin + sale_year,
+  cluster = ~ pin10,
+  data = (df_es_add |> filter(Triad == "North") )
+)
+
+# ----  EVENT STUDY WITH FLEXIBLE TRENDS ----
+
+## (B) Flexible trends by TRIAD
+mod_es_add_triad <- feols(
+  log(sale_price) ~ i(event_time_binned, treated, ref = -1)* Triad |
+    pin + sale_year,
+  cluster = ~ pin10,
+  data = df_es_add
+)
+
+
+# (C) Pre-year cohort trends
+mod_es_add_preyear <- feols(
+  log(sale_price) ~ i(event_time_binned, treated, ref = -1) *pre_date_chr |
+    pin + sale_year,
+  cluster = ~ pin10,
+  data = df_es_add
+)
+
+# ----  pre-trend extraction (triad version) ----
+pretrends_triad <- broom::tidy(mod_es_add_triad) |>
+  filter(str_detect(term, "^event_time_binned::")) |>
+  mutate(rel_time = as.integer(str_extract(term, "-?\\d+"))) |>
+  filter(rel_time < 0) |>
+  arrange(rel_time)
+
+pretrends_triad
+
+# ---- joint test of pre-trendsfor year-triad flexible fixed effects ----
+wald(mod_es_add_triad, keep = "event_time_binned::-(5|4|3|2)")
+
+# ----  plot ----
+iplot(
+  mod_es_add_triad,
+  xlab = "Years relative to map year",
+  main = "Event Study with Triad-Specific Trends: Added"
+)
+
+```
+```{r}
+#| label: tbl-added-comparisonofFE-interactions
+#| tbl-cap: "Table compares event-study estimates under alternative assumptions about price trends. Allowing for assessment-triad-specific trends modestly attenuates estimated effects while preserving the overall dynamic pattern. More aggressive cohort-specific trends based on preliminary map year further reduce precision, reflecting limited identifying variation once highly flexible trends are imposed."
+
+# ---- collect and label models ----
+mods <- list(
+  "No flexible trends"     = mod_es_add_none,
+  "Triad-specific trends" = mod_es_add_triad,
+  "Pre-year cohort trends"= mod_es_add_preyear
+)
+
+coef_map <- broom::tidy(mod_es_add_none) |>
+  filter(str_detect(term, "event_time_binned::")) |>
+  mutate(
+    rel_time = as.integer(str_extract(term, "-?\\d+")),
+    clean = paste0("t = ", rel_time)
+  ) |>
+  arrange(rel_time) |>
+  pull(clean, term)
+
+# ---- 5. comparison table ----
+modelsummary::modelsummary(
+  mods,
+ # coef_map = coef_map,
   estimate  = "{estimate}{stars}",
   statistic = "({std.error})",
   stars = c("*" = .10, "**" = .05, "***" = .01),
@@ -801,7 +963,11 @@ mod_es_removed_preyear <- feols(
   data = df_es_removed
 )
 
-
+mod_es_removed_preyear2 <- feols(
+  log(sale_price) ~ i(event_time_binned, treated, ref = -1)*pre_date_chr | pin + sale_year,
+  cluster = ~ pin10,
+  data = df_es_removed
+)
 # ----  plot ----
 iplot(mod_es_removed_none, xlab = "Years relative to map year", main = "Event Study: Removed")
 
@@ -824,7 +990,7 @@ wald(mod_es_removed_none, keep = "event_time_binned::-(5|4|3|2)")
 
 ```
 
-> Failed pre-trend test: Coefficients were statistically significant from each other.  Gets better when using Triads below!
+> Passed pre-trend test: Coefficients were not statistically significant from each other. 
 
 ### Geographic Heterogeneity - Removed from SFHA ES by Triad 
 
@@ -839,10 +1005,20 @@ mod_es_removed_triad <- feols(
   cluster = ~ pin10,
   data = df_es_removed
 )
-
+mod_es_removed_triad2 <- feols(
+  log(sale_price) ~ i(event_time_binned, treated, ref = -1) * Triad |
+    pin + sale_year,
+  cluster = ~ pin10,
+  data = df_es_removed
+)
 # ----  plot ----
 iplot(
   mod_es_removed_triad,
+  xlab = "Years relative to map year",
+  main = "Event Study with Triad-Specific Trends: Removed"
+)
+iplot(
+  mod_es_removed_triad2,
   xlab = "Years relative to map year",
   main = "Event Study with Triad-Specific Trends: Removed"
 )
@@ -887,7 +1063,9 @@ These pre-period coefficients are not jointly zero.
 mods <- list(
   "No flexible trends"     = mod_es_removed_none,
   "Triad-specific trends" = mod_es_removed_triad,
-  "Pre-year cohort trends"= mod_es_removed_preyear
+    "Triad-specific trends2" = mod_es_removed_triad2,
+  "Pre-year cohort trends"= mod_es_removed_preyear,
+  "Pre-year cohort trends2"= mod_es_removed_preyear2
 )
 
 coef_map <- broom::tidy(mod_es_removed_none) |>
@@ -926,7 +1104,10 @@ extract_es <- function(mod, label) {
 es_df <- bind_rows(
   extract_es(mod_es_removed_none,    "No trends"),
   extract_es(mod_es_removed_triad,   "Triad trends"),
-  extract_es(mod_es_removed_preyear, "Pre-year trends")
+  extract_es(mod_es_removed_triad2,   "Triad trends2"),
+  extract_es(mod_es_removed_preyear, "Pre-year trends"),
+    extract_es(mod_es_removed_preyear2, "Pre-year trends2")
+
 )
 
 ref_row <- es_df |>
@@ -976,12 +1157,19 @@ ggplot(es_df_plot, aes(x = rel_time, y = estimate, group = spec)) +
   scale_shape_manual(values = c(
     "No trends"       = 16,
     "Triad trends"    = 17,
+        "Triad trends2"    = 15,
+    "Pre-year trends2" = 18,
+
     "Pre-year trends" = 15
   )) +
   scale_linetype_manual(values = c(
     "No trends"       = "solid",
     "Triad trends"    = "dashed",
-    "Pre-year trends" = "dotted"
+    "Pre-year trends" = "dotted",
+        "Pre-year trends2" = "dotted",
+
+        "Triad trends2"       = "solid"
+
   )) +
 
   labs(
@@ -1100,10 +1288,6 @@ ggdid(agg_output)
 ```{r}
 #| label: tbl-appendixA-placebotest
 #| 
-
-library(dplyr)
-library(lubridate)
-library(fixest)
 
 # df_prep must have: pin, pin10, sale_date, sale_year, pre_date, prelim_sfha_category, log_price
 
@@ -1370,7 +1554,8 @@ Review the event study plot:
 
 ```{r}
 slopetest <- lm(log_price ~ sale_year*prelim_sfha_category, 
-                df_prep |> filter(sale_date < pre_date | 
+                df_prep |> 
+                  filter(sale_date < pre_date | 
                                     (sale_date < 2017 & pre_date_chr == "2005-01-01")) 
 )
 modelsummary::modelsummary(slopetest)
@@ -1387,15 +1572,23 @@ modelsummary::modelsummary(slopetest)
 A couple large houses sold in the treatment categories with small samples easily skews the slopes of the pre trends. So visualizations of  year interactinos for slopes are not super useful. 
 
 ```{r}
-df_prep |> 
+#| fig-height: 8
+#| fig-width: 8
+df_prep_nochi <- df_prep |> filter(!(Triad != "City" & log_price > 13.5))
+  
+df_prep_nochi |> 
   group_by(event_remapped, sale_year, prelim_sfha_category ) |> 
   summarise(avg_price = mean(log_price, na.rm = TRUE),
             n = n()) |> 
-  ggplot(aes(x = sale_year, y = avg_price, color = prelim_sfha_category)) +
-  geom_point() +
-  geom_line() +
+  ggplot(aes(x = sale_year, y = avg_price,
+            # color = prelim_sfha_category, 
+             shape = prelim_sfha_category, lty = prelim_sfha_category)) +
+ geom_smooth(method = "lm", se = FALSE, color = "darkgray", lwd = 1, alpha = .5) +
+  geom_line(lwd = 1) +
+    geom_point(size = 2) +
 
-  geom_smooth(method = "lm", se = FALSE) +
+    ggplot2::scale_shape_manual(values = c(16, 17, 15, 1, 2, 0)) +
+    ggplot2::scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash")) +
   labs(title = "Average Market Trends in Cook County",
        caption = "",
        x = NULL, y = "Avg. Logged Sale Price") +
@@ -1404,17 +1597,18 @@ df_prep |>
   theme(legend.position = "bottom") 
 
 
-df_prep |> 
+df_prep_nochi |> 
   group_by(event_remapped, sale_year, prelim_sfha_category, pre_date_chr, pre_date ) |> 
   summarise(avg_price = mean(log_price, na.rm = TRUE),
             n = n()) |> 
-  ggplot(aes(x = sale_year, y = avg_price, color = prelim_sfha_category)) +
-  geom_point() +
-  geom_line() +
+ ggplot(aes(x = sale_year, y = avg_price,
+            # color = prelim_sfha_category, 
+             shape = prelim_sfha_category, lty = prelim_sfha_category)) +
+geom_line() +
+    geom_point(size = 2) +
 
-  geom_smooth(aes(linetype = event_remapped), method = "lm", se = FALSE) +
-#  geom_vline(xintercept=pre_date_chr, lty = 2) +
-
+    ggplot2::scale_shape_manual(values = c(16, 17, 15, 1, 2, 0)) +
+    ggplot2::scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash")) +
   facet_wrap(~pre_date_chr) +
   labs(title = "Pre- and Post-Event Slopes by Triad and SFHA Status",
        caption = "",
@@ -1439,7 +1633,8 @@ make_sfha_lineplot(
    group_vars = c("prelim_sfha_category"),
 
   title     = "Pre-Event Trends for Cook County by SFHA Status"
-)
+) +     ggplot2::scale_shape_manual(values = c(16, 17, 15, 1, 2, 0))
+
 
 
 
@@ -1470,7 +1665,7 @@ make_sfha_lineplot(
 ### All years 
 
 ```{r}
-df_prep <- df_prep |>filter(!is.na(in_eff_sfha))
+df_prep <- df_prep |>filter(!is.na(in_eff_sfha) & Triad != "City")
 
 make_sfha_lineplot(
   df_prep,
@@ -1479,7 +1674,7 @@ make_sfha_lineplot(
   linetype_var  = NULL,
   group_vars = c("prelim_sfha_category", "Triad"),
   title     = "Trends by Triad and SFHA Status"
-)
+) 
 
 make_sfha_lineplot(
   df_prep,
@@ -1509,7 +1704,7 @@ make_sfha_lineplot(
   y_var     = "log_price",
   facet_vars = "pre_date",
   title     = "Trends by FIRM Date and SFHA Status"
-)
+) 
 
 
 make_sfha_lineplot(
@@ -1521,7 +1716,7 @@ make_sfha_lineplot(
 
 ```
 
-```{r}
+```{r graphs-repeatsales}
 #| layout-ncol: 2
 
 
@@ -1538,6 +1733,129 @@ make_sfha_lineplot(
   y_var     = "log_price",
   facet_vars = NULL,
   title     = "County Trends by SFHA Group: Added v Never"
+)
+
+
+make_sfha_lineplot(
+  (df_prep |> filter(prelim_sfha_category %in% c("Always SFHA", "Removed from prelim SFHA"))),
+  y_var     = "log_price",
+  facet_vars = NULL,
+  title     = "County Trends by SFHA Group: Removed v Always"
+)
+
+
+make_sfha_lineplot(
+  (df_prep |> filter(prelim_sfha_category %in% c("Never SFHA", "Added to prelim SFHA"))),
+  y_var     = "log_price",
+  facet_vars = NULL,
+  title     = "County Trends by SFHA Group: Added v Never"
+)
+
+```
+
+
+```{r graphs-allsales}
+#| layout-ncol: 2
+
+bldg_sfha <- readRDS("data/processed/targets/sales/allsales_bldg_v2026_03.RDS")
+df_prep <- bldg_sfha# |> select(-event_remapped)
+df_prep <- df_prep |> filter(!pin10 %in% c("0122400028", "0516106013"))
+df_prep <- df_prep |> filter(!(log_price > 13)& Triad != "City")
+
+
+make_sfha_lineplot(
+  (df_prep |> filter(prelim_sfha_category %in% c("Always SFHA", "Removed from prelim SFHA"))),
+  y_var     = "log_price",
+  facet_vars = NULL,
+  title     = "County Trends by SFHA Group: Removed v Always"
+)
+
+
+make_sfha_lineplot(
+  (df_prep |> filter(prelim_sfha_category %in% c("Never SFHA", "Added to prelim SFHA"))),
+  y_var     = "log_price",
+  facet_vars = NULL,
+  title     = "County Trends by SFHA Group: Added v Never"
+)
+
+
+bldg_risk500 <- readRDS("data/processed/targets/sales/allsales_risk500_v2026_03.RDS")
+df_prep <- bldg_risk500 #|> select(-event_remapped)
+df_prep <- df_prep |> filter(!pin10 %in% c("0122400028", "0516106013"))
+df_prep <- df_prep |> filter(!(log_price > 13))
+
+
+
+make_sfha_lineplot(
+  (df_prep |> filter(prelim_sfha_category %in% c("Always SFHA", "Removed from prelim SFHA"))),
+  y_var     = "log_price",
+  facet_vars = NULL,
+  title     = "County Trends by SFHA Group: Removed v Always"
+)
+
+
+make_sfha_lineplot(
+  (df_prep |> filter(prelim_sfha_category %in% c("Never SFHA", "Added to prelim SFHA"))),
+  y_var     = "log_price",
+  facet_vars = NULL,
+  title     = "County Trends by SFHA Group: Added v Never"
+)
+
+```
+
+```{r}
+#| layout-ncol: 2
+
+
+bldg_sfha <- readRDS("data/processed/targets/sales/allsales_bldg_v2026_03.RDS")
+df_prep <- bldg_sfha# |> select(-event_remapped)
+df_prep <- df_prep |> filter(!pin10 %in% c("0122400028", "0516106013"))
+df_prep <- df_prep |> filter(!(Triad != "City" & log_price > 13.5))
+
+
+make_sfha_lineplot(
+  (df_prep |> 
+     filter(prelim_sfha_category %in% c("Always SFHA", "Never SFHA") 
+            & Triad != "City"
+            )
+   ),
+  y_var     = "log_price",
+  facet_vars = NULL,
+  title     = "County Trends by SFHA Group: Always In v Always Out"
+)
+
+make_sfha_lineplot(
+  (df_prep |> filter(prelim_sfha_category %in% c("Always SFHA", "Never SFHA") 
+                                 & Triad != "City"
+)),
+  y_var     = "log_price",
+  title     = "County Trends by SFHA Group: Always In v Always Out"
+)
+
+bldg_risk500 <- readRDS("data/processed/targets/sales/allsales_risk500_v2026_03.RDS")
+df_prep <- bldg_risk500 #|> select(-event_remapped)
+df_prep <- df_prep |> filter(!pin10 %in% c("0122400028", "0516106013"))
+df_prep <- df_prep |> filter(!(Triad != "City" & log_price > 13.5))
+
+
+
+make_sfha_lineplot(
+  (df_prep |> 
+     filter(prelim_sfha_category %in% c("Always SFHA", "Never SFHA") 
+            & Triad != "City"
+            )
+   ),
+  y_var     = "log_price",
+  facet_vars = NULL,
+  title     = "County Trends by SFHA Group: Always In v Always Out"
+)
+
+make_sfha_lineplot(
+  (df_prep |> filter(prelim_sfha_category %in% c("Always SFHA", "Never SFHA") 
+                                 & Triad != "City"
+)),
+  y_var     = "log_price",
+  title     = "County Trends by SFHA Group: Always In v Always Out"
 )
 
 ```
@@ -1927,9 +2245,9 @@ housing_type_summary
 
 ---
 
-# Step 9: Explicitly State Identification Assumptions
+# Explicitly State Identification Assumptions
 
-In your write-up, clearly state:
+In your write-up, clearly state if true:
 - Parallel trends hold for treated and not-yet-treated units
 - Treatment timing is as-good-as-random conditional on covariates and fixed effects
 - No spillover effects or contamination
