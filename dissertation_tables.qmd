@@ -1536,35 +1536,8 @@ triad_mod = feols(log(sale_price) ~ change_type * high_ff_score * event * Triad 
 etable(triad_mod)
 
 
-# a specific scenario I'm curious about
-example_grid = data.frame(event = TRUE, change_type = "Never SFHA", high_ff_score = TRUE, Triad = "City")
-
-grid_preds <- avg_comparisons(
-  triad_mod,
-  variables = c("event", "high_ff_score"),
-  cross = TRUE
-)
-
-grid_preds
-
-```
 
 
-```{r}
-avg_results <- avg_comparisons(
-  triad_mod,
-  variables = list(change_type ="sequential")
-  )
-avg_results
-```
-
-
-```{r}
-avg_results <- avg_comparisons(
-  triad_mod,
-  variables = list("event" = c(FALSE, TRUE)),
-  by = "change_type")
-avg_results
 ```
 
 
@@ -1572,53 +1545,12 @@ avg_results
 bldg_sfha <- bldg_sfha |> 
   group_by(pin) |>
   mutate(pin_num = as.numeric(pin),
-    # ff_group = ifelse(high_ff_score==TRUE & sale_date > new_info_released, as.character(min(sale_year[sale_date > new_info_released])), "0")) |>
       ff_group = ifelse(high_ff_score==TRUE & sale_date > new_info_released, "2020", "0")) |>
 
   ungroup()
 
 library(etwfe)
-mod_etwfe <- etwfe(
-  fml  = log(sale_price) ~ 1, 
-  data = bldg_sfha, 
-  ivar   = pin_num, 
-  tvar = sale_year,
-  tref = "2019",
-  gref = "0",
-  gvar = ff_group, 
-  vcov = ~pin10
-)
 
-emfx(mod_etwfe)
-
-```
-
-```{r}
-mod_etwfe2 <- etwfe(
-  fml  = log(sale_price) ~ 1, 
-  data = bldg_sfha, 
-  ivar = pin, 
-  tvar = sale_year,
-  tref = "2019",
-  gref = "0",
-  gvar = ff_group, 
-  vcov = ~pin10,
-  xvar = Triad)
-
-emfx(mod_etwfe2)
-emfx(mod_etwfe2, type = "group")
-
-
-```
-
-
-```{r}
-models <- list(
-  "County" = feols(log_price ~ prelim_sfha_category * high_ff_score * event | pin + sale_year, data= bldg_sfha, cluster = ~ pin10),
-  
-  "Triad Interactions" = feols(log_price ~ prelim_sfha_category * high_ff_score * event + Triad | pin + sale_year, data= bldg_sfha, cluster = ~ pin10)
-
-)
 ```
 
 
@@ -1634,50 +1566,6 @@ never_sfha_effect <- avg_comparisons(
    by = NULL)
 
 never_sfha_effect
-```
-
-
-```{r}
-triad_mod_pre <- feols(log_price ~ prelim_sfha_category * high_ff_score * event * Triad | pin + sale_year, data = bldg_sfha, cluster = ~ pin10)
-
-## only shoes coefficient for City
-never_sfha_effect_byTriad <- avg_comparisons(
-  triad_mod_pre,
-  variables = "event",
-  newdata = datagrid(
-    prelim_sfha_category = "Never SFHA",
-    high_ff_score   = c(TRUE,FALSE)
-  ),
-  by = "Triad")
-
-never_sfha_effect_byTriad
-```
-```{r}
-always_sfha_effect <- avg_comparisons(
-  triad_mod_pre,
-  variables = "event",
-  newdata = datagrid(
-    prelim_sfha_category = "Always SFHA",
-        high_ff_score   = c(FALSE,TRUE)
-),
-   by = NULL
-)
-
-always_sfha_effect
-```
-
-```{r}
-always_sfha_effect_byTriad <- avg_comparisons(
-  triad_mod_pre,
-  variables = "event",
-  newdata = datagrid(
-    prelim_sfha_category = "Always SFHA",
-        "high_ff_score"   = c(TRUE,FALSE)
-),
-   by = "Triad"
-)
-
-always_sfha_effect_byTriad
 ```
 
 ## Q2 Robustness Checks
