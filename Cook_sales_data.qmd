@@ -696,6 +696,8 @@ control_tbl2_R2
 
 > Need indicator for if property flooded. Which I do not cleanly have.
 
+> Use `data/processed/treated_zipcodes.csv`
+
 ```{r}
 #| label: tbl-SFHAparcels
 #| tbl-cap-location: margin
