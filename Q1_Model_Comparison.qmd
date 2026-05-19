@@ -27,7 +27,7 @@ library(rlang)
 library(flextable)
 
 
-data_version <- "targets_hybrid_2026sales"  # targets, targets_hybrid, or arcgis, arcgis_notfiltered
+data_version <- "targets_hybrid_polychange"  # targets, targets_hybrid, or arcgis, arcgis_notfiltered
 
 clusters_county <- list(
   pin10      = ~ pin10#,
@@ -128,35 +128,18 @@ source("R/helper_pins_to_drop.R")
 # source("R/helper_pins_to_drop_forsure.R")
 
 
-if(data_version %in% c("arcgis", "arcgis_notfiltered", "arcgis_2026sales_notfiltered")){
+if(data_version %in% c("arcgis")){
   
   data_dir <- "data/processed/variants"
   
   if(data_version == "arcgis"){
     dataset_map <- c(
-      bldg_sfha  = "df_prep__bldg_sfha.rds",
-      parcel_sfha  = "df_prep__parcel_sfha.rds",
-      bldg_1in500     = "df_prep__bldg_1in500.rds",
-      parcel_1in500     = "df_prep__parcel_1in500.rds"
-    )
-  }else if(data_version == "arcgis_notfiltered"){
-    
-    dataset_map <- c(
-      bldg_sfha  = "df_prep__bldg_sfhanotfiltered.rds",
-      parcel_sfha  = "df_prep__parcel_sfhanotfiltered.rds",
-      bldg_1in500     = "df_prep__bldg_1in500notfiltered.rds",
-      parcel_1in500     = "df_prep__parcel_1in500notfiltered.rds"
-    )
-  }else if(data_version == "arcgis_2026sales_notfiltered"){
-    
-    dataset_map <- c(
-      bldg_sfha  = "df_prep_bldg_sfha2026sales_notfiltered.rds",
-      parcel_sfha  = "df_prep_parcel_sfha2026sales_notfiltered.rds",
-      bldg_1in500     = "df_prep_bldg_1in5002026sales_notfiltered.rds",
-      parcel_1in500     = "df_prep_parcel_1in5002026sales_notfiltered.rds"
+      bldg_sfha  = "df_prep__bldg_sfhaarcgis_redo_2026sales.rds",
+      parcel_sfha  = "df_prep__parcel_sfhaarcgis_redo_2026sales.rds",
+      bldg_1in500     = "df_prep__bldg_1in500arcgis_redo_2026sales.rds",
+      parcel_1in500     = "df_prep__parcel_1in500arcgis_redo_2026sales.rds"
     )
   }
-  
   
   datasets <- lapply(names(dataset_map), function(id) {
     path <- file.path(data_dir, dataset_map[[id]])
@@ -207,7 +190,9 @@ if(data_version %in% c("arcgis", "arcgis_notfiltered", "arcgis_2026sales_notfilt
   
   }else if(data_version == "targets" | 
            data_version == "targets_hybrid" | 
-           data_version == "targets_hybrid_2026sales"){
+           data_version == "targets_hybrid_2026sales" |
+           data_version == "targets_hybrid_polychange"
+           ){
   
     data_dir <-  "data/processed/targets/sales"
 
@@ -243,18 +228,36 @@ if(data_version %in% c("arcgis", "arcgis_notfiltered", "arcgis_2026sales_notfilt
     ptaxsim_updated = "PTAX Bldg SFHA"
 
   )
-    }else if(data_version == "targets_hybrid_2026sales"){
-        # note, "updated" names use the December 2025 download of sales.
+    }else if(data_version == "targets_hybrid_2026sales" | data_version == "targets_hybrid_polychange"
+             ){
+        # note, "updated" names use the December 2025 download of sales because it was updated from the "baseline" sales data from July 2025
         # newest file is named with _2026_ in the title
-      dataset_map <- c(
-        bldg_updated     = "df_prep_bldg_2026_arcgis_forQ1_assumptiontests.rds",
-        land_updated     = "df_prep_land_2026_arcgis_forQ1_assumptiontests.rds",
-        risk500_updated  = "df_prep_risk500_2026_arcgis_forQ1_assumptiontests.rds",  # bldg polygon intersections
-        risk500_land_updated = "df_prep_risk500_land_2026_arcgis_forQ1_assumptiontests.rds"
-       
-        # commenting out because it does not have the for_Q1_assumptiontest variables created.
-        # ptaxsim_updated  = "df_prep_ptaxsim_updated_final.rds"
-      )
+      
+      if(data_version == "targets_hybrid_2026sales"){
+        dataset_map <- c(
+          bldg_updated     = "df_prep_bldg_2026_arcgis_forQ1_assumptiontests.rds",
+          land_updated     = "df_prep_land_2026_arcgis_forQ1_assumptiontests.rds",
+          risk500_updated  = "df_prep_risk500_2026_arcgis_forQ1_assumptiontests.rds",  # bldg polygon intersections
+          risk500_land_updated = "df_prep_risk500_land_2026_arcgis_forQ1_assumptiontests.rds"
+          
+          # commenting out because it does not have the for_Q1_assumptiontest variables created.
+          # ptaxsim_updated  = "df_prep_ptaxsim_updated_final.rds"
+        )
+      }else if(data_version == "targets_hybrid_polychange"){
+        # dataset_map <- c(
+        #   bldg_updated     = "df_prep_bldg_v2025_12.rds",
+        #   land_updated     = "df_prep_land_v2025_12.rds",
+        #   risk500_updated  = "df_prep_risk500_v2025_12.rds",  # bldg polygon intersections
+        #   risk500_land_updated = "df_prep_risk500_land_v2025_12.rds"
+        # ),
+        
+         dataset_map <- c(
+          bldg_updated     = "df_prep_bldg_v2026_03.rds",
+          land_updated     = "df_prep_land_v2026_03.rds",
+          risk500_updated  = "df_prep_risk500_v2026_03.rds",  # bldg polygon intersections
+          risk500_land_updated = "df_prep_risk500_land_v2026_03.rds"
+        )
+      }
       
     col_order <- c(
     "bldg_updated",
@@ -341,11 +344,29 @@ if(data_version %in% c("arcgis", "arcgis_notfiltered", "arcgis_2026sales_notfilt
 # ---- Treated-observation summary (added/removed) ----
 
 treated_summary <- purrr::imap_dfr(datasets_og, function(df, id) {
-  eff_add <- to_logical01(df$addedto_eff_sfha)
-  eff_rem <- to_logical01(df$removedfrom_eff_sfha)
+ 
   pre_add <- to_logical01(df$addedto_prelim_sfha)
   pre_rem <- to_logical01(df$removedfrom_prelim_sfha)
 
+  tibble::tibble(
+    dataset_id = id,
+    n_obs      = nrow(df),
+    pre_add_obs   = sum(pre_add, na.rm = TRUE),
+    pre_treat_add_pin10 = dplyr::n_distinct(df$pin10[pre_add]),
+    pre_remove_obs = sum(pre_rem, na.rm = TRUE),
+    pre_treat_rem_pin10 = dplyr::n_distinct(df$pin10[pre_rem])
+  )
+}) 
+
+treated_summary_ft <- treated_summary |>
+  flextable::flextable() |>
+  flextable::autofit()
+
+treated_summary_ft
+
+treated_summary <- purrr::imap_dfr(datasets_og, function(df, id) {
+  eff_add <- to_logical01(df$addedto_eff_sfha)
+  eff_rem <- to_logical01(df$removedfrom_eff_sfha)
   tibble::tibble(
     dataset_id = id,
     n_obs      = nrow(df),
@@ -353,17 +374,7 @@ treated_summary <- purrr::imap_dfr(datasets_og, function(df, id) {
     eff_add_obs   = sum(eff_add, na.rm = TRUE),
     eff_treat_add_pin10 = dplyr::n_distinct(df$pin10[eff_add]),
     eff_remove_obs = sum(eff_rem, na.rm = TRUE),
-    eff_treat_rem_pin10 = dplyr::n_distinct(df$pin10[eff_rem]),
-
-   # eff_treated_obs = sum(eff_add | eff_rem, na.rm = TRUE),
-   # eff_treated_pct = eff_treated_obs / n_obs,
-   # eff_treated_pins = dplyr::n_distinct(df$pin10[eff_add | eff_rem]),
-   # pre_treated_pins = dplyr::n_distinct(df$pin10[pre_add | pre_rem]),
-
-    pre_add_obs   = sum(pre_add, na.rm = TRUE),
-    pre_treat_add_pin10 = dplyr::n_distinct(df$pin10[pre_add]),
-    pre_remove_obs = sum(pre_rem, na.rm = TRUE),
-    pre_treat_rem_pin10 = dplyr::n_distinct(df$pin10[pre_rem])
+    eff_treat_rem_pin10 = dplyr::n_distinct(df$pin10[eff_rem])
   )
 }) 
 
@@ -465,6 +476,9 @@ if(data_version == "targets_hybrid"){
   
   } else if(data_version == "targets_hybrid_2026sales"){
     write_rds(datasets2, "data/processed/combined_datasets_targets_hybrid_2026sales.rds")
+    
+  } else if(data_version == "targets"){
+    write_rds(datasets2, "data/processed/combined_datasets.rds")
     
 }
 ```
@@ -820,23 +834,24 @@ tidy_df <- tidy_df |>
 
   # Label subcolumns and add spanners
   for (d in ds) {
-    eff_col <- paste0(d, "__eff")
     pre_col <- paste0(d, "__prelim")
 
-    present <- c(eff_col, pre_col) %in% names(wide_df)
+    eff_col <- paste0(d, "__eff")
+
+    present <- c( pre_col, eff_col) %in% names(wide_df)
     if (!any(present)) next
 
     # subcolumn labels
     gt_tbl <- gt_tbl |>
-      cols_label(!!!setNames(list("Effective"), eff_col)) |>
-      cols_label(!!!setNames(list("Preliminary"), pre_col))
+            cols_label(!!!setNames(list("Preliminary"), pre_col)) |>
+      cols_label(!!!setNames(list("Effective"), eff_col))
 
     # spanner across the pair (only if both exist)
-    if (all(c(eff_col, pre_col) %in% names(wide_df))) {
+    if (all(c(pre_col, eff_col) %in% names(wide_df))) {
       gt_tbl <- gt_tbl |>
         tab_spanner(
           label = d,
-          columns = c(all_of(eff_col), all_of(pre_col))
+          columns = c( all_of(pre_col), all_of(eff_col))
         )
     }
   }
@@ -859,7 +874,7 @@ dataset_family <- if (data_version %in% c("arcgis", "arcgis_notfiltered", "arcgi
   "arcgis"
 } else if (data_version %in% c("targets")) {
   "targets"
-} else if(data_version %in% c("targets_hybrid", "targets_hybrid_2026sales")){
+} else if(data_version %in% c("targets_hybrid", "targets_hybrid_2026sales", "targets_hybrid_polychange")){
   "targets_4"
 } else{
   stop("Unrecognized data_version: ", data_version)
@@ -889,7 +904,7 @@ all_labels <- switch(
   ),
     targets_4 = c(
     bldg_updated         = "Bldg - SFHA",
-    land_updated         = "Parcel - SFHA (2022 & 2018)",
+    land_updated         = "Parcel - SFHA",
     risk500_updated      = "Bldg - 1-in-500",
     risk500_land_updated = "Parcel - 1-in-500"  )
 )
@@ -908,10 +923,24 @@ grid_tbl <- make_eff_pre_grid(
   dataset_labels = dataset_labels
 )
 
-grid_tbl <- grid_tbl |>
-  gt::fmt_markdown(gt::everything())
+#grid_tbl <- grid_tbl |>
+ # gt::fmt_markdown(gt::everything())
 
-grid_tbl
+gt_tbl <- grid_tbl |>
+    fmt_markdown(columns = everything()) |>
+    cols_align(align = "left", columns = c(model_base, term_lab)) |>
+    cols_align(align = "center", columns = -c(model_base, term_lab)) |>
+    tab_options(
+      table.font.size = px(12),
+      data_row.padding = px(3),
+      column_labels.font.weight = "bold"
+    ) |>
+    tab_source_note(
+      source_note = md("\\* p < 0.1, ** p < 0.05, *** p < 0.01")
+    )
+saveRDS(gt_tbl, "outputs/tables/grid_tbl_twfe.rds")
+
+gt_tbl
 
 
 ```
@@ -1745,7 +1774,7 @@ treated_summary_ft
 # FIRMs Updated Subsets
 
 ```{r}
-if(data_version %in% c( "targets", "targets_hybrid", "targets_hybrid_2026sales")){
+if(data_version %in% c( "targets", "targets_hybrid", "targets_hybrid_2026sales", "targets_hybrid_polychange")){
   datasets_og$bldg_sfha = datasets_og$bldg_updated
   datasets_og$land_sfha = datasets_og$land_updated
 }
@@ -1792,207 +1821,190 @@ df2 |> feols(log(sale_price) ~ sw(removedfrom_prelim_sfha) | pin + sale_year,
 # 
 
 ```
+```{r}
+bldg_1in500 <- readRDS("data/processed/targets/sales/df_prep_risk500_v2026_03.RDS") |>
+  filter(!pin10 %in% drop_parcels |
+           (pin10 == "0113301013" & sale_year > 2014)) |>
+  select(pin, sale_date, sale_price, ins_req, in_eff_sfha, in_prelim_sfha, in_lomr,
+         addedto_eff_sfha:removedfrom_prelim_sfha, condo, FIRM_PAN, nbhd_code,
+         zip_code, event, change_type, change_type_prelim, Triad, clean_name,
+         pin10, log_price, eff_date_chr, pre_date_chr, treat_year_add_eff,
+         treat_year_add_prelim, treat_year_remove_prelim, treat_year_remove_eff,
+         qtr, year, sale_year, sale_qtr_dec, group_name_eff, group_name_prelim,
+         treated_group_eff:prelim_sfha_category)
+```
 
+# Individual Models
 
-## Extended TWFE attempts
-
-
+## Parts of Table 13: Buildings in 1-in-500 Flood Zones
 
 ```{r}
-#| tbl-cap: "removedfrom_prelim_sfha*rel_year_remove_prelim*group_name_prelim"
-#| error: true
-#| warning: true
-#| message: true
+#| label: tbl-Table13-bldg-in-1in500-fz
+#| tbl-cap: "Table 13: Effect on Price of Buildings Mapped Into or Out of a 1-in-500 year Flood Plain"
 
-df3 <-  datasets_og$bldg_sfha |>
-  mutate(  
-    event_remapped = ifelse(sale_date < pre_date & treated_group_prelim != 0, "0.Pre",
-      ifelse(sale_date > pre_date & treated_group_prelim != 0, "1.Post", "2.NotRemapped")),
 
-    sale_year = factor(sale_year),
-         rel_year_remove_prelim = factor(rel_year_remove_prelim, exclude = c("-1")),
-        treat_year_remove_prelim = factor(treat_year_remove_prelim, levels = c("10000", "2015","2019", "2021")),
-        treated_group_prelim = factor(treated_group_prelim)
-        )
+models_1in500_bldg <- list(
 
-prelim_extwfe_bldg <- list( 
-  mod1 <- feols(log(sale_price) ~ treat_year_remove_prelim*removedfrom_prelim_sfha| pin + sale_year,
+  
+ "I" =  feols(
+    log(sale_price) ~ addedto_prelim_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500
+  ),
 
- # mod1 <- feols(log(sale_price) ~ removedfrom_prelim_sfha*rel_year_remove_prelim*treat_year_remove_prelim | pin + sale_year,
-      data = df3,
-   # subset = ~pre_date_chr == "2015-02-15",
-      cluster = ~pin10
+    "I Subset" = feols(
+    log(sale_price) ~ addedto_prelim_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500 |> filter(change_type_prelim != "Always SFHA" & treat_year_remove_prelim == 10000),
+
+  ),
+
+  "II" =  feols(
+    log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500,
+
+  ),
+
+
+  "II Subset" =  feols(
+    log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500 |> filter(change_type_prelim != "Never SFHA" & treat_year_add_prelim == 10000),
+
+  ),
+ 
+  # Symmetric effect of location in risk zone
+    "III" = feols(
+    log(sale_price) ~ in_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500,
+
+  ),
+  # Asymmetric: added vs removed in one equation
+  "0" = feols(
+    log(sale_price) ~ addedto_prelim_sfha + removedfrom_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500,
+
+  ),
+ 
+ 
+ 
+   
+ "I-Eff" =  feols(
+    log(sale_price) ~ addedto_eff_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500
+  ),
+
+    "I-Eff Subset" = feols(
+    log(sale_price) ~ addedto_eff_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500 |> filter(change_type != "Always SFHA" & treat_year_remove_eff == 10000),
+
+  ),
+
+  "II-Eff" =  feols(
+    log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500,
+
+  ),
+
+
+  "II-Eff Subset" =  feols(
+    log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500 |> filter(change_type != "Never SFHA" & treat_year_add_prelim == 10000),
+
+  ),
+ 
+  # Symmetric effect of location in risk zone
+    "III-Eff" = feols(
+    log(sale_price) ~ in_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500,
+
+  ),
+  # Asymmetric: added vs removed in one equation
+  "0" = feols(
+    log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = bldg_1in500,
+
+  )
+ 
 )
 
-) 
+models_1in500_bldg <- modelsummary::modelsummary(models_1in500_bldg,
+               output = "flextable",
+               fmt = function(x) round(x, 3),
 
-extwfe_removed_prelim_bldg <- modelsummary::modelsummary(prelim_extwfe_bldg,
+             stars = TRUE)
+
+models_1in500_bldg
+```
+
+### TWFE Regional Heterogeneity with Triad Slopes
+
+```{r}
+#| label: tbl-regionalheterogeneity
+#| tbl-cap: "Regional Hetergeneity for SFHA Changes due to Preliminary FIRM Updates"
+#| 
+bldg_sfha <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS") |>
+  filter(!pin10 %in% drop_parcels |
+           (pin10 == "0113301013" & sale_year > 2014)) |>
+  select(pin, sale_date, sale_price, ins_req, in_eff_sfha, in_prelim_sfha, in_lomr,
+         addedto_eff_sfha:removedfrom_prelim_sfha, condo, FIRM_PAN, nbhd_code,
+         zip_code, event, change_type, change_type_prelim, Triad, clean_name,
+         pin10, log_price, eff_date_chr, pre_date_chr, treat_year_add_eff,
+         treat_year_add_prelim, treat_year_remove_prelim, treat_year_remove_eff,
+         qtr, year, sale_year, sale_qtr_dec, group_name_eff, group_name_prelim,
+         treated_group_eff:prelim_sfha_category)
+models <- list(
+
+  # Heterogeneity by Triad: added/removed interacted with Triad
+  "I" = feols(
+    log(sale_price) ~ addedto_prelim_sfha*Triad | pin + sale_year,
+    data = bldg_sfha,
+    cluster = ~pin10,
+  ),
+
+      # Heterogeneity by Triad: added interacted with Triad
+ "I Subset" =  feols(
+    log(sale_price) ~ addedto_prelim_sfha*Triad  | pin + sale_year,
+    data = bldg_sfha |> filter(change_type_prelim != "Always SFHA" & treat_year_remove_prelim == 10000),
+    cluster = ~pin10,
+  ),
+  # Heterogeneity by Triad: added/removed interacted with Triad
+  "II" = feols(
+    log(sale_price) ~ removedfrom_prelim_sfha*Triad | pin + sale_year,
+    data = bldg_sfha,
+    cluster = ~pin10,
+  ),
+
+    # Heterogeneity by Triad: added interacted with Triad
+ "II Subset" =  feols(
+    log(sale_price) ~  removedfrom_prelim_sfha*Triad | pin + sale_year,
+    data = bldg_sfha |> filter(change_type_prelim != "Never SFHA" & treat_year_add_prelim == 10000),
+cluster = ~ pin10
+  ),
+    # Heterogeneity by Triad: added/removed interacted with Triad
+  "III" = feols(
+    log(sale_price) ~ in_prelim_sfha*Triad | pin + sale_year,
+    data = bldg_sfha,
+    cluster = ~pin10,
+  )
+  
+)
+
+all_models_formatted <- modelsummary::modelsummary(models,
                output = "flextable",
                fmt = function(x) round(x, 2),
 
              stars = TRUE)
-```
 
-
-```{r}
-#| error: true
-#| layout-ncol:  2
-extwfe_removed_prelim_bldg
-
-```
-
-
-## Added with Extended TWFE
-
-```{r}
-#| error: true
-
-df_sub <-   datasets_og$bldg_sfha  |> 
-  filter(
-    # be specific about the treated and control group in this model!
-    # keep Always SFHA or Properties that Changed SFHA (but were not added to the SFHA)
-    change_type != "Always SFHA" & 
-                           # and properties that are never treated for being added to the SFHA
-                           treat_year_remove_eff ==10000 & treat_year_remove_prelim == 10000)|>
-  mutate(sale_year = factor(sale_year),
-         rel_year_remove_prelim = factor(rel_year_remove_prelim, exclude = "-1"),
-
-         treat_year_remove_prelim = factor(treat_year_remove_prelim))
-
-valid_cohorts <- df_sub |>
-  group_by(pre_date_chr) |>
-  summarise(
-    n = n(),
-    n_treated = sum(addedto_prelim_sfha == TRUE, na.rm = TRUE),
-    n_untreated = sum(addedto_prelim_sfha == FALSE, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  filter(n_treated > 0, n_untreated > 0) |>
-  pull(pre_date_chr)
-
-df3 <- df_sub |> filter(pre_date_chr %in% valid_cohorts)
-
-prelim_extwfe_land <- list( 
-  mod1 <- feols(log(sale_price) ~ treat_year_add_prelim*addedto_prelim_sfha| pin + sale_year,
-
-
-      data = df3,
-   # subset = ~pre_date_chr == "2015-02-15",
-      cluster = ~pin10
-)
-
-) 
-extwfe_added_prelim_land <- modelsummary::modelsummary(prelim_extwfe_land,
-               output = "flextable",
-               fmt = function(x) round(x, 2),
-
-             stars = TRUE)
-
-extwfe_added_prelim_land
-```
-
-```{r}
-#| tbl-cap: "Added x sale year x cohort.With Bldg polygons"
-#| error: true
-#| warning: true
-#| message: true
-#| eval: false
-
-df3 <- datasets_og$bldg_sfha |> filter(change_type_prelim != "Always SFHA" & 
-                           # and properties that are never treated for being added to the SFHA
-                           treat_year_remove_prelim == 10000) |>
-  mutate(sale_year = factor(sale_year),
-         rel_year_add_prelim = factor(rel_year_add_prelim, exclude = c("-1")),
-        treat_year_add_prelim = factor(treat_year_add_prelim
-                                       ),
-        treated_group_prelim = factor(treated_group_prelim))
-
-
-valid_cohorts <- df3 |>
-  group_by(pre_date_chr) |>
-  summarise(
-    n = n(),
-    n_treated = sum(addedto_prelim_sfha == TRUE, na.rm = TRUE),
-    n_untreated = sum(addedto_prelim_sfha == FALSE, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  filter(n_treated > 0, n_untreated > 0) |>
-  pull(pre_date_chr)
-
-df3 <- df3 |>filter(pre_date_chr %in% valid_cohorts)
-
-prelim_extwfe_add <- list( 
-
-  mod1 <- feols(log(sale_price) ~ rel_year_add_prelim*treat_year_add_prelim | pin + sale_year,
-      data = df3,
-  #  subset = ~pre_date_chr == "2015-02-15",
-      cluster = ~pin10
-)
-
-) 
-
-prelim_extwfe_add_land <- modelsummary::modelsummary(prelim_extwfe_add,
-               output = "flextable",
-               fmt = function(x) round(x, 2),
-
-             stars = TRUE)
-
-
-
-```
-
-
-```{r}
-#| tbl-cap: "Added x sale year x cohort.With Bldg polygons"
-#| error: true
-#| warning: true
-#| message: true
-#| eval: false
-df3 <- datasets_og$bldg_sfha |> 
-  filter(change_type_prelim != "Always SFHA" & 
-                           # and properties that are never treated for being added to the SFHA
-                           treat_year_remove_prelim == 10000) |>
-  mutate(sale_year = factor(sale_year),
-         rel_year_add_prelim = factor(rel_year_add_prelim, exclude = c("-1")),
-        treat_year_add_prelim = factor(treat_year_add_prelim                                 ),
-        treated_group_prelim = factor(treated_group_prelim))
-
-valid_cohorts <- df3 |>
-  group_by(pre_date_chr) |>
-  summarise(
-    n = n(),
-    n_treated = sum(addedto_prelim_sfha == TRUE, na.rm = TRUE),
-    n_untreated = sum(addedto_prelim_sfha == FALSE, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  filter(n_treated > 0, n_untreated > 0) |>
-  pull(pre_date_chr)
-
-df3 <- df3 |>filter(pre_date_chr %in% valid_cohorts)
-
-prelim_extwfe_add_bldg <- list( 
-
-  mod1 <- feols(log(sale_price) ~ addedto_prelim_sfha*rel_year_add_prelim*treat_year_add_prelim | pin + sale_year,
-      data = df3,
-      cluster = ~pin10
-)
-
-) 
-
-prelim_extwfe_add_bldg <- modelsummary::modelsummary(prelim_extwfe_add_bldg,
-               output = "flextable",
-               fmt = function(x) round(x, 2),
-
-             stars = TRUE)
-```
-
-
-```{r}
-#| eval: false
-#| error: true
-#| layout-ncol: 2
-
-prelim_extwfe_add_land
-prelim_extwfe_add_bldg
+all_models_formatted
 
 ```
