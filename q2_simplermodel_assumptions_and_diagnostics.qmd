@@ -1,0 +1,624 @@
+---
+title: "Q2 Simplermodel Assumptions and Diagnostics"
+format:
+  html:
+    theme: darkly
+toc: true
+toc-depth: 3
+number-sections: true
+code-fold: show
+code-tools: true
+smooth-scroll: true
+df-print: paged
+fig-cap-location: top
+anchor-sections: true
+link-external-icon: true
+link-external-newwindow: true
+execute:
+  warning: false
+  message: false
+ # cache: true
+#freeze: auto
+---
+
+```{r}
+#| label: setup
+knitr::opts_chunk$set(fig.align = "center", fig.width = 8, fig.height = 5, dpi = 150)
+
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(fixest)
+  library(modelsummary)
+  library(gt)
+  library(broom)
+  library(scales)
+  library(lubridate)
+})
+
+theme_set(theme_minimal(base_size = 12))
+update_geom_defaults("line",  list(lineend = "round", linewidth = 0.8))
+update_geom_defaults("point", list(alpha = 0.65, size = 1.7))
+```
+
+# Data and canonical variables
+
+```{r}
+# Read in processed data (user’s edit retained)
+#df_prep <- readr::read_rds("data/processed/df_prep.rds")
+
+source("R/helper_pins_to_drop.R")
+
+
+#df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.RDS")
+df_prep <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS") |> filter(!pin10 %in% drop_parcels)
+
+
+fsf_release_year <- 2020.493
+
+# Keep variable names; add only what's needed for the simple model
+df <- df_prep |>
+  mutate(
+    log_price = log(sale_price),
+   # in_eff_sfha = factor(in_eff_sfha, levels = c("Not SFHA","SFHA")),
+    Triad = factor(Triad, levels = c("North","South","City")),
+    event = if_else(sale_year + 0.0 > fsf_release_year, "Post", "Pre") |> factor(c("Pre","Post")),
+    rel_year = (sale_year - fsf_release_year) |> floor(),
+    sale_quarter = quarter(sale_date),
+    sale_quarter = factor(sale_quarter),
+    # Treatment: High FF switches on only after release
+    highff_post = as.integer((high_ff_score %in% c(1, TRUE, "1", "TRUE")) & event == "Post")
+  ) |>
+  filter(pin10 != "0710101038")  # had 100ish sales in one year, suspicious parcel
+
+
+df <- df |>
+  filter(
+    !is.na(high_ff_score) &
+      !is.na(in_eff_sfha) &
+           !is.na(eff_date) &
+           !is.na(clean_name) &
+           !is.na(pre_date) &
+           !is.na(Triad)
+         )
+
+
+```
+
+# Transformation of the Dependent Variable
+
+paste in model results and figure output from script file. 
+
+# Pre-trends checks faceted by Triad
+
+::: {.panel-tabset}
+### Narrative
+
+We test whether **within each Triad**, groups run parallel trends pre-event. Faceting often reveals flatter, less significant differences because the Triad captures systematic geography-specific drifts.
+
+
+### Models
+
+Slopes before Event:
+```{r}
+# Option A: Linear pre-trend slope test (restrict to Pre)
+pre <- df |> filter(sale_date < new_info_released)
+
+# Compare slopes over time by SFHA, by High FF, and by their interaction
+m_sfha   <- feols(log_price ~ sale_year * in_eff_sfha, data = pre, cluster = ~pin10)
+m_highff <- feols(log_price ~ sale_year * high_ff_score, data = pre, cluster = ~pin10)
+
+# technically high_ff_Score is not known yet, but it could could convey true risk and if properties that were high risk were already on a different trend than less risky properties.
+m_both   <- feols(log_price ~ sale_year * in_eff_sfha * high_ff_score, data = pre, cluster = ~pin)
+
+modelsummary(
+  list("SFHA × time" = m_sfha, "HighFF × time" = m_highff, "SFHA×HighFF × time" = m_both),
+  output     = "gt",
+  stars      = TRUE,
+  estimate   = "{estimate}{stars}",
+  statistic  = "({std.error})",
+  gof_omit   = "IC|Log|Adj|AIC|BIC",
+#  add_rows   = data.frame(Term = "SE clustered", Value = "pin"),
+  title      = "Pre-event slope tests"
+) |>
+  tab_options(data_row.padding = px(2)) |>
+  tab_source_note(md("We want NOT statistically significant interaction slope terms for variablesinteracted with sale_year."))
+```
+
+With Fixed Effects:
+
+```{r}
+# Option B: Linear pre-trend slope test (restrict to Pre)
+pre <- df |> filter(sale_date < new_info_released)
+
+# Compare slopes over time by SFHA, by High FF, and by their interaction
+m_sfha   <- feols(log_price ~ sale_year * in_eff_sfha | pin + sale_year, data = pre, cluster = ~pin10)
+m_highff <- feols(log_price ~ sale_year * high_ff_score| pin + sale_year, data = pre, cluster = ~pin10)
+
+# technically high_ff_Score is not known yet, but it could could convey true risk and if properties that were high risk were already on a different trend than less risky properties.
+m_both   <- feols(log_price ~ sale_year * in_eff_sfha * high_ff_score | pin + sale_year, data = pre, cluster = ~pin10)
+
+modelsummary(
+  list("SFHA × time" = m_sfha, "HighFF × time" = m_highff, "SFHA×HighFF × time" = m_both),
+  output     = "gt",
+  stars      = TRUE,
+  estimate   = "{estimate}{stars}",
+  statistic  = "({std.error})",
+  gof_omit   = "IC|Log|Adj|AIC|BIC",
+#  add_rows   = data.frame(Term = "SE clustered", Value = "pin"),
+  title      = "Pre-event slope tests"
+) |>
+  tab_options(data_row.padding = px(2)) |>
+  tab_source_note(md("We want NOT statistically significant interaction slope terms for variablesinteracted with sale_year."))
+```
+
+
+### Models (by Triad)
+
+```{r}
+pre <- df |> dplyr::filter(event == "Pre", !is.na(Triad))
+triads <- levels(droplevels(df$Triad))
+
+mods <- purrr::map(triads, function(tr){
+  d <- dplyr::filter(pre, Triad == tr)
+  feols(log_price ~ sale_year * in_eff_sfha * high_ff_score, data = d, cluster = ~pin)
+}) |> rlang::set_names(triads)
+
+modelsummary(
+  mods,
+  output     = "gt",
+  stars      = TRUE,
+  estimate   = "{estimate}{stars}",
+  statistic  = "({std.error})",
+  gof_omit   = "IC|Log|Adj|AIC|BIC",
+#  add_rows   = data.frame(Term = "SE clustered", Value = "pin"),
+  title      = "Pre-event slope tests by Triad"
+)
+```
+
+```{r}
+#| results: asis
+sig_terms <- c(
+  "sale_year:in_eff_sfhaSFHA",
+  "sale_year:high_ff_scoreHigh FF",
+  "sale_year:in_eff_sfhaSFHA:high_ff_scoreHigh FF"
+)
+
+summ <- purrr::imap_dfr(mods, ~ broom::tidy(.x) |> dplyr::mutate(Triad = .y)) |>
+  dplyr::filter(term %in% sig_terms) |>
+  dplyr::mutate(sig = p.value < 0.05)
+
+pass <- summ |>
+  dplyr::group_by(Triad) |>
+  dplyr::summarise(pass = !any(sig), .groups = "drop")
+
+pass_triads <- paste(pass$Triad[pass$pass], collapse = ", ")
+fail_triads <- paste(pass$Triad[!pass$pass], collapse = ", ")
+
+cat("::: callout-tip\n")
+cat("#### Parallel trends check (Triad-specific)\n")
+if (nzchar(pass_triads)) cat("**Pass (no significant pre-event slope differences at 5%)**: ", pass_triads, "\n\n", sep = "")
+if (nzchar(fail_triads)) cat("**Flagged (>=1 significant pre-event slope)**: ", fail_triads, ". For these Triads, consider narrowing the pre window or adding group-specific trends.\n", sep = "")
+cat(":::\n")
+```
+
+### Figures (facet by Triad)
+
+```{r}
+pre_summ <- pre |>
+  dplyr::group_by(sale_year, Triad, in_eff_sfha, high_ff_score) |>
+  dplyr::summarise(
+    n = dplyr::n(),
+    mean_lp = mean(log_price, na.rm = TRUE),
+    sd_lp   = sd(log_price,   na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  dplyr::mutate(se = sd_lp / sqrt(pmax(n, 1)), grp = interaction(in_eff_sfha, high_ff_score, sep = " · "))
+
+pre_summ |>
+  ggplot(aes(x = sale_year, y = mean_lp, color = grp)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = mean_lp - 1.96*se, ymax = mean_lp + 1.96*se, fill = grp), alpha = 0.12, linewidth = 0) +
+  facet_wrap(~ Triad, nrow = 1) +
+  geom_vline(xintercept = fsf_release_year, linetype = 2) +
+  annotate("label", x = fsf_release_year + 0.1, y = max(pre_summ$mean_lp, na.rm = TRUE),
+           label = "FSF public release (2020.5)", hjust = 0, vjust = 1) +
+  scale_x_continuous(expand = c(0.01, 0.01)) +
+  labs(x = NULL, y = "Mean log(price)", color = NULL, fill = NULL,
+       title = "Pre-event trends by Triad (colored by SFHA · FF)") +
+  theme(legend.position = "bottom")
+```
+
+
+
+### Figures
+
+```{r}
+
+```
+
+:::
+
+# Placebo (false event)
+
+```{r}
+placebo_cut <- 2017
+pre_placebo <- df |> filter(sale_year <= 2019) |> 
+  mutate(event_pb = if_else(sale_year > placebo_cut, "PostPB", "PrePB") |> factor(c("PrePB","PostPB")))
+
+mpb <- feols(log_price ~ high_ff_score * in_eff_sfha * event_pb | pin + sale_year + Triad,
+             cluster = ~pin, data = pre_placebo)
+
+modelsummary(mpb, output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
+             statistic = "({std.error})", gof_omit = "IC|Log|Adj|AIC|BIC",
+             title = "Placebo test (cut at 2017)") |>
+  tab_source_note(md("Finding: PostPB terms insignificant → placebo passes, no fake effect at 2017."))
+```
+
+
+# Main specification & robustness
+
+::: {.panel-tabset}
+### Main spec
+
+```{r}
+lake100ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within100ft_ExportTable_TableToExcel.xlsx")
+lake500ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within500ft_ExportTable_TableToExcel.xlsx")
+
+df <- df |>
+  mutate(coastal_100 = pin10 %in% lake100ft$PIN10,
+         coastal_500 = pin10 %in% lake500ft$PIN10)
+
+# df <- df |>
+#   mutate(coastal = substr(pin, 1, 2) %in% c("05", "11", "14", "17", "20", "21") & condo == "Condo")
+
+# df |> filter(coastal ==TRUE) |> group_by(pin10) |>distinct()
+
+table(df$coastal_100)
+
+df$Triad <- relevel(df$Triad, ref = "South")
+
+## Use in_eff_sfha!!
+main_mod <- feols(
+  log_price ~ highff_post * in_eff_sfha | pin + sale_year + sale_quarter,
+  cluster = ~ pin10,
+  data = df
+)
+main_mod_2fe <- feols(
+  log_price ~ highff_post * in_eff_sfha | pin + sale_year,
+  cluster = ~ pin10,
+  data = df
+)
+main_mod_no100coast <- feols(
+  log_price ~ highff_post * in_eff_sfha | pin + sale_year + sale_quarter,
+  cluster = ~ pin10,
+  data = df|>filter(coastal_100 == FALSE)
+)
+
+main_mod_no500coast <- feols(
+  log_price ~ highff_post * in_eff_sfha | pin + sale_year + sale_quarter,
+  cluster = ~ pin10,
+  data = df|>filter(coastal_500 == FALSE)
+)
+
+
+
+# Uses change_type!!
+main_modv2 <- feols(
+  log_price ~ highff_post * change_type | pin + sale_year + sale_quarter,
+  cluster = ~ pin10,
+  data = df
+)
+main_modv3 <- feols(
+  log_price ~ highff_post * change_type * Triad| pin + sale_year + sale_quarter,
+  cluster = ~ pin10,
+  data = df
+)
+main_modv3_2fe <- feols(
+  log_price ~ highff_post * change_type * Triad| pin + sale_year,
+  cluster = ~ pin10,
+  data = df
+)
+main_mod_changetype_no100coast <- feols(
+  log_price ~ highff_post * change_type * Triad| pin + sale_year + sale_quarter,
+  cluster = ~ pin10,
+  data = (df |> filter(coastal_100 == FALSE))
+)
+main_mod_changetype_no500coast <- feols(
+  log_price ~ high_ff_score* change_type * event *Triad | pin + sale_year + sale_quarter,
+  cluster = ~ pin10,
+  data = (df |> filter(coastal_500 == FALSE))
+)
+
+main_mod_mvh <- feols(
+  log_price ~ high_ff_score + change_type + event + Triad + high_ff_score*change_type * event *Triad 
+  | pin + sale_year + sale_quarter,
+  cluster = ~ pin10,
+  data = df
+)
+
+main_mod_mvh2 <- feols(
+  log_price ~ high_ff_score + change_type + event  + high_ff_score*change_type * event 
+  | pin + sale_year + sale_quarter,
+  cluster = ~ pin10,
+  data = df
+)
+
+modelsummary::modelsummary(list(main_mod_mvh, main_mod_mvh2), stars = TRUE)
+# modelsummary(main_mod, output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
+#              statistic = "({std.error})", gof_omit = "IC|Log|Adj|AIC|BIC",
+#              coef_map = c(
+#                "highff_post" = "High FF (Post only)",
+#                "in_eff_sfhaSFHA" = "In SFHA",
+#                "highff_post:in_eff_sfhaSFHA" = "High FF(Post) × In SFHA"
+#              ),
+#              title = "Main spec: log(price) ~ HighFF(Post) × SFHA + FE") |>
+#   tab_source_note(md("FE: pin, sale_year. SE clustered at pin. Treatment switches on only after the information release for High-FF parcels."))
+
+coef_map <- c(
+  "in_eff_sfhaTRUE" = "In SFHA",
+  "eventPost" = "Post",
+  # Two-way interactions
+  "high_ff_scoreTRUE:eventPost" = "High Flood Factor × Post",
+  "change_typeAlways SFHA:eventPost" = "Always in SFHA × Post",
+  "change_typeChanges SFHA:eventPost" = "Changed SFHA Status × Post",
+ # "high_ff_scoreTRUE:TriadNorth" = "High Flood Factor × North",
+ # "high_ff_scoreTRUE:TriadSouth" = "High Flood Factor × South",
+#  "high_ff_scoreTRUE:TriadCity" = "High Flood Factor × City",
+  "eventPost:TriadSouth" = "Post × South",
+  "eventPost:TriadCity" = "Post × City",
+  "eventPost:TriadNorth" = "Post × North",
+
+  # Three-way interactions
+  "high_ff_scoreTRUE:change_typeAlways SFHA:eventPost" = "High Flood Factor × Always in SFHA × Post",
+  "high_ff_scoreTRUE:change_typeChanges SFHA:eventPost" = "High Flood Factor × Changed SFHA Status × Post",
+    "high_ff_scoreTRUE:eventPost:TriadNorth" = "High Flood Factor × Post × North",
+
+  "high_ff_scoreTRUE:eventPost:TriadSouth" = "High Flood Factor × Post × South",
+  "high_ff_scoreTRUE:eventPost:TriadCity" = "High Flood Factor × Post × City",
+  "change_typeAlways SFHA:eventPost:TriadSouth" = "Always in SFHA × Post × South",
+  "change_typeAlways SFHA:eventPost:TriadCity" = "Always in SFHA × Post × City",
+
+  # Four-way interactions
+  "high_ff_scoreTRUE:change_typeAlways SFHA:eventPost:TriadSouth" = "High Flood Factor × Always in SFHA × Post × South",
+    "high_ff_scoreTRUE:change_typeAlways SFHA:eventPost:TriadNorth" = "High Flood Factor × Always in SFHA × Post × North",
+
+  "high_ff_scoreTRUE:change_typeAlways SFHA:eventPost:TriadCity" = "High Flood Factor × Always in SFHA × Post × City",
+
+
+    # Main effects
+  "highff_post" = "High Flood Factor (Post)",
+  # Two-way interactions
+  "highff_post:change_typeAlways SFHA" = "High Flood Factor (Post) × Always in SFHA",
+  "highff_post:change_typeChanges SFHA" = "High Flood Factor (Post) × Changed SFHA Status",
+    "highff_post:TriadNorth" = "High Flood Factor (Post) × North",
+
+  "highff_post:TriadSouth" = "High Flood Factor (Post) × South",
+  "highff_post:TriadCity" = "High Flood Factor (Post) × City",
+
+  # Three-way interactions
+    "highff_post:change_typeAlways SFHA:TriadNorth" = "High Flood Factor (Post) × Always in SFHA × North",
+  "highff_post:change_typeAlways SFHA:TriadSouth" = "High Flood Factor (Post) × Always in SFHA × South",
+  "highff_post:change_typeAlways SFHA:TriadCity" = "High Flood Factor (Post) × Always in SFHA × City"
+)
+
+coef_map2_short <- c(
+  # Main effects
+  "highff_post" = "High FF (Post)",
+  "in_eff_sfhaTRUE" = "In SFHA",
+  
+  # Two-way interactions
+  "highff_post:change_typeAlways SFHA" = "High FF × Always SFHA",
+  "highff_post:change_typeChanges SFHA" = "High FF × Changed SFHA",
+  "highff_post:TriadCity" = "High FF × City",
+  "highff_post:TriadNorth" = "High FF × North",
+  "highff_post:in_eff_sfhaTRUE" = "High FF & in SFHA",
+
+  # Three-way interactions
+  "highff_post:change_typeAlways SFHA:TriadCity" = "High FF × Always SFHA × City",
+  "highff_post:change_typeAlways SFHA:TriadNorth" = "High FF × Always SFHA × North"
+)
+
+coef_map2 <- c(
+  "highff_post" = "High Flood Factor (Post)",
+  "highff_post:change_typeAlways SFHA" = "High Flood Factor (Post) × Always in SFHA",
+  "highff_post:change_typeChanges SFHA" = "High Flood Factor (Post) × Changed SFHA Status",
+  "highff_post:TriadCity" = "High Flood Factor (Post) × City",
+  "highff_post:TriadNorth" = "High Flood Factor (Post) × North",
+
+  "highff_post:change_typeAlways SFHA:TriadCity" = "High Flood Factor (Post) × Always in SFHA × City",
+  "highff_post:change_typeAlways SFHA:TriadNorth" = "High Flood Factor (Post) × Always in SFHA × North",
+    "in_eff_sfhaTRUE" = "In SFHA"
+  
+)
+```
+
+
+```{r}
+modelsummary(list(main_modv2, main_modv3, main_modv3_2fe, main_mod_changetype_no100coast, main_mod_changetype_no500coast), output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
+             statistic = "({std.error})", gof_omit = "IC|Log|Adj|AIC|BIC",
+            # coef_map = coef_map2_short,
+             title = "Main spec: log(price) ~ HighFF(Post) × SFHA + FE") |>
+  tab_source_note(md("FE: pin, sale_year. SE clustered at pin. Treatment switches on only after the information release for High-FF parcels."))
+```
+
+
+
+```{r}
+modelsummary(list(main_mod, main_mod_2fe, main_mod_no100coast, main_mod_no500coast), output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
+             statistic = "({std.error})", gof_omit = "IC|Log|Adj|AIC|BIC",
+             coef_map = coef_map2_short,
+             title = "Main spec: log(price) ~ HighFF(Post) × In Eff. SFHA + FE") |>
+  tab_source_note(md("FE: pin, sale_year, sale_quarter. SE clustered at pin. Treatment switches on only after the information release for High-FF parcels."))
+```
+
+
+
+
+```{r}
+#| eval: false
+#table(df$sale_year, df$high_ff_score)
+
+main_mod_prelim_check <- feols(
+  log_price ~ high_ff_score* change_type_prelim * event * Triad | pin + sale_year + sale_quarter,
+  cluster = ~ pin10,
+  data = df |> filter(coastal_100==FALSE)
+)
+  
+modelsummary(list(main_mod_prelim_check), output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
+             statistic = "({std.error})", gof_omit = "IC|Log|Adj|AIC|BIC",
+             title = "Check to see if Prelim Map has different results") |>
+  tab_source_note(md("FE: pin, sale_year. SE clustered at parcel level. Post event means the FF risk information is visible to the public."))
+```
+```{r}
+# Percent interpretation (+95% CI)
+tt <- broom::tidy(main_mod, conf.int = TRUE)
+terms <- c("highff_post","in_eff_sfhaTRUE","highff_post:in_eff_sfhaTRUE")
+pct <- tt[tt$term %in% terms, ] |>
+  mutate(
+    label = dplyr::recode(term,
+      "highff_post"="High FF (Post only)",
+      "in_eff_sfhaTRUE"="In SFHA",
+      "highff_post:in_eff_sfhaTRUE"="High FF(Post) × In SFHA"),
+    effect_pct = 100*(exp(estimate)-1),
+    lo = 100*(exp(conf.low)-1),
+    hi = 100*(exp(conf.high)-1)
+  ) |>
+  transmute(Term = label,
+            `Effect (%)` = sprintf("%.1f", effect_pct),
+            `95% CI` = sprintf("[%.1f, %.1f]", lo, hi))
+
+gt::gt(pct) |> gt::tab_caption("Percent interpretation of key coefficients")
+```
+
+::: callout-tip
+**Interpretation of coefficients**
+- **High FF (Post only):** change for High-FF parcels *outside SFHA* after info release vs. pre.
+- **In SFHA:** time-invariant difference for SFHA vs. non-SFHA (net of FE).
+- **High FF(Post) × In SFHA:** extra post-release change for High-FF parcels *in SFHA* vs. the reference.
+:::
+
+### Event-study view
+
+Doesn't work.
+
+
+```{r eval = FALSE}
+ev_mod <- feols(
+  log_price ~ i(rel_year, high_ff_score, ref = -1) | pin + sale_year + Triad,
+  cluster = ~pin,
+  data = df
+)
+
+
+iplot <- iplot(ev_mod, main = "Event-study: dynamics by Triad, SFHA × FF")
+iplot
+
+
+# Joint pre-period test
+pre_wald <- wald(ev_mod, keep = "rel_year::(-[2-9]|1[0-9])::")
+cat(sprintf("**Joint pre-period test:** p = %.3f (H0: all pre coefficients = 0)", pre_wald$p.value))
+```
+
+
+
+### Robustness
+
+
+```{r}
+robust_mod_qtr <- tryCatch(
+  feols(
+    log_price ~ highff_post * in_eff_sfha | pin + sale_year + sale_quarter + Triad,
+    cluster = ~pin,
+    data = df |> filter(!is.na(sale_quarter))
+  ), error = function(e) NULL)
+
+mods_triad <- setNames(
+  lapply(levels(df$Triad), function(tr){
+    feols(log_price ~ highff_post * in_eff_sfha | pin + sale_year,
+          cluster = ~pin,
+          data = df |> filter(Triad == tr))
+  }),
+  paste("Triad:", levels(df$Triad))
+)
+
+ms_models <- c(list("Main (Year+Triad FE)" = main_mod), if (!is.null(robust_mod_qtr)) list("Quarter FE + Triad" = robust_mod_qtr) else list(), mods_triad)
+
+modelsummary(ms_models,
+             output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
+             statistic = "({std.error})", gof_omit = "IC|Log|Adj|AIC|BIC",
+             coef_map = c(
+               "highff_post" = "High FF (Post only)",
+               "in_eff_sfhaTRUE" = "In SFHA",
+               "highff_post:in_eff_sfhaTRUE" = "High FF(Post) × In SFHA"
+             ),
+             title = "Robustness: alternative time FE and Triad splits (simple model)") |>
+  tab_source_note(md("Triad splits estimate the simple model within North/South/City separately."))
+```
+
+::: callout-note
+**Bottom line (models):** If pre-trends pass within a Triad, rely on that Triad’s estimate. If flagged, either narrow the pre window or show results *with and without* that Triad.
+:::
+
+```{r}
+df$pre_date2 <- as.factor(df$pre_date)
+table(df$pre_date2)
+
+robust_mod_qtr <- tryCatch(
+  feols(
+    log_price ~ highff_post * in_prelim_sfha | pin + sale_year + sale_quarter + pre_date2,
+    cluster = ~pin,
+    data = df |> filter(!is.na(sale_quarter))
+  ), error = function(e) NULL)
+
+mods_predate <- setNames(
+  lapply(levels(df$pre_date2), function(tr){
+    feols(log_price ~ highff_post * in_prelim_sfha | pin + sale_year,
+          cluster = ~pin,
+          data = df |> filter(pre_date2 == tr))
+  }),
+  paste("FIRM Pre-date:", levels(df$pre_date2))
+)
+
+ms_models <- c(list("Main (Year-Q FE)" = main_mod), if (!is.null(robust_mod_qtr)) list("Year-Q + FIRM date" = robust_mod_qtr) else list(), mods_predate)
+
+modelsummary(ms_models,
+             output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
+             statistic = "({std.error})", gof_omit = "IC|Log|Adj|AIC|BIC",
+             coef_map = c(
+               "highff_post" = "High FF (Post only)",
+               "in_prelim_sfhaTRUE" = "In SFHA",
+               "highff_post:in_prelim_sfhaTRUE" = "High FF(Post) × In SFHA"
+             ),
+             title = "Robustness: alternative time FE and Triad splits (simple model)") |>
+  tab_source_note(md("Preliminary FIRM date splits estimate the simple model within North/South/City separately."))
+```
+
+
+:::
+
+
+
+
+# Appendix & Notes
+
+- Schaumburg condo exclusion and other data notes here.
+
+## Sample size with trends
+
+```{r}
+# Keep a few polished figures only; send the rest to Appendix
+# Example: group means across time with count labels
+by_grp <- df |>
+  group_by(sale_year, in_eff_sfha, high_ff_score) |>
+  summarise(n = n(), mean_lp = mean(log_price, na.rm = TRUE), .groups = "drop")
+
+by_grp |>
+  ggplot(aes(sale_year, mean_lp, color = interaction(in_eff_sfha, high_ff_score, sep = " · "))) +
+  geom_line() +
+  geom_point() +
+  geom_text(aes(label = paste0("n=", n)), vjust = -0.9, size = 3, show.legend = FALSE) +
+  geom_vline(xintercept = fsf_release_year, linetype = 2) +
+  labs(x = NULL, y = "Mean log(price)", color = NULL, title = "Trends with sample sizes") +
+  theme(legend.position = "bottom")
+```
+
