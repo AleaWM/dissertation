@@ -1,0 +1,122 @@
+---
+title: "FF Variable Checks"
+format: 
+  html:
+    df-print: paged
+---
+
+
+```{r setup}
+library(tidyverse)
+library(fixest)
+library(did)  
+library(etwfe)
+library(tidyverse)
+library(modelsummary)
+library(gt)
+library(marginaleffects)
+
+options(scipen = 999)
+
+# bldg_sfha <- readRDS("data/processed/variants/df_prep__bldg_sfha.RDS")
+# 
+# parcels <- readRDS("data/processed/variants/df_prep__parcel_sfha.RDS")
+# 
+# bldg_1in500 <- readRDS("data/processed/variants/df_prep__bldg_1in500.RDS")
+
+source("R/helper_pins_to_drop.R")
+```
+
+
+```{r}
+
+lake100ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within100ft_ExportTable_TableToExcel.xlsx")
+lake500ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within500ft_ExportTable_TableToExcel.xlsx")
+
+bldg_sfha <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS")
+
+bldg_sfha <- bldg_sfha |> filter(!pin10 %in% drop_parcels  |
+               (pin10 == "0113301013" & sale_year > 2014)
+             )
+```
+
+`Event == TRUE` for all sales that occurred after First Street released its flood risk data.
+
+`high_ff_score == TRUE` for properties that had a flood factor score of 5 or higher
+
+```{r}
+
+bldg_sfha <- bldg_sfha |> 
+  mutate(event = sale_date > new_info_released)
+
+bldg_sfha <- bldg_sfha |> 
+  mutate(
+    highff_post = (high_ff_score == TRUE &  sale_date > new_info_released ),
+    Triad = as.character(Triad),
+    triad_coast = ifelse(pin10 %in% lake100ft$PIN10, "Coastal", Triad)
+                                 )
+
+bldg_sfha <- bldg_sfha |> 
+  group_by(pin) |>
+  mutate(pin_num = as.numeric(pin),
+    # ff_group = ifelse(high_ff_score==TRUE & sale_date > new_info_released, as.character(min(sale_year[sale_date > new_info_released])), "0")) |>
+      ff_group = ifelse(high_ff_score==TRUE & sale_date > new_info_released, "2020", "0")) |>
+
+  ungroup()
+
+#table(bldg_sfha$triad_coast)
+#table(bldg_sfha$Triad)
+```
+
+# Separated timing and underlying risk
+
+```{r}
+base_mod = feols(log_price ~ high_ff_score * event  | pin + sale_year, vcov = ~pin10, data = bldg_sfha)
+
+modelsummary(base_mod, stars = TRUE)
+
+```
+
+# Ordinal Variable Checks
+
+```{r}
+ordinal1 = feols(log(sale_price) ~ factor(env_flood_fs_factor) * event | pin + sale_year, vcov = ~pin10, data= bldg_sfha |> filter(change_type != "Changes SFHA"))
+
+
+ordinal2 = feols(log(sale_price) ~ factor(env_flood_fs_factor) * event * Triad | pin + sale_year, vcov = ~pin10, data= bldg_sfha |> filter(change_type !="Changes SFHA"))
+
+
+## change type is for effective maps
+ordinal3 = feols(log(sale_price) ~ change_type * factor(env_flood_fs_factor) * event * Triad | pin + sale_year, vcov = ~pin10, data= bldg_sfha |> filter(change_type !="Changes SFHA"))
+
+ordinal4 = feols(log(sale_price) ~ change_type * factor(env_flood_fs_factor) * event | pin + sale_year, vcov = ~pin10, data= bldg_sfha |> filter(change_type !="Changes SFHA"))
+
+ordinals <- modelsummary(list(ordinal1, ordinal2, ordinal3, ordinal4), stars = TRUE)
+
+rm(ordinal1, ordinal2, ordinal3, ordinal4)
+
+ordinals
+
+```
+
+# Continuous  FF risk
+
+```{r}
+
+continuous1 = feols(log(sale_price) ~ env_flood_fs_factor * event | pin + sale_year, vcov = ~pin10, data= bldg_sfha)
+
+
+continuous2 = feols(log(sale_price) ~ env_flood_fs_factor * event * Triad | pin + sale_year, vcov = ~pin10, data= bldg_sfha)
+
+
+## change type is for effective maps
+continuous3 = feols(log(sale_price) ~ change_type * env_flood_fs_factor * event * Triad | pin + sale_year, vcov = ~pin10, data= bldg_sfha)
+
+continuous4 = feols(log(sale_price) ~ change_type * env_flood_fs_factor * event | pin + sale_year, vcov = ~pin10, data= bldg_sfha)
+
+continuous_mods <- modelsummary(list(continuous1, continuous2, continuous3, continuous4), stars = TRUE)
+
+rm(continuous1, continuous2, continuous3,continuous4) 
+
+continuous_mods 
+```
