@@ -9,6 +9,7 @@ format:
     toc-location: left
     tbl-cap-location: margin
     fig-cap-location: margin
+    error: true
 ---
 # Research Question 2
 
@@ -40,13 +41,14 @@ library(jtools)
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, results = "hold"  )
 
 
-ff_pairs <- readRDS("data/processed/ff_pairs_buildings.rds") |>
-  rename(around_event = treated) |>
-    select(-c(clean_name.x, clean_name.y))
+# ff_pairs <- readRDS("data/processed/ff_pairs_buildings.rds") |>
+#   rename(around_event = treated) |>
+#     select(-c(clean_name.x, clean_name.y))
 
+df_prep <- readRDS("data/processed/variants/df_prep__bldg_sfha.rds")
 
-df_prep <- readRDS("data/processed/df_prep_buildings.rds") |>
-  select(-c(clean_name.x, clean_name.y))
+#df_prep <- readRDS("data/processed/df_prep_buildings.rds") |>
+  #select(-c(clean_name.x, clean_name.y))
 
 ```
 
@@ -61,17 +63,8 @@ table(df_prep$sale_year, df_prep$high_ff_score)
 ```
 
 
-There are `r n_distinct(ff_pairs$pin)` pins remaining in `ff_pairs`.
+There are `r n_distinct(df_prep$pin)` pins remaining in `df_prep`.
 
-
-There are `r print(ff_pairs |> filter(around_event ==TRUE & high_ff_score == TRUE) |> count())` observations that are around_event and have a high flood factor score (greater than 4).
-
-
-
-```{r}
-#| include: false
-table(ff_pairs$sale_year_t2, ff_pairs$change_type)
-```
 
 ```{r}
 #| layout-ncol: 2
