@@ -80,7 +80,172 @@ fill_missing_panels <- function(df_prep) {
 #' @param min_analysis_year Keep records with year > min_analysis_year (default 2009 from your script)
 #' @param min_price Keep sale_price > min_price when building lags (default 5000 from your script)
 #' @return df with in_eff_sfha, in_prelim_sfha, in_lomr, ins_req, lag vars, and added/removed flags
-make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "risk500", "risk500_land"),
+# make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim",
+#                                                  "risk500", "risk500_land"),
+#                                   min_analysis_year = 2009,
+#                                   min_price = 5000) {
+#   method <- match.arg(method)
+#
+#   if (method == "land") {
+#     df <- df |>
+#       rename(
+#         sfha2018_col = land_sfha2018,
+#         sfha2024_col = land_sfha2024,
+#         sfha2026_col = land_sfha2026,
+#         lomr_date_col = lomr_date)
+#
+#   } else if (method == "bldg") {
+#     df <- df |>
+#       rename(
+#         sfha2018_col = bldg_sfha2018,
+#         sfha2024_col = bldg_sfha2024,
+#         sfha2026_col = bldg_sfha2026,
+#         lomr_date_col = bldg_lomr_date
+#       )
+#
+#   } else if (method == "ptaxsim") {
+#
+#     df <- df |>
+#       rename(
+#         sfha2018_col = ptax_land_sfha2018,
+#         sfha2024_col = ptax_land_sfha2024,
+#         sfha2026_col = ptax_land_sfha2026,
+#         lomr_date_col = lomr_date
+#       )
+#   } else if (method == "risk500") {
+#
+#     df <- df |>
+#       rename(
+#         sfha2018_col = risk500_bldg_2018,
+#         sfha2024_col = risk500_bldg_2024,
+#         sfha2026_col = risk500_bldg_2026,
+#         lomr_date_col =  bldg_lomr_date
+#       )
+#   } else if (method == "risk500_land") {
+#
+#     df <- df |>
+#       rename(
+#         sfha2018_col = risk500_land_2018,
+#         sfha2024_col = risk500_land_2024,
+#         sfha2026_col = risk500_land_2026,
+#         lomr_date_col = lomr_date
+#       )
+#   }
+#
+#   df <- fill_missing_panels(df)
+#
+#   ## If the FIRM panel and FIRM dates do not exist for each sale, then the indicator variables won't be made
+#   if (any(is.na(df$FIRM_PAN))) {
+#     missing <- df |>
+#       dplyr::filter(is.na(FIRM_PAN)) |>
+#       dplyr::distinct(pin10)
+#
+#     stop(
+#       "Missing FIRM_PAN for ",
+#       nrow(missing),
+#       " parcels.\nFirst few PINs:\n",
+#       paste(head(missing$pin10, 10), collapse = ", "),
+#       call. = FALSE
+#     )
+#   }
+#
+#   out <- df |>
+#     dplyr::filter(.data$year > min_analysis_year) |>
+#     dplyr::mutate(
+#       PRE_DATE = as.Date(.data$PRE_DATE),
+#       EFF_DATE = as.Date(.data$EFF_DATE),
+#
+#       EFF_DATE = ifelse(EFF_DATE == as.Date("2026-01-23"), as.Date("2008-08-19"), as.Date(as.character(EFF_DATE))),
+#
+#       EFF_DATE = case_when(
+#         is.na(EFF_DATE) & neighborhood_code %in% c("10024", "18030", "19020", "19060", "24032", "25160",  "30011",
+#           "38040", "38110", "70080", "71074", "74022",  "74030",   "77120", "77131") ~ as.Date("2008-08-19"),
+#         is.na(EFF_DATE) & neighborhood_code %in% c("13032", "28039", "28100", "15907",  "39081", "39200", "39211") ~ as.Date("2019-11-01"),
+#         is.na(EFF_DATE) & neighborhood_code %in% c("23092", "23171", "70010",  "73032", "73041",  "73084",
+#           "73093",  "74013",  "76010", "76011") ~ as.Date("2021-09-10"),
+#         TRUE ~ as.Date(EFF_DATE)),
+#       PRE_DATE = case_when(
+#         is.na(PRE_DATE) & neighborhood_code %in% c("19020", "19060", "24032", "25160",  "30011",
+#           "38040", "38110", "70080", "71074", "74022",  "74030", "77120", "77131") ~ as.Date("2005-01-01"),
+#         is.na(PRE_DATE) &  neighborhood_code %in% c("13032", "15907", "28039", "28100", "39200", "39081", "39211") ~ as.Date("2015-02-12"),
+#         is.na(PRE_DATE) & neighborhood_code %in% c("23092", "23171", "70010",  "73032", "73041",  "73084",
+#           "73093",  "74013",  "76010", "76011") ~ as.Date("2019-07-01"),
+#         is.na(PRE_DATE) & neighborhood_code %in% c("10024", "18030") ~ as.Date("2021-09-22"),
+#
+#         TRUE ~ as_date(PRE_DATE)),
+#
+#       # the flood zones that existed in the 2018 state NFHL were last updated in 2008. sfha2018 is the default SFHA status for the observations, then lomrs and future updates will be incorporated
+#       in_eff_sfha = case_when(
+#         EFF_DATE == as.Date("2008-08-19") ~ sfha2018_col,
+#         sale_date >= EFF_DATE ~ sfha2024_col,
+#         sale_date < EFF_DATE ~ sfha2018_col),
+#
+#
+#       # create similar variable but for the preliminary date: model must deal with anticipation to change
+#       in_prelim_sfha = case_when(
+#         PRE_DATE == as.Date("2005-01-01") ~ sfha2018_col,    # never had FIRM update. Use SFHA polygons from 2018 NFHL before any updates occurred.
+#         PRE_DATE == as.Date("2021-09-22") & sale_date > PRE_DATE ~ sfha2026_col,
+#         sale_date >= PRE_DATE  ~ sfha2024_col,
+#         sale_date < PRE_DATE ~ sfha2018_col),
+#
+#       in_lomr       = ifelse(!is.na(lomr_date_col) & sale_date >= lomr_date_col, TRUE, FALSE),
+#     )
+#
+#
+#
+#   # Lags + change flags require sorting within PIN
+#   out <- out |>
+#     dplyr::filter(.data$sale_price > min_price) |>
+#     dplyr::group_by(.data$pin) |>
+#     dplyr::arrange(.data$sale_date, .by_group = TRUE) |>
+#     dplyr::mutate(
+#       lag_eff = dplyr::lag(.data$in_eff_sfha),
+#       lag_pre = dplyr::lag(.data$in_prelim_sfha)) |>
+#     ungroup() |>
+#
+#     mutate(
+#       added_eff_thisyear =
+#         !is.na(lag_eff) &
+#           !is.na(in_eff_sfha) &
+#           lag_eff == 0 & in_eff_sfha == 1,
+#
+#       removed_eff_thisyear =
+#         !is.na(lag_eff) &
+#           !is.na(in_eff_sfha) &
+#           lag_eff == 1 & in_eff_sfha == 0,
+#
+#       added_pre_thisyear =
+#         !is.na(lag_pre) &
+#           !is.na(in_prelim_sfha) &
+#           lag_pre == 0 & in_prelim_sfha == 1,
+#
+#       removed_pre_thisyear =
+#         !is.na(lag_pre) &
+#           !is.na(in_prelim_sfha) &
+#           lag_pre == 1 & in_prelim_sfha == 0
+#     ) |>
+#     dplyr::ungroup()
+#
+#   out |>
+#     group_by(pin) |>
+#     arrange(pin, sale_date) |>
+#     mutate(
+#       addedto_prelim_sfha = (cumany(added_pre_thisyear == T)),
+#       removedfrom_prelim_sfha = (cumany(removed_pre_thisyear == T)),
+#       addedto_eff_sfha = (cumany(added_eff_thisyear == T)),
+#       removedfrom_eff_sfha = (cumany(removed_eff_thisyear == T)),
+#     ) |>
+#     ungroup() |>
+#     select(pin, year, sale_date, sale_price,
+#       addedto_eff_sfha, removedfrom_eff_sfha, addedto_prelim_sfha, removedfrom_prelim_sfha,
+#       in_eff_sfha, in_prelim_sfha, FIRM_PAN,
+#       added_eff_thisyear:removed_pre_thisyear,
+#       lag_eff, lag_pre, in_lomr, everything())
+# }
+
+
+make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim",
+                                    "risk500", "risk500_land"),
                                   min_analysis_year = 2009,
                                   min_price = 5000) {
   method <- match.arg(method)
@@ -89,7 +254,6 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
     df <- df |>
       rename(
         sfha2018_col = land_sfha2018,
-        sfha2024_col = land_sfha2024,
         sfha2026_col = land_sfha2026,
         lomr_date_col = lomr_date)
 
@@ -97,26 +261,24 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
     df <- df |>
       rename(
         sfha2018_col = bldg_sfha2018,
-        sfha2024_col = bldg_sfha2024,
         sfha2026_col = bldg_sfha2026,
         lomr_date_col = bldg_lomr_date
       )
-
-  } else if (method == "ptaxsim") {
-
-    df <- df |>
-      rename(
-        sfha2018_col = ptax_land_sfha2018,
-        sfha2024_col = ptax_land_sfha2024,
-        sfha2026_col = ptax_land_sfha2026,
-        lomr_date_col = lomr_date
-      )
+    #
+    # } else if (method == "ptaxsim") {
+    #
+    #   df <- df |>
+    #     rename(
+    #       sfha2018_col = ptax_land_sfha2018,
+    #       sfha2024_col = ptax_land_sfha2024,
+    #       sfha2026_col = ptax_land_sfha2026,
+    #       lomr_date_col = lomr_date
+    #     )
   } else if (method == "risk500") {
 
     df <- df |>
       rename(
         sfha2018_col = risk500_bldg_2018,
-        sfha2024_col = risk500_bldg_2024,
         sfha2026_col = risk500_bldg_2026,
         lomr_date_col =  bldg_lomr_date
       )
@@ -125,13 +287,14 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
     df <- df |>
       rename(
         sfha2018_col = risk500_land_2018,
-        sfha2024_col = risk500_land_2024,
         sfha2026_col = risk500_land_2026,
         lomr_date_col = lomr_date
       )
   }
 
   df <- fill_missing_panels(df)
+
+  df <- df |> filter(!is.na(FIRM_PAN))
 
   ## If the FIRM panel and FIRM dates do not exist for each sale, then the indicator variables won't be made
   if (any(is.na(df$FIRM_PAN))) {
@@ -176,7 +339,7 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
       # the flood zones that existed in the 2018 state NFHL were last updated in 2008. sfha2018 is the default SFHA status for the observations, then lomrs and future updates will be incorporated
       in_eff_sfha = case_when(
         EFF_DATE == as.Date("2008-08-19") ~ sfha2018_col,
-        sale_date >= EFF_DATE ~ sfha2024_col,
+        sale_date >= EFF_DATE ~ sfha2026_col,
         sale_date < EFF_DATE ~ sfha2018_col),
 
 
@@ -184,7 +347,7 @@ make_sfha_timing_vars <- function(df, method = c("land", "bldg", "ptaxsim", "ris
       in_prelim_sfha = case_when(
         PRE_DATE == as.Date("2005-01-01") ~ sfha2018_col,    # never had FIRM update. Use SFHA polygons from 2018 NFHL before any updates occurred.
         PRE_DATE == as.Date("2021-09-22") & sale_date > PRE_DATE ~ sfha2026_col,
-        sale_date >= PRE_DATE  ~ sfha2024_col,
+        sale_date >= PRE_DATE  ~ sfha2026_col,
         sale_date < PRE_DATE ~ sfha2018_col),
 
       in_lomr       = ifelse(!is.na(lomr_date_col) & sale_date >= lomr_date_col, TRUE, FALSE),
