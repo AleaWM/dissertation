@@ -30,7 +30,12 @@ library(modelsummary)
 ```{r}
 # made in Q1_final_variables 
 # uses land parcel intersections with SFHA polygons
-df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.RDS") 
+# df_prep <- readRDS("data/processed/df_prep_forQ1_assumptiontests.RDS") 
+
+
+# made in sfha_indicator_processing file and arcgis intersection files
+df_prep <- readRDS("data/processed/variants/df_prep__bldg_sfha.RDS") 
+
 
 res_sales <- readRDS("./data/processed/df_allsales.rds")
 ```
@@ -47,7 +52,7 @@ table(df_prep$addedto_prelim_sfha[df_prep$pre_date_chr == "2021-09-22"])
 
 ```{r remove-missingvalues}
 
-
+source("R/helper_pins_to_drop.R")
 res_sales <- res_sales |>
     filter(!pin10 %in% drop_parcels) |>
 
@@ -107,22 +112,22 @@ summary(est_sa, agg = "cohort")
 
 ```{r}
 #| label: fig-removeprelims
-#| fig-cap: "Removed from Preliminary SFHA and added LOMR Fixed Effects"
+#| fig-cap: "Removed from Preliminary SFHA"
 #| results: hold
 
-est_sa = feols(log(sale_price) ~ sunab(cohort = treat_year_remove_prelim, period = rel_year_remove_prelim, ref.p = c(-1,-1000) ) | pin + sale_year^pre_date_chr + in_lomr,
+est_sa = feols(log(sale_price) ~ sunab(cohort = treat_year_remove_prelim, period = rel_year_remove_prelim, ref.p = c(-1,-1000) ) | pin + sale_year,
                cluster= ~pin10,
                data = df_prep)
 
 # modelsummary::modelsummary(est_sa,
-#                            output = "flextable",
+#                            output = "flextable",F
 #                            fmt = function(x) round(x, 2),
 #                            stars = TRUE)
 # coefplot(est_sa)
 
 
 est_twfe = feols(log(sale_price) ~ i(rel_year_remove_prelim,  ref =c(-1, -1000 )) | 
-                   pin + sale_year^pre_date_chr + in_lomr, cluster = ~pin10, 
+                   pin + sale_year, cluster = ~pin10, 
                  data = df_prep )
 
 # 
@@ -133,7 +138,7 @@ est_twfe = feols(log(sale_price) ~ i(rel_year_remove_prelim,  ref =c(-1, -1000 )
 #                           data = df_prep)
 
 
-iplot(list(est_twfe, est_sa), main = "Removed from Prelim, Controls for LOMRs")
+iplot(list(est_twfe, est_sa), main = "Removed from Prelim")
 legend("topleft", col = c(1, 2), pch = c(20, 15), 
        legend = c("TWFE", "S&A (2020)")) 
 ```
@@ -144,9 +149,97 @@ summary(est_sa, agg = "ATT")
 summary(est_sa, agg = "cohort")
 ```
 
+##### Removed - Cohort slopes 
+
+```{r}
+#| label: fig-removeprelims-cohortslopes
+#| fig-cap: "Removed from Preliminary SFHA. Allows for cohort specific slopes"
+#| results: hold
+
+est_sa = feols(log(sale_price) ~ sunab(cohort = treat_year_remove_prelim, period = rel_year_remove_prelim, ref.p = c(-1,-1000) ) | pin + sale_year^pre_date_chr,
+               cluster= ~pin10,
+               data = df_prep)
+
+# modelsummary::modelsummary(est_sa,
+#                            output = "flextable",F
+#                            fmt = function(x) round(x, 2),
+#                            stars = TRUE)
+# coefplot(est_sa)
+
+
+est_twfe = feols(log(sale_price) ~ i(rel_year_remove_prelim,  ref =c(-1, -1000 )) | 
+                   pin + sale_year^pre_date_chr, cluster = ~pin10, 
+                 data = df_prep )
+
+# 
+# prelim_noLOMRPINs = feols(log(sale_price) ~ i(rel_year_remove_prelim,  ref =c(-1, -1000 )) | 
+#                             pin + sale_year,   
+#                           cluster = ~clean_name,
+#                           subset = ~in_lomr == "Not in LOMR" & !is.na(clean_name),
+#                           data = df_prep)
+
+
+iplot(list(est_twfe, est_sa), main = "Removed from Prelim")
+legend("topleft", col = c(1, 2), pch = c(20, 15), 
+       legend = c("TWFE", "S&A (2020)")) 
+```
+
+
+```{r}
+#| layout-ncol: 2
+summary(est_sa, agg = "ATT")
+summary(est_sa, agg = "cohort")
+```
+
+
+### Removed - Restricted Sample
+
 ```{r}
 #| label: fig-removeprelims-restricted
 #| fig-cap: "**Appendix Item: Restricted sample, Removed from Preliminary SFHA**. Does not control for LOMR status"
+#| results: hold
+
+
+est_sa = feols(log(sale_price) ~  sunab(cohort = treat_year_remove_prelim, period = rel_year_remove_prelim) | pin + sale_year,
+               cluster= ~pin10,
+               data = df_prep |> filter(treat_year_add_prelim==10000 & change_type != "Never SFHA"))
+
+# modelsummary::modelsummary(est_sa,
+#                            output = "flextable",
+#                            fmt = function(x) round(x, 2),
+#                            stars = TRUE)
+# coefplot(est_sa)
+
+
+est_twfe = feols(log(sale_price) ~  i(rel_year_remove_prelim,  ref =c(-1, -1000 )) | 
+                   pin + sale_year, cluster = ~pin10, 
+                 data = df_prep |> filter(treat_year_add_prelim==10000 & change_type != "Never SFHA") )
+
+# 
+# prelim_noLOMRPINs = feols(log(sale_price) ~ i(rel_year_remove_prelim,  ref =c(-1, -1000 )) | 
+#                             pin + sale_year,   
+#                           cluster = ~clean_name,
+#                           subset = ~in_lomr == "Not in LOMR" & !is.na(clean_name),
+#                           data = df_prep)
+
+
+iplot(list(est_twfe, est_sa), main = "Restrict Removed from Prelim")
+legend("topleft", col = c(1, 2), pch = c(20, 15), 
+       legend = c("TWFE", "S&A (2020)"))
+```
+
+```{r}
+#| layout-ncol: 2
+summary(est_sa, agg = "ATT")
+summary(est_sa, agg = "cohort")
+```
+
+### Removed - Restricted Sample - Cohort Slopes
+
+
+```{r}
+#| label: fig-removeprelims-restricted-chort slopes
+#| fig-cap: "**Appendix Item: Restricted sample, Removed from Preliminary SFHA**. Does not control for LOMR status. Allows for Cohort specific slopes."
 #| results: hold
 
 
@@ -173,7 +266,7 @@ est_twfe = feols(log(sale_price) ~  i(rel_year_remove_prelim,  ref =c(-1, -1000 
 #                           data = df_prep)
 
 
-iplot(list(est_twfe, est_sa), main = "Removed from Prelim, FE have cohort-time FE")
+iplot(list(est_twfe, est_sa), main = "Restricted Removed from Prelim, FE have cohort-time FE")
 legend("topleft", col = c(1, 2), pch = c(20, 15), 
        legend = c("TWFE", "S&A (2020)"))
 ```
@@ -183,8 +276,6 @@ legend("topleft", col = c(1, 2), pch = c(20, 15),
 summary(est_sa, agg = "ATT")
 summary(est_sa, agg = "cohort")
 ```
-
-
 
 
 ```{r}
@@ -287,7 +378,7 @@ summary(eff_hasLOMRPINs)
 coefplot(eff_hasLOMRPINs)
 summary(eff_hasLOMRPINs, agg = "ATT")
 summary(eff_hasLOMRPINs, agg = "cohort")
-iplot(eff_hasLOMRPINs, main = "Removed from Eff SFHAs. TWFE & S&A20.")
+iplot(eff_hasLOMRPINs, main = "Removed from Eff SFHAs. S&A20.")
 legend("topleft", col = c(1, 2), pch = c(20, 15), 
        legend = c("S&A (2020)"))
 
@@ -312,7 +403,7 @@ est_sa_haslomrs = feols(log(sale_price) ~ sunab(treat_year_remove_eff, rel_year_
                        data = df_prep)
 #summary(est_sa_haslomrs)
 
-iplot(list(eff_hasLOMRPINs, est_sa_haslomrs), main = "Removed from Eff SFHAs. TWFE & S&A20.")
+iplot(list(eff_hasLOMRPINs, est_sa_haslomrs), main = "Removed from Eff SFHAs. Cohort Slopes.")
 legend("topleft", col = c(1, 2), pch = c(20, 15), 
        legend = c("TWFE", "S&A (2020)"))
 
@@ -367,7 +458,7 @@ summary(est_sa_haslomrs, agg = "cohort")
 
 ```{r}
 #| label: fig-feolscomparison-removedfromfirms-nolomrs
-#| fig-cap: "TWFE to compare with sunab() output. Uses Effective FIRM dates and year relative to treatment year. Excludes PINs that had LOMRs!"
+#| fig-cap: "TWFE to compare with sunab() output. Uses Effective FIRM dates and year relative to treatment year. Excludes PINs that had LOMRs with subset function!"
 #| message: false
 #| warning: false
 #| results: hold
@@ -438,6 +529,7 @@ summary(mod2, agg = "cohort")
 #| label: tbl-feolscomparison-addedtofirms-effective
 #| fig-cap: "Mapped into Effective SFHA. In_lomr variable in equation"
 #| results: hold
+#| error: true
 
 est_twfe = feols(log(sale_price) ~ in_lomr + i(rel_year_add_eff,  ref =c(-1, -1000 )) | 
                   pin + sale_year,   
@@ -451,13 +543,14 @@ est_sa = feols(log(sale_price) ~ in_lomr +  sunab(treat_year_add_eff, rel_year_a
 #coefplot(est_sa)
 
 
-iplot(list(est_twfe, est_sa), main = "Mapped into Effective SFHA")
-legend("topleft", col = c(1, 2), pch = c(20, 15), 
-       legend = c("TWFE", "S&A (2020)"))
+iplot(list(est_twfe), main = "Mapped into Effective SFHA")
+legend("topleft", col = c(1), pch = c(20), 
+       legend = c("TWFE"))
 
 ```
 
 ```{r}
+#| error: true
 #| layout-ncol: 2
 #etable(est_sa)
 #summary(est_sa)
