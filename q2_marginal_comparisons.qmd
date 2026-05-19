@@ -1,0 +1,358 @@
+---
+title: "Main marginal comparisons models"
+format: 
+  html:
+    df-print: paged
+---
+
+
+```{r setup}
+library(tidyverse)
+library(fixest)
+library(did)  
+library(etwfe)
+library(tidyverse)
+library(modelsummary)
+library(gt)
+library(marginaleffects)
+
+options(scipen = 999)
+
+# bldg_sfha <- readRDS("data/processed/variants/df_prep__bldg_sfha.RDS")
+# 
+# parcels <- readRDS("data/processed/variants/df_prep__parcel_sfha.RDS")
+# 
+# bldg_1in500 <- readRDS("data/processed/variants/df_prep__bldg_1in500.RDS")
+
+source("R/helper_pins_to_drop.R")
+```
+
+
+```{r}
+
+lake100ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within100ft_ExportTable_TableToExcel.xlsx")
+lake500ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within500ft_ExportTable_TableToExcel.xlsx")
+
+bldg_sfha <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS")
+
+bldg_sfha <- bldg_sfha |> filter(!pin10 %in% drop_parcels  |
+               (pin10 == "0113301013" & sale_year > 2014)
+             )
+
+bldg_sfha <- bldg_sfha |> filter(change_type != "Changes SFHA")
+```
+
+`Event == TRUE` for all sales that occurred after First Street released its flood risk data.
+
+`high_ff_score == TRUE` for properties that had a flood factor score of 5 or higher
+
+```{r}
+
+bldg_sfha <- bldg_sfha |> 
+  mutate(event = sale_date > new_info_released)
+
+bldg_sfha <- bldg_sfha |> 
+  mutate(
+    highff_post = (high_ff_score == TRUE &  sale_date > new_info_released ),
+    Triad = as.character(Triad),
+    triad_coast = ifelse(pin10 %in% lake100ft$PIN10, "Coastal", Triad)
+                                 )
+
+bldg_sfha <- bldg_sfha |> 
+  group_by(pin) |>
+  mutate(pin_num = as.numeric(pin),
+    # ff_group = ifelse(high_ff_score==TRUE & sale_date > new_info_released, as.character(min(sale_year[sale_date > new_info_released])), "0")) |>
+      ff_group = ifelse(high_ff_score==TRUE & sale_date > new_info_released, "2020", "0")) |>
+
+  ungroup()
+
+#table(bldg_sfha$triad_coast)
+#table(bldg_sfha$Triad)
+```
+
+# Separated timing and underlying risk
+
+```{r}
+base_mod = feols(log_price ~ high_ff_score * event  | pin + sale_year, vcov = ~pin10, data = bldg_sfha)
+
+modelsummary(base_mod, stars = TRUE)
+
+```
+
+# With highff_post (4-way interaction) 
+
+
+```{r}
+## change type is for effective maps
+# triad_mod_notriads_4way = feols(log(sale_price) ~ change_type * high_ff_score * event  | pin + sale_year, vcov = ~pin10, data= bldg_sfha)
+
+## change type is for effective maps
+
+simp4way_notriad = feols(log(sale_price) ~ high_ff_score * event | pin + sale_year, vcov = ~pin10, data = bldg_sfha)
+
+
+simp4way = feols(log(sale_price) ~ high_ff_score * event * Triad | pin + sale_year, vcov = ~pin10, data = bldg_sfha)
+
+
+## change type is for effective maps
+triad_mod_4way = feols(log(sale_price) ~ change_type * high_ff_score * event * Triad | pin + sale_year, vcov = ~ pin10, data = bldg_sfha)
+
+triad_mod_4way_notria = feols(log(sale_price) ~ change_type * high_ff_score * event | pin + sale_year, vcov = ~pin10, data = bldg_sfha)
+
+coef_map <- c(
+  "eventTRUE" = "Post-release",
+  "high_ff_scoreTRUE:eventTRUE" = "High Flood Factor × Post-release",
+  "change_typeAlways SFHA:eventTRUE" = "Always SFHA × Post-release",
+  "change_typeChanges SFHA:eventTRUE" = "Changed SFHA × Post-release",
+  "change_typeAlways SFHA:high_ff_scoreTRUE:eventTRUE" = "Always SFHA × High Flood Factor × Post-release",
+  "change_typeChanges SFHA:high_ff_scoreTRUE:eventTRUE" = "Changed SFHA × High Flood Factor × Post-release"
+)
+
+# modelsummary(
+#   triad_mod_3way,
+#   coef_map = coef_map,
+#   coef_omit = "Triad|change_typeChanges SFHA$|high_ff_scoreTRUE|high_ff_scoreTRUE × TriadSouth|AIC|BIC|RMSE",
+#   statistic = "({std.error})",
+#   stars = TRUE,
+#   gof_omit = "IC|Log|Adj|Within",
+#   output = "gt"
+# )
+
+modelsummary(list(simp4way_notriad, simp4way, triad_mod_4way, triad_mod_4way_notria), stars = TRUE)
+
+```
+
+```{r}
+ex1 <- avg_comparisons(triad_mod_4way_notria, 
+               variables = "event", 
+                by = c("change_type", "high_ff_score" ))
+ex1
+```
+
+Effect of just `event`. On average, properties sold for around 4% more after 2020.
+
+```{r}
+ex2 <- avg_comparisons(triad_mod_4way, 
+                variables = list(event = "pairwise"), 
+            comparison = "difference")
+ex2
+```
+
+The effect of the treatment might be stronger or weaker at different levels of the other treatment variable. 
+
+On average, properties with low flood factor scores sold for 5.5% more than before the event, while properties with high flood factor score sold for 4.6% less than they did before the event. 
+
+A difference of 10%. 
+
+```{r}
+#| tbl-cap: "The estimated effect of a change from a having a **visible** flood factor score score in the subset of observations with a FF score < 5 and for the subset of properties with a FF score of 5+."
+
+avg_comparisons(triad_mod_4way, 
+                variables = "event", 
+                by = c("high_ff_score"))
+
+```
+
+```{r}
+#| tbl-cap: "`Hypothesis` argument lets us check if estimates are different enough to matter (i.e. statistically significantly different). If p < 0.05(or whatever cut off you want to use), then I can reject the null hypothesis that the effect of visible flood risk information is the same for high and low risk properties."
+
+avg_comparisons(triad_mod_4way, 
+                variables = "event", 
+                by = c("high_ff_score"),
+                hypothesis = "b2 - b1 = 0")
+
+```
+
+> High-risk and low-risk properties are statistically significantly different from each other (p < 0.01). Therefore the effect of visible flood risk information was not the same for these subgroups. 
+
+```{r}
+#Now, we ask if M2 changes the way in which M1 moderates the effect of X on Y. The difference is subtle but important: we are asking if the moderation effect of M1 is itself moderated by M2.
+
+results <- avg_comparisons(triad_mod_4way, 
+                variables = "event", 
+                by = c("change_type", "high_ff_score" ))
+results
+```
+
+```{r}
+preds <- predictions(triad_mod_4way, variables = "event",
+            newdata = datagrid(
+              high_ff_score = c(TRUE, FALSE), 
+              change_type =c("Always SFHA", "Never SFHA"), 
+              Triad = c("North", "South", "City")), vcov = FALSE)
+preds
+```
+
+```{r}
+avg_comparisons(triad_mod_4way, 
+                variables = "event", 
+                by = c("change_type", "high_ff_score" ), hypothesis = "b2- b1 = 0")
+
+avg_comparisons(triad_mod_4way, 
+                variables = "event", 
+                by = c("change_type", "high_ff_score" ), hypothesis = "b4 - b3 = 0")
+```
+
+To answer the question of whether M2 moderates the moderation effect of M1, we can specify the hypothesis as a difference in differences:
+
+```{r}
+avg_comparisons(triad_mod_4way, 
+    hypothesis = "(b2 - b1) - (b4 - b3) = 0",
+    variables = "event", 
+    by = c("change_type", "high_ff_score"))
+```
+
+ > SFHA status moderates the moderation effect of a having a high flood score on the information's effect on sale prices (p <0.05).
+ 
+```{r}
+#| label: fig-avgpredictions-moderator-simpler
+#| fig-cap: "Average predicted outcomes for different combinations of X, M1, and  Not broken down by Triad or SFHA status."
+
+
+plot_predictions(triad_mod_4way, by = c("event", "high_ff_score"), vcov = FALSE) +
+  geom_line(aes(x=event, y = estimate, group = high_ff_score)) + labs( x = "Info Released", y = "Estimated log(price)") + theme_bw() + theme(legend.position = "bottom")
+```
+
+
+```{r}
+#| label: fig-avgpredictions-moderator
+#| fig-cap: "Average predicted outcomes for different combinations of X, M1, and  Not broken down by Triad."
+
+
+plot_predictions(triad_mod_4way, by = c( "event", "high_ff_score", "change_type"  ), vcov = FALSE) + labs( x = "Info Released", y = "Estimated log(price)") + geom_line(aes(x=event, y = estimate, group = high_ff_score)) + labs( x = "Info Released", y = "Estimated log(price)") + theme_bw() + theme(legend.position = "bottom")
+
+```
+
+```{r}
+#| label: fig-avgpredictions-moderator-effectivedates-4way
+#| fig-cap: "eff_pred_graph <- plot_predictions(triad_mod_4way, by = event, high_ff_score, change_type, Triad"
+
+
+eff_pred_graph <- plot_predictions(triad_mod_4way, by = c( "event", "high_ff_score", "change_type", "Triad"  ), vcov = FALSE) + geom_line(aes(x=event, y = estimate, group = high_ff_score)) + labs( x = "Info Released", y = "Estimated log(price)")
+
+eff_pred_graph + theme_bw() + theme(legend.position = "bottom")
+```
+
+```{r}
+comps <- comparisons(triad_mod_4way, variables = "event",
+            newdata = datagrid(
+              high_ff_score = c(TRUE, FALSE), 
+              change_type =c("Always SFHA", "Never SFHA"), 
+              Triad = c("North", "South", "City")), vcov = FALSE)
+comps
+```
+
+```{r}
+
+df <- as.data.frame(results)
+
+ff_diff_by_sfha <- df |>
+  group_by(change_type) |>
+  summarize(
+    diff = estimate[high_ff_score == TRUE] -
+           estimate[high_ff_score == FALSE]
+  )
+
+ff_diff_by_sfha
+
+ff_diff_by_sfha |>
+  summarize(
+    moderation = diff[change_type == "Always SFHA"] -
+                 diff[change_type == "Never SFHA"]
+  )
+```
+
+
+> Price divergence between high- and low-risk properties is larger within SFHA areas
+
+
+```{r}
+table_df <- as.data.frame(results) |>
+  select(change_type, high_ff_score, estimate) |>
+  mutate(
+    ff_group = ifelse(high_ff_score, "High FF", "Low FF")
+  ) |>
+  select(-high_ff_score) |>
+  pivot_wider(
+    names_from = ff_group,
+    values_from = estimate
+  ) |>
+  mutate(
+    `Difference (High - Low)` = `High FF` - `Low FF`
+  )
+
+table_df |>
+  mutate(
+    across(c(`Low FF`, `High FF`, `Difference (High - Low)`),
+           ~ round(.x, 3))
+  )
+```
+
+"Entries report average changes in log sale prices from the pre- to post-information period, estimated separately by Flood Factor risk group and FEMA flood zone status. The final column reports the difference between high- and low-risk properties within each SFHA category."
+
+
+# prelim model check
+
+
+
+```{r}
+#| label: fig-avgpredictions-moderator-preliminarydates
+#| fig-cap: "**Preliminary Dates** Average predicted outcomes for different combinations of X, M1 and M2 (and Triad)."
+
+prelim_mod_4way = feols(log_price ~ change_type_prelim * high_ff_score * event * Triad | pin + sale_year, vcov = ~pin10, data= bldg_sfha)
+
+
+prelim_pred_graph <- plot_predictions(prelim_mod_4way, by = c( "event", "high_ff_score", "change_type_prelim", "Triad"  ), vcov = FALSE)  + geom_line(aes(x=event, y = estimate, group = high_ff_score)) + labs( x = "Info Released", y = "Estimated log(price)")
+
+prelim_pred_graph + theme_bw()
+```
+
+# (Wrong but simpler way) With highff_post (3-way interaction) 
+
+
+`highff_post == TRUE` if property had a high flood factor score and if the sale occurred after the data was available (i.e. if event==T and high_ff_score == T, then highff_post == T)
+
+
+
+**Is the effect of having a high flood score moderated by SFHA status?**
+
+`avg_comparisons(triad_mod, variables = "highff_post", by = "change_type")`
+
+The expected change in Y (logged sale price) associated with a change in X (one SFHA status to another) differs based on the value of `change_type`
+
+Never SFHA(-0.574) vs (-0.0450)
+
+Are these statistically significantly different from each other?
+
+**Table in Dissertation:**
+
+```{r}
+simp_mod <- feols(log_price ~ highff_post | pin + sale_year, data = bldg_sfha, vcov = ~ pin10)
+
+mod_3way <- feols(log_price ~ change_type * highff_post | pin + sale_year, data = bldg_sfha, vcov = ~ pin10)
+
+modelsummary(list(simp_mod, mod_3way), stars = TRUE)
+```
+
+```{r}
+#| error: true
+
+triad_mod <- feols(log_price ~ change_type * highff_post * Triad | pin + sale_year, data = bldg_sfha, vcov = ~ pin10)
+
+modelsummary(triad_mod, stars = TRUE)
+
+post_by_changetype <- avg_comparisons(triad_mod, variables = "highff_post", by = "change_type")
+post_by_changetype
+```
+
+Are the coefficients for Always SFHA and Never SFHA statistically different from each other? 
+
+```{r}
+#| error: true
+
+avg_comparisons(triad_mod, variables = "highff_post", by = "change_type", hypothesis = "b1=b2")
+
+```
+
+Always SFHA not statistically significant from Never SFHA
+
