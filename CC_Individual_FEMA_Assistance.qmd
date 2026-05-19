@@ -710,6 +710,24 @@ ind_assist %>%
   DT::datatable(rownames = FALSE)
 ```
 
+```{r}
+#| label: tbl-2023totals
+#| tbl-cap: "Applications awarded funds. Both Flood Events in 2023"
+
+
+ind_assist %>% 
+  filter(disasterNumber %in% c(4728, 4749) ) |>
+
+  filter(ihpAmount > 0) |>
+  group_by(disasterNumber, floodInsurance) %>% 
+  summarize(claimcount = n(),
+                #ihpAmount = round(sum(ihpAmount, na.rm=TRUE)),
+           )  %>% 
+  arrange(desc(claimcount)) %>%
+  pivot_wider(values_from = claimcount, names_from = floodInsurance) %>% 
+  arrange(desc(`TRUE`)) |> 
+  DT::datatable(rownames = FALSE)
+```
 
 
 ```{r}
