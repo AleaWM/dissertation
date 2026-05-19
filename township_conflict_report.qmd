@@ -1,0 +1,76 @@
+---
+title: "Conflicting Flood-Risk Flags"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    df-print: paged
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+params:
+  township: "01"
+  data_rds: "outputs/township_reports/data/sfha_conflict_sf.rds"
+---
+
+```{r}
+library(sf)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+twp <- params$township
+sfha_conflict_sf <- readRDS(params$data_rds) |>
+  mutate(township = str_sub(pin10, 1, 2)) |>
+  filter(conflict_score > 0, township == twp)
+
+n_parcels <- nrow(sfha_conflict_sf)
+n_pins <- length(unique(sfha_conflict_sf$pin10))
+```
+
+## Township `r twp`
+
+- Conflicting parcels (rows): **`r n_parcels`**
+- Unique PINs: **`r n_pins`**
+
+## Map
+
+```{r fig.height=7, fig.width=7}
+ggplot(sfha_conflict_sf) +
+  geom_sf(aes(fill = factor(conflict_score)), linewidth = 0) +
+  scale_fill_manual(
+    values = c(
+      "0" = "gray",
+      "1" = "#fee08b",
+      "2" = "#f46d43",
+      "3" = "#d73027",
+      "4" = "#7f0000"
+    ),
+    name = "Conflict score"
+  ) +
+  labs(
+    title = paste0("Parcels with conflicting flood-risk classifications (Township ", twp, ")"),
+    subtitle = "Counts disagreements across spatial methods and risk thresholds"
+  ) +
+  theme_void()
+```
+
+## Offending PINs (top of the pile)
+
+```{r}
+sfha_conflict_sf |>
+  st_drop_geometry() |>
+  count(pin10, conflict_score, sort = TRUE) |>
+  arrange(desc(conflict_score), desc(n))
+```
+
+## Full parcel list for this township
+
+```{r}
+sfha_conflict_sf |>
+  st_drop_geometry() |>
+  select(pin10, conflict_score, everything()) |>
+  arrange(desc(conflict_score))
+```
