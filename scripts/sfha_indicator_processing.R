@@ -40,8 +40,8 @@ source("R/helper_pins_to_drop.R")
 #   parcel_1in500_2018.xlsx, parcel_1in500_2026.xlsx
 # Adjust these names if your actual files differ.
 files <- list(
-  bldg_sfha_2018      = "./data/processed/bldg_parcel_sfha_2018.xlsx",
-  bldg_sfha_2026      = "./data/processed/bldg_parcel_sfha_2026.xlsx",
+  bldg_sfha_2018      = "./data/processed/bldg_parcel_sfha_2018_redo2.xlsx",
+  bldg_sfha_2026      = "./data/processed/bldg_parcel_sfha_2026_redo2.xlsx",
   bldg_1in500_2018    = "./data/processed/bldg_parcel_1in500_2018.xlsx",
   bldg_1in500_2026    = "./data/processed/bldg_parcel_1in500_2026.xlsx",
   parcel_sfha_2018    = "./data/processed/parcel_SFHA_2018.xlsx",
@@ -116,7 +116,7 @@ indicator_combined <- indicator_combined %>%
 # -------------------------------------------------------------------
 # Write the combined indicator dataset to folder  This CSV can be
 # joined to other parcel datasets via pin10.
-write_rds(indicator_combined, "data/processed/indicator_combined.RDS")
+write_rds(indicator_combined, "data/processed/indicator_combined_redo.RDS")
 
 skimr::skim(indicator_combined)
 
@@ -148,6 +148,11 @@ tar_load(sfha_compare_pin10_fourway)
 #   "  - indicator_summary.csv")
 #
 
+# made with old r scripts most likely. seeing if this has more of the missing FIRM data.
+# I'm suspicious that the parcels that landed on a FIRM panel line didn't get the FIRM info when ARCGIS did the join.
+parcels_with_firms_old <- read_csv("data/processed/parcels_withFIRMs_20260108.csv") |>
+  select(pin10, FIRM_PAN) |> distinct()
+
 
 # made in ArcGIS using 2025 parcels. Is missing any parcel that didn't still exist in 2025.
 parcels_with_firms <- readxl::read_xlsx("data/processed/parcel_centroids_FIRM_PAN.xlsx") |>
@@ -171,16 +176,28 @@ parcels_with_firm_dates <- left_join(parcels_with_firms, firm_dates_file, by = "
     VERSION_ID = first(VERSION_ID)) |>
   ungroup()
 
+parcels_with_firm_dates |> filter(is.na(FIRM_PAN))
+
 # check if parcels mapped to more than one FIRM panel
 stopifnot(parcels_with_firm_dates |> group_by(pin10) |> summarize(n = n()) |> filter(n > 1) |> count(pin10) > 0)
 
 # indicator file created from ArcGIS selection of intersecting features.
 # Made in Feb 2026 for checking R targets pipeline
-indicator_combined <- read_rds("data/processed/indicator_combined.RDS")
+# Made redo version March 16 2026 for checking work
+indicator_combined_redo <- read_rds("data/processed/indicator_combined_redo.RDS")
 
 # tried full join, March 5 2025
 nfhl_indicators <- parcels_with_firm_dates |>
-  left_join(indicator_combined, by = "pin10")
+  full_join(indicator_combined, by = "pin10")
+
+
+parcels_with_firms_old |> filter(is.na(FIRM_PAN))
+
+# missing_data |> filter(pin10 %in% parcels_with_firms_old$pin10)
+
+parcels_with_firms_old <- parcels_with_firms_old |> rename(old_firm_pan = FIRM_PAN)
+
+
 
 # functions from the targets pipeline
 source("R/sales_data_functions.R")
@@ -221,6 +238,19 @@ repeat_res_sales <- res_sales |>
   mutate(times_sold = n()) |>
   filter(times_sold > 1) |> ungroup()
 
+# removed <- readxl::read_xlsx("data/processed/only_2018_redo2 - Bldg Removed from SFHA.xlsx")
+# added <- readxl::read_xlsx("data/processed/only_2026_redo2_vs_2018 - Bldg Added to SFHA.xlsx")
+#
+# repeats_removed <- repeat_res_sales |> filter(pin10 %in% removed$PIN10)
+#
+# repeats_removed |> distinct(pin10) # 494 distinct pins, 325 distinct parcels
+#
+# repeats_added <- repeat_res_sales |>
+#   filter(pin10 %in% added$PIN10)
+#
+# repeats_added |> distinct(pin10) # 630 distinct pins, 40 distinct parcels
+
+
 # just to know what is being excluded
 single_res_sales <- res_sales |>
   filter(sale_price > 25000) |>
@@ -242,16 +272,24 @@ single_res_sales |> filter(pin10 %in% indicator_combined$pin10[indicator_combine
 # tries to do initial pass of filling in missing FIRM panel.
 # This is a manually created list of parcels that needed FIRMS identified much earlier in the data cleaning process
 # fuction made in ./R/sfha_targets_functions.R
+
+sales_joined3 <- repeat_res_sales |>
+  mutate(pin10 = str_sub(pin, 1, 10)) |>
+  left_join(parcels_with_firm_dates)
+
+sales_joined3 |> filter(is.na(FIRM_PAN) & !pin10 %in% drop_parcels) |> distinct(pin10)
+
 sales_joined <- repeat_res_sales |>
   mutate(pin10 = str_sub(pin, 1, 10)) |>
-  left_join(nfhl_indicators, by = "pin10", relationship = "many-to-one") |> # has sfha and 1 in 500 polygon flags (TRUE/FALSE), lomr_date and LOMR_ID
+  left_join(nfhl_indicators, by = "pin10", relationship = "many-to-many") |> # has sfha and 1 in 500 polygon flags (TRUE/FALSE), lomr_date and LOMR_ID
   fill_missing_firm_pan() # list of 10 digit parcels and the FIRM they should be in.
 
 sales_joined |> filter(is.na(pin10)) # none missing, good.
 
 # parcels missing FIRM data. That is a lot.
-sales_joined |> # filter(!pin10 %in% drop_parcels & is.na(FIRM_PAN)) |>
+sales_joined |>  filter(!pin10 %in% drop_parcels & is.na(FIRM_PAN)) |>
   group_by(pin10) |> summarize(n = n()) |> arrange(desc(n))
+
 
 
 fallback_cols <- c(
@@ -293,6 +331,9 @@ old_fallback <- sfha_compare_pin10_fourway |>
     parcel_1in500_2018 = risk500_land_2018,
     parcel_1in500_2026 = risk500_land_2026,
   )
+
+sales_joined |> filter(is.na(FIRM_PAN) & pin10 %in% parcels_with_firms_old$pin10)
+
 
 sales_joined2 <- sales_joined |>
   left_join(old_fallback, by = "pin10", suffix = c("", "_old"))
@@ -339,19 +380,29 @@ filled_report <- sales_joined |>
 
 filled_report
 
+# increased observations but wasnt comparable with other output.
+# Also never examined quality of filled data so uncommenting again.
+# sales_joined2 <- sales_joined2 |> fill_missing_panels()
 
 
 sales_joined <- sales_joined2
 # sales_joined |> filter(is.na(PRE_DATE)) |> filter(!pin10 %in% drop_parcels)
 # sales_joined |> group_by(pin10) |> summarize(n = n()) |> arrange(desc(n))
 
-missing_data <- sales_joined |>
+# 16710 missing parcels, 20,531 pins on March 16 2026
+# 1074 pins after using fill_missing_panels() function
+missing_data <- sales_joined |> filter(!pin10 %in% drop_parcels) |>
   filter(is.na(FIRM_PAN)) |>
   distinct(pin,  pin10, sale_date, sale_price)
 
+sales_joined |> filter(!pin10 %in% drop_parcels) |>
+  filter(is.na(FIRM_PAN)) |>
+  group_by(township_code) |> summarize(n = n(), n_distinct = n_distinct(pin10)) |> View()
+
 
 dropped_data <- sales_joined |> filter(!pin10 %in% drop_parcels)
-# sales_joined |> filter(is.na(FIRM_PAN)) |> filter(!pin10 %in% drop_parcels)
+
+sales_joined |> filter(is.na(FIRM_PAN)) |> filter(!pin10 %in% drop_parcels)
 #
 # missing_data_parcels <- missing_data |> group_by(pin10) |> summarize(n = n()) |> arrange(desc(n))
 #
@@ -386,7 +437,7 @@ sales_joined <- sales_joined |>
   )
 
 # parcels that don't exist anymore
-sales_joined |> filter(is.na(FIRM_PAN)) |>
+sales_joined |> filter(!pin10 %in% drop_parcels) |> filter(is.na(FIRM_PAN)) |>
   group_by(pin10) |> distinct(pin10)
 
 # try to fill in any missing muni names
@@ -426,8 +477,6 @@ fill_missing_muni_by_nbhd_zip <- function(df_prep) {
     mutate(pin10 = str_sub(pin, 1, 10))
   out
 }
-
-skimr::skim(df_prep_final)
 
 
 pin_muni_key_file <-  "data/raw/pin_muni_key.csv"
@@ -658,5 +707,5 @@ keys <- names(specs)
 
 for (k in keys) {
   df_k <- build_variant_dataset(df_base = sales_joined, key = k, specs = specs)
-  saveRDS(df_k, file.path("data/processed/variants", paste0("df_prep_", k, "2026sales_notfiltered.rds")))
+  saveRDS(df_k, file.path("data/processed/variants", paste0("df_prep__", k, "arcgis_redo_2026sales.rds")))
 }
