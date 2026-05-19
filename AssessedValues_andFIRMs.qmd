@@ -37,6 +37,8 @@ ptaxsim_db_conn <- DBI::dbConnect(RSQLite::SQLite(), "C:/Users/aleaw/Documents/P
 # downloaded from CCAO gitlab website
 ## I used this to merge additional information to the pins and class data later on.
 class_dict <- read_csv("C:/Users/aleaw/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/Necessary_Files/class_dict.csv")
+
+class_dict <- read_csv("../Merriman RA/ptax/Necessary_Files/class_dict.csv")
 ```
 
 `scripts/detect_flood_variable_change_in_CCAO_data.R` pulls all pins that have the FEMA flood zone indicator from the Cook County Assessor's parcel universe dataset.    
@@ -178,13 +180,15 @@ flood_pins_ptax <- read_csv("outputs/pins_in_Blocks_2006_2023_20241126.csv")
 # flood_pins_ptax <- read_csv("outputs/pins_in_Blocks_2006_2022_04May2024.csv")
 
 nbh_pins <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
+nbh_pins2021 <- read_csv("outputs/nbh_pins_parceluniversepull2021.csv")
+nbh_pins2022 <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
 
 # has all potential property classes for pins
 # downloaded from CCAO gitlab website
 ## I used this to merge additional information to the pins and class data later on.
-class_dict <- read_csv("C:/Users/aleaw/OneDrive/Documents/PhD Fall 2021 - Spring 2022/Merriman RA/ptax/Necessary_Files/class_dict_expanded.csv")
+class_dict <- read_csv("../Merriman RA/ptax/Necessary_Files/class_dict_expanded.csv")
 
-ccao_loa <- read_csv("./inputs/ccao_loa.csv") %>%
+ccao_loa <- read_csv("../Merriman RA/ptax/inputs/ccao_loa.csv") %>%
   mutate(loa = ifelse(loa == 0, NA, loa))
 
 flood_pins_ptax <-  flood_pins_ptax |> left_join(class_dict, by = c("class" = "class_code"))
@@ -198,6 +202,7 @@ landblock_pins <- flood_pins_ptax |>
           fmv_clerk = av_clerk/loa)
 
 flood_pins_ptax22 <- flood_pins_ptax |> filter(year == 2022)
+
 flood_pins_ptax23 <- flood_pins_ptax |> filter(year == 2023)
 
 
@@ -318,254 +323,6 @@ block_sums %>% group_by(year) %>%
 ```
 
 
-```{r}
-block_sums %>% 
-  group_by(year, env_) %>% 
-  summarize(fmv_mailed = sum(fmv_mailed)/1000000000,
-                                            fmv_clerk= sum(fmv_clerk)/1000000000) %>%
-  ggplot() + geom_line(aes(x=year, y = fmv_mailed),color = "black") +
-  geom_line(aes(x=year, y = fmv_clerk), color = "blue") + 
-  labs(x = "Year", y = "FMV ($ Billions)", title = "Mailed and Final FMV", caption= "Black line is Mailed FMV, blue line is final FMV amounts. \n Assessment Ratios changed in 2009 and there was the housing bubble.")
-```
-
-## Per Neighborhood
-
-```{r nbhds_for2021, eval=FALSE}
-#| layout-ncol: 2
-
-nbh_pins <- read_csv("outputs/nbh_pins_parceluniversepull2021.csv")
-
-
-flood_pins_ptax %>% 
-  filter(year == 2021 & SFHA == 1) %>%
-  left_join(nbh_pins, by = "pin") %>%
-  group_by(nbhd_code) %>% 
-    summarize(count = n()) %>% 
-  mutate(nbhd_code = as.character(nbhd_code)) %>%
-
-  full_join(NBHs, by = c("nbhd_code" = "town_nbhd")) %>% 
-  arrange(-count) %>%
-  ggplot(aes(fill = count)) + 
-  geom_sf(aes(geometry = geometry), color = "black") + 
-  labs(title = "Tax Year 2021: Count of PINs per nbhd in SFHA",
-       subtitle = 
-         "All Property Types", 
-  caption = "") +
-  theme_void() + 
-  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
-  scale_fill_steps2(
-    high = "darkblue", low = "black",
-  na.value = "white",
-  nice.breaks = FALSE,
-  show.limits=TRUE,
-  name = "Count",
-  )
-
-flood_pins_ptax %>% 
-  filter(year == 2021 & SFHA == TRUE) %>%
-  filter(major_class == 2) %>%
-  left_join(nbh_pins, by = "pin") %>%
-  mutate(nbhd_code = as.character(nbhd_code)) %>%
-  group_by(nbhd_code) %>% 
-  summarize(count = n()) %>% 
-  full_join(NBHs, by = c("nbhd_code" = "town_nbhd")) %>% 
-  arrange(-count) %>%
-  ggplot(aes(fill = count)) + 
-  geom_sf(aes(geometry = geometry), color = "black") + 
-  labs(title = "Tax Year 2021: Count of Residential PINs per nbhd in SFHA", 
-       caption = "") +
-  theme_void() + 
-  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
-  scale_fill_steps2(
-    high = "darkgreen", low = "black",
-    na.value = "white",
-    nice.breaks = FALSE,
-    show.limits=TRUE,
-    name = "Count",
-  )
-```
-
-```{r nbhds_for2022}
-#| layout-ncol: 2
-
-nbh_pins2022 <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
-
-flood_pins_ptax %>% 
-  filter(year == 2022 & SFHA == 1) %>%
-  left_join(nbh_pins2022, by = "pin") %>%
-  group_by(nbhd_code) %>% 
-    summarize(count = n()) %>% 
-  mutate(nbhd_code = as.character(nbhd_code)) %>%
-
-  full_join(NBHs, by = c("nbhd_code" = "town_nbhd")) %>% 
-  arrange(-count) %>%
-  ggplot(aes(fill = count)) + 
-  geom_sf(aes(geometry = geometry), color = "black") + 
-  labs(title = "Tax Year 2022: Count of PINs per nbhd in SFHA",
-       subtitle = 
-         "All Property Types", 
-  caption = "") +
-  theme_void() + 
-  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
-  scale_fill_steps2(
-    high = "darkblue", low = "black",
-  na.value = "white",
-   nice.breaks = FALSE,
-    show.limits=TRUE,
-    name = "Count",
-  )
-
-flood_pins_ptax %>% 
-  filter(year == 2022 & SFHA == 1) %>%
-  filter(major_class == 2) %>%
-  left_join(nbh_pins2022, by = "pin") %>%
-    mutate(nbhd_code = as.character(nbhd_code)) %>%
-
-  group_by(nbhd_code) %>% 
-    summarize(count = n()) %>% 
-
-  full_join(NBHs, by = c("nbhd_code" = "town_nbhd")) %>% 
-  arrange(-count) %>%
-  
- # full_join(nbh_shp, by = c("agency_name" = "AGENCY_DESC")) %>%
-  ggplot(aes(fill = count)) + 
-  geom_sf(aes(geometry = geometry), color = "black") + 
-  labs(title = "Tax Year 2022: Count of Residential PINs per nbhd in SFHA", 
-  caption = "") +
-  theme_void() + 
-  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
-  scale_fill_steps2(
-    high = "darkgreen", low = "black",
-  na.value = "white",
-    nice.breaks = FALSE,
-    show.limits=TRUE,
-    name = "Count",
-  )
-```
-
-```{r parcels_in_nbhds_for2022, fig.ncol=2}
-#| layout-ncol: 2
-
-nbh_pins2022 <- read_csv("outputs/nbh_pins_parceluniversepull2022.csv")
-
-flood_pins_ptax %>% 
-  filter(year == 2022 & SFHA == 1) %>%
-  left_join(nbh_pins2022, by = "pin") %>%
-  group_by(nbhd_code) %>% 
-    summarize(count = n_distinct(parcel_num)) %>% 
-  mutate(nbhd_code = as.character(nbhd_code)) %>%
-
-  full_join(NBHs, by = c("nbhd_code" = "town_nbhd")) %>% 
-  arrange(-count) %>%
-  ggplot(aes(fill = count)) + 
-  geom_sf(aes(geometry = geometry), color = "black") + 
-  labs(title = "Tax Year 2022: Count of Parcels per nbhd in SFHA",
-       subtitle = 
-         "All Property Types", 
-  caption = "") +
-  theme_void() + 
-  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
-  scale_fill_steps2(
-    high = "darkblue", low = "black",
-  na.value = "white",
-   nice.breaks = FALSE,
-    show.limits=TRUE,
-    name = "Count",
-  )
-
-flood_pins_ptax %>% 
-  filter(year == 2022 & SFHA == 1) %>%
-  filter(major_class == 2) %>%
-  left_join(nbh_pins2022, by = "pin") %>%
-    mutate(nbhd_code = as.character(nbhd_code)) %>%
-
-  group_by(nbhd_code) %>% 
-    summarize(count = n_distinct(parcel_num)) %>% 
-
-  full_join(NBHs, by = c("nbhd_code" = "town_nbhd")) %>% 
-  arrange(-count) %>%
-  
- # full_join(nbh_shp, by = c("agency_name" = "AGENCY_DESC")) %>%
-  ggplot(aes(fill = count)) + 
-  geom_sf(aes(geometry = geometry), color = "black") + 
-  labs(title = "Tax Year 2022: Count of Residential Parcels per nbhd in SFHA", 
-  caption = "") +
-  theme_void() + 
-  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
-  scale_fill_steps2(
-    high = "darkgreen", low = "black",
-  na.value = "white",
-    nice.breaks = FALSE,
-    show.limits=TRUE,
-    name = "Count",
-  )
-```
-
-
-```{r nbhds_for2023, eval = FALSE, include = FALSE}
-#| layout-ncol: 2
-
-nbh_pins2023 <- read_csv("outputs/nbh_pins_parceluniversepull2023.csv")
-
-
-flood_pins_ptax %>% 
-  filter(year == 2023 &SFHA == TRUE) %>%
-  left_join(nbh_pins2023, by = "pin") %>%
-  group_by(nbhd_code) %>% 
-    summarize(count = n()) %>% 
-  mutate(nbhd_code = as.character(nbhd_code)) %>%
-
-  full_join(NBHs, by = c("nbhd_code" = "town_nbhd")) %>% 
-  arrange(-count) %>%
-  
- # full_join(nbh_shp, by = c("agency_name" = "AGENCY_DESC")) %>%
-  ggplot(aes(fill = count)) + 
-  geom_sf(aes(geometry = geometry), color = "black") + 
-  labs(title = "Tax Year 2023: Count of PINs per nbhd in SFHA",
-       subtitle = 
-         "All Property Types", 
-  caption = "") +
-  theme_void() + 
-  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
-  scale_fill_steps2(
-    high = "darkblue", low = "black",
-  #  breaks = breaks_sd,  # tried to do breaks based on standard deviation but map does that in an easier way by setting the midpoint.
-  na.value = "white",
-  #  nice.breaks = FALSE,
-    show.limits=TRUE,
-    name = "Count",
-   # labels = scales::
-  )
-
-flood_pins_ptax %>% 
-  filter(year == 2023 &SFHA == TRUE) %>%
-  filter(major_class == 2) %>%
-  left_join(nbh_pins2023, by = "pin") %>%
-    mutate(nbhd_code = as.character(nbhd_code)) %>%
-
-  group_by(nbhd_code) %>% 
-    summarize(count = n()) %>% 
-
-  full_join(NBHs, by = c("nbhd_code" = "town_nbhd")) %>% 
-  arrange(-count) %>%
-  
- # full_join(nbh_shp, by = c("agency_name" = "AGENCY_DESC")) %>%
-  ggplot(aes(fill = count)) + 
-  geom_sf(aes(geometry = geometry), color = "black") + 
-  labs(title = "Tax Year 2023: Count of Residential PINs per nbhd in SFHA", 
-  caption = "") +
-  theme_void() + 
-  theme(axis.ticks = element_blank(), axis.text = element_blank())+# +#+
-  scale_fill_steps2(
-    high = "darkgreen", low = "black",
-  #  breaks = breaks_sd,  # tried to do breaks based on standard deviation but map does that in an easier way by setting the midpoint.
-  na.value = "white",
-  #  nice.breaks = FALSE,
-    show.limits=TRUE,
-    name = "Count",
-   # labels = scales::
-  )
-```
 
 ## Per Township
 
@@ -725,15 +482,24 @@ flood_pins_ptax %>%
 #   anti_join(muni_shp, b = c( "shpfile_name" = "MUNICIPALITY") )
 
 # Everything joined 2/8/2024
+muni_names <- read_csv("data/raw/pin_muni_key.csv")
+
+tc_muninames <- read_csv("data/raw/muniname_taxcode_key.csv") 
+
+clean_names <- readxl::read_excel("../Merriman RA/ptax/Necessary_Files/muni_shortnames.xlsx") |>
+  mutate(agency_num = str_pad(agency_number, 9, "left", "0"))
+
+tc_muninames <- left_join(tc_muninames, clean_names)
+
+muni_shp <- read_sf("../Merriman RA/ptax/Necessary_Files/muni_shp.shp")
 
 flood_pins_ptax %>%
   filter(year == 2021 & SFHA == 1) %>%
-  mutate(tax_code_num = as.character(tax_code_num)) %>%
   left_join(tc_muninames, by = "tax_code_num") %>%
   filter(!is.na(clean_name )) %>%
    group_by(shpfile_name) %>% 
     summarize(count = n()) %>% 
-  full_join(muni_shp, b = c( "shpfile_name" = "MUNICIPALITY") ) %>%
+  full_join(muni_shp, b = c( "shpfile_name" = "MUNICIP") ) %>%
 arrange(-count) %>%
 ggplot(aes(fill = count)) + 
   geom_sf(aes(geometry = geometry), color = "black") + 
@@ -750,12 +516,11 @@ ggplot(aes(fill = count)) +
 
 flood_pins_ptax %>%
   filter(year == 2022 & SFHA == 1) %>%
-  mutate(tax_code_num = as.character(tax_code_num)) %>%
   left_join(tc_muninames, by = "tax_code_num") %>%
   filter(!is.na(clean_name )) %>%
    group_by(shpfile_name) %>% 
     summarize(count = n_distinct(parcel_num)) %>% 
-  full_join(muni_shp, b = c( "shpfile_name" = "MUNICIPALITY") ) %>%
+  full_join(muni_shp, b = c( "shpfile_name" = "MUNICIP") ) %>%
 arrange(-count) %>%
 ggplot(aes(fill = count)) + 
   geom_sf(aes(geometry = geometry), color = "black") + 
@@ -774,12 +539,11 @@ ggplot(aes(fill = count)) +
 ```{r muni_sfhas_2022, eval=FALSE, include=FALSE}
 flood_pins_ptax %>%
   filter(year == 2022 & SFHA == 1) %>%
-  mutate(tax_code_num = as.character(tax_code_num)) %>%
   left_join(tc_muninames, by = "tax_code_num") %>%
   filter(!is.na(clean_name )) %>%
    group_by(shpfile_name) %>% 
     summarize(count = n()) %>% 
-  full_join(muni_shp, b = c( "shpfile_name" = "MUNICIPALITY") ) %>%
+  full_join(muni_shp, b = c( "shpfile_name" = "MUNICIP") ) %>%
 arrange(-count) %>%
 ggplot(aes(fill = count)) + 
   geom_sf(aes(geometry = geometry), color = "black") + 
