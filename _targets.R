@@ -2,6 +2,8 @@
 library(targets)
 library(tarchetypes)
 
+# tar_visnetwork(targets_only = TRUE, exclude = c("border"))
+
 tar_option_set(
   packages = c("sf", "dplyr", "readr", "readxl", "stringr", "tidyr", "lubridate", "tibble")
 )
@@ -33,6 +35,7 @@ source("R/sfha_targets_functions.R")
 source("R/sales_data_functions.R")
 source("R/indicator_final_functions.R")
 source("R/q1_targets_functions.R")
+source("R/helper_sfha_disagreement_flags.R")
 # source("R/helper_pins_to_drop.R")
 # source()
 
@@ -632,6 +635,100 @@ list(
       slice_head(n = 1) |>
       ungroup()
   ),
+
+  tar_target(
+    sfha_compare_pin10_fourway_flagged,
+    add_indicator_disagreement_flags(
+      sfha_compare_pin10_fourway,
+      years = c("2018", "2026")
+    )
+  ),
+
+
+  # ----- Keep only relevant parcels and score conflicts ----------------
+
+  tar_target(
+    sfha_conflict_scored,
+    {
+      row_any_true01 <- function(df, cols) {
+        if (length(cols) == 0) return(rep(FALSE, nrow(df)))
+
+        x <- df[, cols, drop = FALSE]
+
+        x01 <- lapply(x, function(v) {
+          if (is.logical(v)) return(v %in% TRUE)
+          v %in% 1
+        }) |>
+          as.data.frame()
+
+        rowSums(x01, na.rm = TRUE) > 0
+      }
+
+      sfha_cols <- names(sfha_compare_pin10_fourway_flagged)[
+        grepl("sfha(2018|2026)$", names(sfha_compare_pin10_fourway_flagged))
+      ]
+
+      sfha_compare_pin10_fourway_flagged |>
+        mutate(
+          ever_sfha = row_any_true01(cur_data(), sfha_cols),
+          ever_lomr = rowSums(
+            across(any_of(c("lomr_date", "bldg_lomr_date")), ~ !is.na(.x)),
+            na.rm = TRUE
+          ) > 0
+        ) |>
+        filter(ever_sfha | ever_lomr) |>
+        mutate(
+          conflict_score = rowSums(
+            cbind(
+              any_diff_sfha_land_vs_bldg,
+              any_diff_risk500_land_vs_bldg,
+              any_diff_land_1pct_vs_0p2pct,
+              any_diff_bldg_1pct_vs_0p2pct
+            ),
+            na.rm = TRUE
+          )
+        ) |>
+        select(
+          pin10,
+          conflict_score,
+          any_diff_sfha_land_vs_bldg:any_diff_bldg_1pct_vs_0p2pct,
+          everything()
+        ) |>
+        arrange(desc(conflict_score))
+    }
+  ),
+
+
+  # ----- Attach geometry for township maps ----------------------------
+
+  tar_target(
+    sfha_conflict_sf,
+    {
+      ptaxsim_parcels_sf |>
+        select(pin10, geometry) |>
+        inner_join(sfha_conflict_scored, by = "pin10") |>
+        filter(conflict_score > 0)
+    }
+  ),
+
+
+  # ----- Save report-ready RDS ----------------------------------------
+
+  tar_target(
+    sfha_conflict_sf_rds,
+    {
+      out_data_dir <- file.path("outputs", "township_reports", "data")
+      dir.create(out_data_dir, recursive = TRUE, showWarnings = FALSE)
+
+      out_file <- file.path(out_data_dir, "sfha_conflict_sf.rds")
+      saveRDS(sfha_conflict_sf, out_file)
+
+      out_file
+    },
+    format = "file"
+  ),
+
+
 
   # ---- Prep Sales Data ----
 
