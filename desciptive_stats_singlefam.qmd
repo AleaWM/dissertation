@@ -1,5 +1,5 @@
 ---
-title: "The \"Easy\" PINs - Single-Family only"
+title: "The \"Easy\" PINs - Single-Family only - Assessed Values"
 format: 
   html:
     toc: true
@@ -7,7 +7,7 @@ format:
 
 > **The single_fam csv is the "easy" PINs -- properties that were always residential and existed all years.** 
 
-This file uses `./data/processed/singlefamily_assessed_values.csv` which was created in `create_panel_data.qmd`. 
+This file uses `./data/processed/singlefamily_assessed_values.csv` which was created in `make_panel_data`. 
 
 - [X] TO DO: Change pre_date of 9999-09-08 to beginning of study period
 
@@ -17,7 +17,7 @@ This file uses `./data/processed/singlefamily_assessed_values.csv` which was cre
   - [X] Join FIRM data to parcels      
     - `parcels_wFIRMS.csv` from `pull_parcel_sfs.R`. Uses XY coordinates for parcel centroids from ptaxsim.db and intersects with 2024 FIRM polygons.
     - CSV version of 2024 FIRMs in `S_FIRM_PAN.csv`
-  - [ ] **Need to manually add preliminary dates**  -- Partially done  
+  - [X] **Need to manually add preliminary dates** 
   
   - [X] do same for effective date (when financial implications become active for mortgage holders)
     - `in_eff_sfha`
