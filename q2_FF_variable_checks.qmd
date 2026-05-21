@@ -139,6 +139,8 @@ After Flood Factor information became available, high-risk properties sold for r
 
 ## Ordinal Flood Factor Models
 
+::: {.panel-tabset}
+
 ### Ordinal FF TWFE
 
 The ordinal specifications estimate separate post-release effects for each Flood Factor score category. These models are useful for identifying whether the price response is concentrated among higher Flood Factor scores rather than changing linearly across the full scale.
@@ -149,14 +151,10 @@ ordinal_table
 
 
 
-### Marginal Effects: Ordinal Flood Factor Scores
-
-The following marginal effects summarize the estimated post-release price change for each Flood Factor score across Cook County regions.
-
-::: {.panel-tabset}
 
 
-#### Marginal Effects Figure
+
+### Marginal Effects Figure
 
 ```{r ordinal-me-figure, fig.width=8, fig.height=5.5}
 p_ordinal_event
@@ -164,7 +162,10 @@ p_ordinal_event
 
 The ordinal marginal effects are the clearest way to communicate the nonlinear pattern. Lower Flood Factor scores generally show smaller estimated price responses, while higher scores show larger negative post-release effects.
 
-#### Marginal Effects Table
+### Marginal Effects Table
+
+
+The following marginal effects summarize the estimated post-release price change for each Flood Factor score across Cook County regions.
 
 ```{r ordinal-me-table}
 ordinal_event_effects |>
@@ -183,7 +184,7 @@ ordinal_event_effects |>
   modelsummary::datasummary_df(output = "gt")
 ```
 
-#### Ordinal Flood Factor by SFHA Change Type and Triad
+### Ordinal Flood Factor by SFHA Change Type and Triad
 
 These models are more saturated and should usually be treated as appendix or robustness material. They are useful for checking whether Flood Factor effects differ depending on FEMA floodplain status, but the number of interaction cells makes direct coefficient interpretation difficult.
 
@@ -210,7 +211,7 @@ p_ordinal_change_type
 ```
 
 
-#### Ordinal Model Diagnostics
+### Ordinal Model Diagnostics
 
 The following table identifies coefficients omitted from interpretation due to extremely large standard errors or lack of identification under the fixed-effects structure. Large standard errors typically indicate that a coefficient is not identified within the property fixed-effects framework because the underlying variable does not vary within parcels over time, or because certain interaction combinations contain extremely sparse observations.
 
