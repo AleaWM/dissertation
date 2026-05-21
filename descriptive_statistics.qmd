@@ -1,0 +1,288 @@
+---
+title: "Descriptive Statistics"
+subtitle: "Flood Factor scores, recent residential sales, and FEMA individual assistance claims"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    code-fold: show
+    code-tools: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(readr)
+library(stringr)
+library(DT)
+library(scales)
+
+nice_dt <- function(df,
+                    page_length = 10,
+                    paging = NULL,
+                    caption = NULL,
+                    ...) {
+
+  # automatically determine whether paging is needed
+  if (is.null(paging)) {
+    paging <- nrow(df) > page_length
+  }
+
+  DT::datatable(
+    df,
+    rownames = FALSE,
+    caption = caption,
+    options = list(
+      paging = paging,
+      pageLength = page_length,
+      searching = FALSE,
+      info = paging,
+      lengthChange = FALSE,
+      autoWidth = TRUE
+    ),
+  )
+}
+```
+
+# Purpose
+
+This page documents several descriptive statistics used in the dissertation text. The calculations summarize:
+
+1. the number and share of residential properties with elevated First Street Foundation Flood Factor scores;
+2. the number of high-risk residential properties that sold after Flood Factor information became publicly available;
+3. the number of FEMA individual assistance claims associated with selected Cook County flood disasters, by flood insurance status.
+
+This page is designed as a transparent calculation record. The code is shown so readers can see how each statistic was produced.
+
+# Data sources
+
+The calculations below use the following files.
+
+| File | Description | Source note |
+|---|---|---|
+| `data/raw/parcel_universe_currentyear.csv` | Parcel universe file used to define the broader parcel population. | This file was downloaded from **___FILL IN SOURCE___** on **___FILL IN DATE___**. |
+| `data/processed/floodfactor_scores.csv` | First Street Foundation Flood Factor scores joined to parcel identifiers. | This file was created from **___FILL IN SOURCE / API / EXPORT___** on **___FILL IN DATE___**. |
+| `data/raw/residential_pins_ever.csv` | Residential parcel identifiers and property class information. | This file was downloaded from **___FILL IN SOURCE___** on **___FILL IN DATE___**. |
+| `data/processed/res_sales.rds` | Processed residential sales file. | This file was created from **___FILL IN SOURCE / PROCESSING SCRIPT___**. |
+| `data/processed/City_Name_Mapping.csv` | Crosswalk from raw municipality names to cleaned municipality names. | This file was manually created / downloaded from **___FILL IN SOURCE___**. |
+| `data/raw/indiv_assistance_V2_CookCounty.csv` | FEMA Individual Assistance records for Cook County. | This file was downloaded from **___FILL IN FEMA DATA SOURCE___** on **___FILL IN DATE___**. |
+
+# Residential parcels and Flood Factor scores
+
+The first step loads the parcel universe, First Street Foundation Flood Factor scores, and residential parcel identifiers. Residential parcels are restricted to the 2023 residential PIN file and then joined to the Flood Factor score data.
+
+```{r}
+#| label: load-residential-flood-factor-data
+
+puniverse <- read_csv("data/raw/parcel_universe_currentyear.csv")
+
+ff_scores <- read_csv("data/processed/floodfactor_scores.csv")
+
+res_pins <- read_csv("data/raw/residential_pins_ever.csv") |>
+  filter(year == 2023) |>
+  distinct(pin, class)
+
+
+res_sales <- read_rds("data/processed/delete_probably/res_sales.rds") |>
+  group_by(pin) |>
+  summarize(year = max(year), .groups = "drop")
+
+recent_res_sales <- res_sales |>
+  filter(year > 2019)
+
+pins <- left_join(res_pins, ff_scores)
+
+```
+
+## Residential parcels with high Flood Factor scores
+
+This calculation counts residential class 200 properties with a Flood Factor score greater than 4. In this file, `env_flood_fs_factor > 4` corresponds to Flood Factor scores of 5 or higher.
+
+```{r}
+#| label: count-residential-high-flood-factor
+
+high_ff_residential_count <- pins |>
+  filter(env_flood_fs_factor > 4, class > 199, class < 300) |>
+  summarize(n = n()) |>
+  pull(n)
+
+high_ff_residential_count 
+```
+
+The share of residential parcels with high Flood Factor scores is calculated as follows.
+
+```{r}
+#| label: share-residential-high-flood-factor
+
+share_high_ff_residential <- high_ff_residential_count / nrow(res_pins)
+
+share_high_ff_residential
+percent(share_high_ff_residential, accuracy = 0.1)
+```
+
+# Recent sales among high Flood Factor properties
+
+This section identifies high Flood Factor properties that sold after 2019. This helps describe the number of properties for which flood risk information may have been capitalized into transaction prices after the public release of Flood Factor information.
+
+```{r}
+#| label: recent-sales-high-ff-properties
+
+high_ff_recent_sales <- pins |>
+  filter(env_flood_fs_factor > 4, pin %in% recent_res_sales$pin) |>
+  distinct(pin)
+
+n_high_ff_recent_sales <- nrow(high_ff_recent_sales)
+
+n_high_ff_recent_sales
+```
+
+The share of high Flood Factor residential properties with a recent sale is calculated below.
+
+```{r}
+#| label: share-high-ff-with-recent-sale
+
+share_high_ff_with_recent_sale <- n_high_ff_recent_sales / high_ff_residential_count
+
+share_high_ff_with_recent_sale
+percent(share_high_ff_with_recent_sale, accuracy = 0.1)
+```
+
+# Flood Factor thresholds
+
+The next table summarizes the number of parcels above several Flood Factor thresholds. The table separates residential class 200 parcels from other parcels.
+
+```{r}
+#| label: tbl-flood-factor-thresholds
+#| tbl-cap: "Number of parcels above selected First Street Foundation Flood Factor thresholds, by residential class 200 status."
+
+puni_pins_coded <- pins |>
+  mutate(
+    FFS_4plus = env_flood_fs_factor >= 4,
+    FFS_5plus = env_flood_fs_factor >= 5,
+    FFS_6plus = env_flood_fs_factor >= 6,
+    Res_C2 = class > 199 & class < 300
+  )
+
+ff_threshold_summary <- puni_pins_coded |>
+  group_by(Res_C2) |>
+  summarize(
+    FFS_4plus = sum(FFS_4plus, na.rm = TRUE),
+    FFS_5plus = sum(FFS_5plus, na.rm = TRUE),
+    FFS_6plus = sum(FFS_6plus, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) |>
+  mutate(
+    share_FFS_4plus = FFS_4plus / n,
+    share_FFS_5plus = FFS_5plus / n,
+    share_FFS_6plus = FFS_6plus / n
+  )
+
+ff_threshold_summary |>
+  mutate(
+    across(starts_with("share_"), ~ percent(.x, accuracy = 0.1))
+  )
+```
+
+# FEMA Individual Assistance claims
+
+This section summarizes FEMA Individual Assistance claims for selected Cook County flood disaster declarations.
+
+The FEMA Individual Assistance file was downloaded from **___FILL IN FEMA DATA SOURCE___**. The file is filtered to Cook County, Illinois, and to selected flood-related disaster numbers.
+
+```{r}
+#| label: load-fema-individual-assistance
+
+city_names <- read_csv("./data/processed/City_Name_Mapping.csv")
+
+ind_assist_raw <- read_csv("./data/raw/indiv_assistance_V2_CookCounty.csv")
+
+ind_assist <- ind_assist_raw |>
+  filter(incidentTypeCode != "B", disasterNumber != "1763") |>
+  mutate(
+    year = str_sub(declarationDate, 1, 4),
+    year = as.numeric(year),
+    joinyear = case_when(
+      year <= 2010 ~ 2000,
+      year < 2020 & year > 2010 ~ 2010,
+      year > 2020 ~ 2020,
+      TRUE ~ year
+    ),
+    tract = str_sub(censusGeoid, 6, 9),
+    tract = str_pad(tract, width = 6, pad = "0", side = "right")
+  ) |>
+  left_join(city_names)
+```
+
+## Cook County disaster records
+
+The object below keeps all Cook County records, excluding disaster number 4819.
+
+```{r}
+#| label: cook-county-assistance-records
+
+cook_assist <- ind_assist |>
+  filter(county == "Cook (County)", disasterNumber != "4819")
+
+cook_assist |>
+  count(disasterNumber, declarationDate, incidentTypeCode, sort = TRUE) |> nice_dt()
+```
+
+## Selected 2023 flood disaster declarations
+
+The dissertation text focuses on selected 2023 Cook County flood events. This section filters to disaster numbers 4728 and 4749.
+
+```{r}
+#| label: selected-cook-county-flood-disasters
+
+selected_flood_assist <- ind_assist |>
+  filter(
+    county == "Cook (County)",
+    disasterNumber %in% c("4728", "4749", 4728, 4749)
+  )
+
+selected_flood_assist |>
+  count(disasterNumber, declarationDate, sort = TRUE) |> 
+nice_dt()
+
+```
+
+The table below counts Individual Assistance claims with positive `ihpAmount`, grouped by disaster number and flood insurance status.
+
+```{r}
+#| label: tbl-fema-claims-by-flood-insurance
+#| tbl-cap: "FEMA Individual Assistance claims with positive IHP amounts for selected Cook County flood disasters, by flood insurance status."
+
+claims_by_insurance <- selected_flood_assist |>
+  filter(ihpAmount > 0) |>
+  group_by(disasterNumber, floodInsurance) |>
+  summarize(
+    claimcount = n(),
+    .groups = "drop"
+  ) |>
+  arrange(desc(claimcount)) |>
+  pivot_wider(
+    names_from = floodInsurance,
+    values_from = claimcount,
+    values_fill = 0
+  )
+
+nice_dt(claims_by_insurance)
+
+```
+
+# Notes for revision
+
+Before publishing this page, update the source notes above by filling in:
+
+- the exact source for each raw data file;
+- the download date or API access date;
+- whether the file is publicly redistributable (only due to file size constraints on GitHub);
+- whether the website hosts the raw file, a processed file, or only summary statistics;
+
