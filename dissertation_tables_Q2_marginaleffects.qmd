@@ -1,463 +1,401 @@
 ---
 title: "Q2 Marginal Effects"
-format: html
+format:
+  html:
+    code-fold: true
+    toc: true
+    toc-depth: 3
+execute:
+  echo: false
+  warning: false
+  message: false
 ---
-
-
 
 ```{r setup}
 library(tidyverse)
-library(fixest)
-library(did)  
-library(etwfe)
-library(tidyverse)
 library(modelsummary)
 library(gt)
-library(marginaleffects)
+library(DT)
 
 options(scipen = 999)
 
-# bldg_sfha <- readRDS("data/processed/variants/df_prep__bldg_sfha.RDS")
-# 
-# parcels <- readRDS("data/processed/variants/df_prep__parcel_sfha.RDS")
-# 
-# bldg_1in500 <- readRDS("data/processed/variants/df_prep__bldg_1in500.RDS")
+out_dir <- "outputs/q2_marginaleffects"
+table_dir <- file.path(out_dir, "tables")
+me_dir <- file.path(out_dir, "marginaleffects")
+etwfe_dir <- file.path(out_dir, "etwfe")
+diagnostics_dir <- file.path(out_dir, "diagnostics")
 
-source("R/helper_pins_to_drop.R")
-```
+required_files <- c(
+  file.path(out_dir, "bldg_sfha_q2_dissertation_prepped.rds"),
+  file.path(out_dir, "basic_twfe_effective_table.rds"),
+  file.path(out_dir, "basic_twfe_prelim_table.rds"),
+  file.path(out_dir, "basic_twfe_highff_prelim_table.rds"),
+  file.path(etwfe_dir, "etwfe_base_table.rds"),
+  file.path(etwfe_dir, "etwfe_triad_table.rds"),
+  file.path(out_dir, "q2_main_table.rds"),
+  file.path(out_dir, "highff_post_table.rds"),
+  file.path(me_dir, "q2_main_marginaleffects_list.rds"),
+  file.path(out_dir, "robust_prelim_high_ff_table.rds"),
+  file.path(out_dir, "robust_prelim_highff_post_table.rds")
+)
 
+missing_files <- required_files[!file.exists(required_files)]
 
-```{r}
-
-lake100ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within100ft_ExportTable_TableToExcel.xlsx")
-lake500ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within500ft_ExportTable_TableToExcel.xlsx")
-
-bldg_sfha <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS")
-
-bldg_sfha <- bldg_sfha |> filter(!pin10 %in% drop_parcels  |
-               (pin10 == "0113301013" & sale_year > 2014)
-             )
-
-make_control_groups <- function(df, 
-                                ever_added,
-                                ever_removed,
-                    pre_eff_change_type, 
-                    type = c("pre", "eff")
-                                ){
-  
-  # Treated Group A: Added to Risk Zone
-  group_T_A <- df |>
-    filter( {{ever_added}} == TRUE )
-  
-  # Treated Group B: Removed from Risk Zone
-  group_T_B <- df |> 
-      filter( {{ever_removed}}  == TRUE)
-
-  # Control Group A:  Never in SFHA, FIRM panels never updated
-    
-   if(type == "pre"){
-   group_C_A <- df |> 
-      filter(
-        {{pre_eff_change_type}} == "Never SFHA" &
-             pre_date_chr %in% c("2005-01-01")
-         )
-  }else if(type == "eff"){  # for effective maps
-  group_C_A <- df |> 
-      filter(
-        {{pre_eff_change_type}} == "Never SFHA" &
-         eff_date_chr %in% c("2008-08-19") 
-         ) 
-  }  
-
-    # Control Group B: Never in SFHA, FIRM Panels are updated
-    group_C_B  <- df |> 
-      filter( 
-        {{pre_eff_change_type}} == "Never SFHA" &
-         (eff_date_chr %in% c("2019-11-01", "2021-09-10") | 
-             pre_date_chr %in% c("2015-02-12", "2019-07-01", "2021-09-22")
-         )
-         )
-
-    # Control Group C: Always in SFHA, FIRM Panels are not updated 
-    if(type == "pre"){
-    group_C_C <- df |> 
-      filter(
-        {{pre_eff_change_type}} == "Always SFHA" &             
-          pre_date_chr %in% c("2005-01-01")
-      )}
-    else if(type == "eff") {  # this probably is tainted by prelim map cohort in 2021 though....
-    group_C_C <- df |> 
-      filter(
-        {{pre_eff_change_type}} == "Always SFHA" &
-         (eff_date_chr %in% c("2008-08-19") )
-      )
-    
-    group_C_C_alt <- df |> 
-      filter(
-        {{pre_eff_change_type}} == "Always SFHA" &
-         (eff_date_chr %in% c("2008-08-19") | 
-            pre_date_chr %in% c("2005-01-01")
-          )
-      )
-    }
-    
-    # Always in SFHA but FIRM panels have been recently updated
-   
-    if(type == "eff") {
-      group_C_D <- df |> 
-        filter(
-        {{pre_eff_change_type}} == "Always SFHA" &
-         (eff_date_chr %in% c("2019-11-01", "2021-09-10"))
-         )
-      
-       group_C_D_alt <- df |> 
-        filter(
-        {{pre_eff_change_type}} == "Always SFHA" &
-         (eff_date_chr %in% c("2019-11-01", "2021-09-10") | 
-             pre_date_chr %in% c("2015-02-12", "2019-07-01", "2021-09-22")
-             )
-         )
-    } else if (type == "pre") {
-      group_C_D <- df |> 
-         filter(
-        {{pre_eff_change_type}} == "Always SFHA" &
-             pre_date_chr %in% c("2015-02-12", "2019-07-01", "2021-09-22")
-         )
-    }
-      list(
-    group_T_A = group_T_A,
-    group_T_B = group_T_B,
-    group_C_A = group_C_A,
-    group_C_B = group_C_B,
-    group_C_C = group_C_C,
-    group_C_D = group_C_D
-
+if (length(missing_files) > 0) {
+  stop(
+    "These saved outputs are missing. Run source('scripts/q2_dissertation_run_all.R') from the project root first:\n",
+    paste(missing_files, collapse = "\n")
   )
-
 }
 
-groups <- make_control_groups(df = bldg_sfha, 
-                    ever_added = ever_added_prelim, 
-                    ever_removed = ever_removed_prelim, 
-                    pre_eff_change_type = change_type_prelim, 
-                    type = "pre")
+# ========================================================
+# LOAD DATA SUMMARIES / MODEL TABLES
+# ========================================================
 
-groups_long <- imap_dfr(groups, ~ {
-  .x |>
-    mutate(group = .y)
-})
-```
-
-
-```{r}
-
-bldg_sfha <- bldg_sfha |> mutate(event = sale_date> new_info_released)
-
-bldg_sfha <- bldg_sfha |> mutate(highff_post = high_ff_score == TRUE &  sale_date > new_info_released )
-
-bldg_sfha <- bldg_sfha |> 
-  group_by(pin) |>
-  mutate(pin_num = as.numeric(pin),
-    # ff_group = ifelse(high_ff_score==TRUE & sale_date > new_info_released, as.character(min(sale_year[sale_date > new_info_released])), "0")) |>
-      ff_group = ifelse(high_ff_score==TRUE & sale_date > new_info_released, "2020", "0")) |>
-
-  ungroup()
-
-
-```
-
-
-# Basic TWFE models
-
-
-```{r}
-models <- list(
-  "County" = feols(log_price ~ prelim_sfha_category * high_ff_score * event | pin + sale_year, data= bldg_sfha, cluster = ~ pin10),
-  
-  "Triad Interactions" = feols(log_price ~ prelim_sfha_category * high_ff_score * event *Triad | pin + sale_year, data= bldg_sfha, cluster = ~ pin10)
-
-)
-modelsummary(models, stars = TRUE)
-```
-
-# ETWFE comparisons
-
-
-```{r}
-
-mod_etwfe <- etwfe(
-  fml  = log(sale_price) ~ 1, 
-  data = bldg_sfha, 
-  ivar   = pin_num, 
-  tvar = sale_year,
-  tref = "2019",
-  gref = "0",
-  gvar = ff_group, 
-  vcov = ~pin10
+bldg_sfha <- readRDS(
+  file.path(out_dir, "bldg_sfha_q2_dissertation_prepped.rds")
 )
 
-emfx(mod_etwfe)
-
-```
-
-```{r}
-mod_etwfe2 <- etwfe(
-  fml  = log(sale_price) ~ 1, 
-  data = bldg_sfha, 
-  ivar = pin, 
-  tvar = sale_year,
-  tref = "2019",
-  gref = "0",
-  gvar = ff_group, 
-  vcov = ~pin10,
-  xvar = Triad)
-
-emfx(mod_etwfe2)
-emfx(mod_etwfe2, type = "group")
-
-
-```
-
-
-# Marginal Effects
-
-
-```{r}
-models <- list(
-  "County" = feols(log_price ~ highff_post * prelim_sfha_category  | pin + sale_year, data= bldg_sfha, cluster = ~ pin10),
-  
-  "Triad Interactions" = feols(log_price ~ highff_post * prelim_sfha_category * Triad | pin + sale_year, data= bldg_sfha, cluster = ~ pin10)
-
+groups_prelim_long <- readRDS(
+  file.path(out_dir, "groups_prelim_long.rds")
 )
-modelsummary(models, stars = TRUE)
+
+basic_twfe_effective_table <- readRDS(
+  file.path(out_dir, "basic_twfe_effective_table.rds")
+)
+
+basic_twfe_prelim_table <- readRDS(
+  file.path(out_dir, "basic_twfe_prelim_table.rds")
+)
+
+basic_twfe_highff_prelim_table <- readRDS(
+  file.path(out_dir, "basic_twfe_highff_prelim_table.rds")
+)
+
+etwfe_base_table <- readRDS(
+  file.path(etwfe_dir, "etwfe_base_table.rds")
+)
+
+etwfe_triad_table <- readRDS(
+  file.path(etwfe_dir, "etwfe_triad_table.rds")
+)
+
+q2_main_table <- readRDS(
+  file.path(out_dir, "q2_main_table.rds")
+)
+
+highff_post_table <- readRDS(
+  file.path(out_dir, "highff_post_table.rds")
+)
+
+robust_prelim_high_ff_table <- readRDS(
+  file.path(out_dir, "robust_prelim_high_ff_table.rds")
+)
+
+robust_prelim_highff_post_table <- readRDS(
+  file.path(out_dir, "robust_prelim_highff_post_table.rds")
+)
+
+# ========================================================
+# LOAD MARGINAL EFFECTS OUTPUTS
+# ========================================================
+
+main_me <- readRDS(
+  file.path(me_dir, "q2_main_marginaleffects_list.rds")
+)
+
+me_change_type_sequential <- main_me$me_change_type_sequential
+me_event_by_change_type <- main_me$me_event_by_change_type
+me_never_sfha_event <- main_me$me_never_sfha_event
+me_never_prelim_event_by_triad <- main_me$me_never_prelim_event_by_triad
+me_all_effective_grid <- main_me$me_all_effective_grid
+me_high_ff_post_by_change_type <- main_me$me_high_ff_post_by_change_type
+me_highff_post_by_change_type <- main_me$me_highff_post_by_change_type
+hyp_highff_post_by_change_type <- main_me$hyp_highff_post_by_change_type
+me_highff_post_triad_by_change_type <- main_me$me_highff_post_triad_by_change_type
+hyp_highff_post_triad_by_change_type <- main_me$hyp_highff_post_triad_by_change_type
+me_highff_post_partial_by_change_type <- main_me$me_highff_post_partial_by_change_type
+me_highff_post_grid_by_change_type_triad <- main_me$me_highff_post_grid_by_change_type_triad
+
+# ========================================================
+# LOAD DIAGNOSTICS
+# ========================================================
+
+read_diag <- function(file_stem) {
+  path <- file.path(diagnostics_dir, paste0(file_stem, ".rds"))
+  if (file.exists(path)) readRDS(path) else tibble()
+}
+
+dropped_terms_basic_twfe_effective <- read_diag("dropped_terms_basic_twfe_effective")
+dropped_terms_basic_twfe_prelim <- read_diag("dropped_terms_basic_twfe_prelim")
+dropped_terms_basic_twfe_highff_prelim <- read_diag("dropped_terms_basic_twfe_highff_prelim")
+dropped_terms_q2_main <- read_diag("dropped_terms_q2_main")
+dropped_terms_highff_post <- read_diag("dropped_terms_highff_post")
+dropped_terms_robust_prelim_high_ff <- read_diag("dropped_terms_robust_prelim_high_ff")
+dropped_terms_robust_prelim_highff_post <- read_diag("dropped_terms_robust_prelim_highff_post")
+
+fmt_me <- function(x) {
+  x |>
+    as.data.frame() |>
+    select(any_of(c(
+      "term", "contrast", "change_type", "change_type_prelim", "Triad",
+      "high_ff_score", "highff_post", "event", "estimate", "std.error",
+      "conf.low", "conf.high", "p.value"
+    ))) |>
+    mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+    modelsummary::datasummary_df(output = "gt")
+}
 ```
+
+# Separated Timing and Underlying Risk
+
+This file now loads saved model objects, tables, and marginal effects from scripts rather than estimating the models while rendering the Quarto document. The heavy computations are created by the scripts in the `scripts/` folder and saved under `outputs/q2_marginaleffects/`.
+
+`event == TRUE` for all sales that occurred after First Street released its flood risk data. `high_ff_score == TRUE` for properties with a Flood Factor score of 5 or higher.
+
+# Basic TWFE Models
+
+::: {.panel-tabset}
+
+## Using Effective Map Status
+
+```{r basic-effective}
+basic_twfe_effective_table
+```
+
+## Using Preliminary Map Status
+
+```{r basic-prelim}
+basic_twfe_prelim_table
+```
+
+## Combined Indicator & Preliminary SFHA Status
+
+```{r basic-highff-prelim}
+basic_twfe_highff_prelim_table
+```
+
+:::
+
+# ETWFE Comparisons
+
+These models use the `etwfe` package. The saved outputs below are produced by `scripts/q2_dissertation_02_etwfe_models.R`.
+
+::: {.panel-tabset}
+
+## Base Model
+
+This version does not include SFHA status or Triad in the equation.
+
+```{r etwfe-base}
+etwfe_base_table
+```
+
+## Regional Heterogeneity
+
+```{r etwfe-triad}
+etwfe_triad_table
+```
+
+:::
 
 # Question 2
 
 ## Table 15: Question 2 Main Model
 
-```{r}
-
-## change type is for effective maps
-triad_mod_notriads = feols(log(sale_price) ~ change_type * high_ff_score * event  | pin + sale_year, vcov = ~pin10, data= bldg_sfha)
-
-## change type is for effective maps
-triad_mod = feols(log(sale_price) ~ change_type * high_ff_score * event * Triad | pin + sale_year, vcov = ~pin10, data= bldg_sfha)
-
-triad_mod_pre <- feols(log_price ~ prelim_sfha_category * high_ff_score * event * Triad | pin + sale_year, data = bldg_sfha, cluster = ~ pin10)
-
-
-etable(triad_mod)
-
-
-# a specific scenario I'm curious about
-example_grid = data.frame(event = TRUE, change_type = "Never SFHA", high_ff_score = TRUE, Triad = "City")
-
-
+```{r q2-main-table}
+q2_main_table
 ```
 
+# Main Marginal Effects
 
-```{r}
-avg_results <- avg_comparisons(
-  triad_mod,
-  variables = list(change_type ="sequential")
-  )
-avg_results
+::: {.panel-tabset}
+
+## Change Type: Sequential Comparisons
+
+```{r me-change-type-sequential}
+fmt_me(me_change_type_sequential)
 ```
 
-```{r}
-# avg_results_pre <- avg_comparisons(
-#   triad_mod_pre,
-#   variables = list(change_type ="sequential")
-#   )
-# avg_results_pre
+## Post Release by Effective SFHA Change Type
+
+```{r me-event-by-change-type}
+fmt_me(me_event_by_change_type)
 ```
 
-```{r}
-avg_results <- avg_comparisons(
-  triad_mod,
-  variables = list("event" = c(FALSE, TRUE)),
-  by = "change_type")
+## Never SFHA: Post-Release Effect
 
-avg_results
+This is the targeted contrast from the effective-map model for properties categorized as `Never SFHA`, allowing high and low Flood Factor properties to be represented in the comparison.
+
+```{r me-never-sfha-event}
+fmt_me(me_never_sfha_event)
 ```
 
+## Never Preliminary SFHA: Post-Release Effect by Triad
 
-
-
-```{r}
-### this one works great!
-never_sfha_effect <- avg_comparisons(
-  triad_mod,
-  variables = "event",
-  newdata = datagrid(
-    change_type = "Never SFHA",
-    "high_ff_score"   = c(TRUE,FALSE)
-  ),
-   by = NULL)
-
-never_sfha_effect
+```{r me-never-prelim-event-by-triad}
+fmt_me(me_never_prelim_event_by_triad)
 ```
 
+## All Effective Map Status Options
 
-```{r}
-
-## only shows coefficient for City
-never_sfha_effect_byTriad <- avg_comparisons(
-  triad_mod_pre,
-  variables = "event",
-  newdata = datagrid(
-    prelim_sfha_category = "Never SFHA",
-    high_ff_score   = c(TRUE,FALSE)
-  ),
-  by = "Triad")
-
-never_sfha_effect_byTriad
+```{r me-all-effective-grid}
+fmt_me(me_all_effective_grid) 
 ```
 
-```{r}
-# always_sfha_effect <- avg_comparisons(
-#   triad_mod_pre,
-#   variables = "event",
-#   newdata = datagrid(
-#     prelim_sfha_category = "Always SFHA",
-#         high_ff_score   = c(FALSE,TRUE)
-# ),
-#    by = NULL
-# )
-# 
-# always_sfha_effect
+## High Flood Factor Effects by SFHA Change Type and Triad
+
+```{r me-high-ff-change-type-triad}
+fmt_me(me_high_ff_post_by_change_type)
 ```
 
-```{r}
-# always_sfha_effect_byTriad <- avg_comparisons(
-#   triad_mod_pre,
-#   variables = "event",
-#   newdata = datagrid(
-#     prelim_sfha_category = "Always SFHA",
-#         "high_ff_score"   = c(TRUE,FALSE)
-# ),
-#    by = "Triad"
-# )
-# 
-# always_sfha_effect_byTriad
+:::
+
+# Is the High Flood Factor Effect Moderated by SFHA Status?
+
+These outputs estimate whether the estimated effect of high Flood Factor exposure differs across FEMA SFHA status categories.
+
+## HighFF Post Model Table
+
+```{r highff-post-table}
+highff_post_table
 ```
 
-```{r}
-all_opts <- comparisons(triad_mod_notriads, newdata = datagrid(event = unique, high_ff_score = unique, change_type = unique))
+::: {.panel-tabset}
 
+## HighFF Post by Change Type
+
+```{r highff-post-by-change-type}
+fmt_me(me_highff_post_by_change_type)
 ```
 
-**Is the effect of having a high flood score moderated by SFHA status?**
+## Hypothesis Test: HighFF Post by Change Type
 
-`all_opts <- avg_comparisons(triad_mod, variables = "highff_post", by = "change_type")`
-
-The expected change in Y (logged sale price) assoiated with a change in X (one SFHA status to another) differs based on the value of `change_type`
-
-Never SFHA(-0.574) vs (-0.0450)
-
-Are these statistically significantly different from each other?
-
-```{r}
-triad_mod <- feols(log_price ~ change_type * highff_post | pin + sale_year, data = bldg_sfha, cluster = ~ pin10)
-
-all_opts <- avg_comparisons(triad_mod, variables = "highff_post", by = "change_type")
-all_opts
-
-avg_comparisons(triad_mod, variables = "highff_post", by = "change_type", hypothesis = "b1=b2")
-```
-Always SFHA not statistically significant from Never SFHA
-
-```{r}
-triad_mod <- feols(log_price ~ change_type * highff_post * Triad | pin + sale_year, data = bldg_sfha, cluster = ~ pin10)
-
-all_opts <- avg_comparisons(triad_mod, variables = "highff_post", by = "change_type")
-all_opts
-
-avg_comparisons(triad_mod, variables = "highff_post", by = "change_type", hypothesis = "b1=b2")
+```{r hyp-highff-post-by-change-type}
+fmt_me(hyp_highff_post_by_change_type)
 ```
 
+## HighFF Post × Triad by Change Type
 
-```{r}
-triad_mod2 <- feols(log_price ~ change_type:highff_post + highff_post:Triad | pin + sale_year, data = bldg_sfha, cluster  = ~ pin10)
-
-all_opts <- avg_comparisons(triad_mod2, variables = "highff_post", by = "change_type")
-all_opts
-```
-```{r}
-ff_effects_filtered <- comparisons(
-  triad_mod,
-  variables = "highff_post",
-  newdata = datagrid(
-    change_type = c("Never SFHA", "Always SFHA", "Changes SFHA"),
-    Triad = c("South", "North", "City")
-  ),
-  vcov = ~pin10
-)
-ff_effects_filtered
-```
-```{r}
-triad_mod <- feols(log_price ~ event* change_type * high_ff_score * Triad | pin + sale_year, data = bldg_sfha, cluster = ~ pin10)
-
-ff_effects_filtered <- comparisons(
-  triad_mod,
-  variables = "high_ff_score",
-  newdata = datagrid(
-    event = TRUE,
-    change_type = c("Never SFHA", "Always SFHA", "Changes SFHA"),
-    Triad = c("South", "North", "City")
-  ),
-  vcov = ~pin10
-)
-ff_effects_filtered
+```{r highff-post-triad-by-change-type}
+fmt_me(me_highff_post_triad_by_change_type)
 ```
 
-## Q2 Robustness Checks
+## Hypothesis Test: HighFF Post × Triad by Change Type
 
-```{r}
-models <- list(
-  "South" = feols(log_price ~ prelim_sfha_category * high_ff_score * event | pin + sale_year, data = bldg_sfha |> filter(Triad == "South"), cluster = ~pin10),
-  "North" = feols(log_price ~ prelim_sfha_category * high_ff_score* event | pin + sale_year, data = bldg_sfha |> filter(Triad == "North"), cluster = ~pin10),
-    "City" = feols(log_price ~ prelim_sfha_category * high_ff_score * event | pin + sale_year, data = bldg_sfha |> filter(Triad == "City"), cluster = ~pin10)
-)
-
-modelsummary(
-  models,
-  output     = "gt",
-  stars      = TRUE,
-  estimate   = "{estimate}{stars}",
-  statistic  = "({std.error})",
-  gof_omit   = "IC|Log|Adj|AIC|BIC",
-#  add_rows   = data.frame(Term = "SE clustered", Value = "pin"),
-  title      = "Pre-event slope tests by Triad"
-)
+```{r hyp-highff-post-triad-by-change-type}
+fmt_me(hyp_highff_post_triad_by_change_type)
 ```
 
+## Partially Interacted HighFF Post Model
 
-```{r}
-models <- list(
-  "South" = feols(log_price ~ prelim_sfha_category * highff_post | pin + sale_year, data = bldg_sfha |> filter(Triad == "South"), cluster = ~pin10),
-  "North" = feols(log_price ~ prelim_sfha_category * highff_post | pin + sale_year, data = bldg_sfha |> filter(Triad == "North"), cluster = ~pin10),
-    "City" = feols(log_price ~ prelim_sfha_category * highff_post | pin + sale_year, data = bldg_sfha |> filter(Triad == "City"), cluster = ~pin10)
-)
-
-modelsummary(
-  models,
-  output     = "gt",
-  stars      = TRUE,
-  estimate   = "{estimate}{stars}",
-  statistic  = "({std.error})",
-  gof_omit   = "IC|Log|Adj|AIC|BIC",
-#  add_rows   = data.frame(Term = "SE clustered", Value = "pin"),
-  title      = "Pre-event slope tests by Triad"
-)
+```{r highff-post-partial-by-change-type}
+fmt_me(me_highff_post_partial_by_change_type)
 ```
 
+## HighFF Post Grid by Change Type and Triad
 
-## Ordinal Risk Variable
-
-```{r}
-feols(log(sale_price) ~  factor(env_flood_fs_factor) * change_type * highff_post | pin + sale_year, data = bldg_sfha) |> modelsummary(stars=TRUE)
-
+```{r highff-post-grid-change-type-triad}
+fmt_me(me_highff_post_grid_by_change_type_triad)
 ```
 
+:::
+
+# Q2 Robustness Checks
+
+::: {.panel-tabset}
+
+## Preliminary SFHA × High FF × Post by Triad
+
+```{r robust-prelim-high-ff}
+robust_prelim_high_ff_table
+```
+
+## Preliminary SFHA × HighFF Post by Triad
+
+```{r robust-prelim-highff-post}
+robust_prelim_highff_post_table
+```
+
+:::
+
+# Diagnostics and Data Checks
+
+::: {.panel-tabset}
+
+## Analysis Data
+
+```{r data-summary}
+tibble(
+  observations = nrow(bldg_sfha),
+  parcels = n_distinct(bldg_sfha$pin),
+  pin10s = n_distinct(bldg_sfha$pin10),
+  min_sale_year = min(bldg_sfha$sale_year, na.rm = TRUE),
+  max_sale_year = max(bldg_sfha$sale_year, na.rm = TRUE),
+  post_release_sales = sum(bldg_sfha$event, na.rm = TRUE),
+  high_ff_sales = sum(bldg_sfha$high_ff_score, na.rm = TRUE)
+) |>
+  modelsummary::datasummary_df(output = "gt")
+```
+
+## Preliminary Control Groups
+
+```{r prelim-control-groups}
+groups_prelim_long |>
+  count(group, name = "observations") |>
+  arrange(group) |>
+  modelsummary::datasummary_df(output = "gt")
+```
+
+:::
+
+
+# Diagnostics: Dropped Terms
+
+These tables show terms removed from the presentation tables because their standard errors were missing or larger than the threshold used in the scripts. In this fixed-effects setup, these terms are usually either not identified within PIN over time or are extremely sparse combinations.
+
+::: {.panel-tabset}
+
+## Basic TWFE: Effective
+
+```{r diag-basic-effective}
+fmt_me(dropped_terms_basic_twfe_effective)
+```
+
+## Basic TWFE: Preliminary
+
+```{r diag-basic-prelim}
+fmt_me(dropped_terms_basic_twfe_prelim)
+```
+
+## Basic TWFE: HighFF + Preliminary
+
+```{r diag-basic-highff-prelim}
+fmt_me(dropped_terms_basic_twfe_highff_prelim)
+```
+
+## Q2 Main Models
+
+```{r diag-q2-main}
+fmt_me(dropped_terms_q2_main)
+```
+
+## HighFF Post Models
+
+```{r diag-highff-post}
+fmt_me(dropped_terms_highff_post)
+```
+
+## Robustness: Preliminary + High FF
+
+```{r diag-robust-high-ff}
+fmt_me(dropped_terms_robust_prelim_high_ff)
+```
+
+## Robustness: Preliminary + HighFF Post
+
+```{r diag-robust-highff-post}
+fmt_me(dropped_terms_robust_prelim_highff_post)
+```
+
+:::

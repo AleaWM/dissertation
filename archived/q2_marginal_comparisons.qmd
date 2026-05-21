@@ -81,6 +81,82 @@ modelsummary(base_mod, stars = TRUE)
 
 # With highff_post (4-way interaction) 
 
+```{r}
+fourway_models <- list(
+  "Simple" = feols(
+    log(sale_price) ~ high_ff_score * event |
+      pin + sale_year,
+    vcov = ~pin10,
+    data = bldg_sfha
+  ),
+  
+  "Simple × Triad" = feols(
+    log(sale_price) ~ high_ff_score * event * Triad |
+      pin + sale_year,
+    vcov = ~pin10,
+    data = bldg_sfha
+  ),
+  
+  "Change Type × High FF × Event × Triad" = feols(
+    log(sale_price) ~ change_type * high_ff_score * event * Triad |
+      pin + sale_year,
+    vcov = ~pin10,
+    data = bldg_sfha
+  ),
+  
+  "Change Type × High FF × Event" = feols(
+    log(sale_price) ~ change_type * high_ff_score * event |
+      pin + sale_year,
+    vcov = ~pin10,
+    data = bldg_sfha
+  )
+)
+
+dropped_terms_fourway <- fourway_models |>
+  purrr::map_dfr(
+    ~ broom::tidy(.x),
+    .id = "model"
+  ) |>
+  dplyr::filter(std.error > 1000 | is.na(std.error)) |>
+  dplyr::select(model, term, estimate, std.error)
+
+bad_terms_fourway <- dropped_terms_fourway |>
+  dplyr::distinct(term) |>
+  dplyr::pull(term)
+
+bad_terms_regex_fourway <- if (length(bad_terms_fourway) > 0) {
+  paste0(
+    "^(",
+    paste(stringr::str_escape(bad_terms_fourway), collapse = "|"),
+    ")$"
+  )
+} else {
+  "$^"
+}
+
+coef_map <- c(
+  "eventTRUE" = "Post-release",
+  "high_ff_scoreTRUE:eventTRUE" = "High Flood Factor × Post-release",
+  "change_typeAlways SFHA:eventTRUE" = "Always SFHA × Post-release",
+  "change_typeChanges SFHA:eventTRUE" = "Changed SFHA × Post-release",
+  "change_typeAlways SFHA:high_ff_scoreTRUE:eventTRUE" = "Always SFHA × High Flood Factor × Post-release",
+  "change_typeChanges SFHA:high_ff_scoreTRUE:eventTRUE" = "Changed SFHA × High Flood Factor × Post-release"
+)
+
+fourway_table <- modelsummary(
+  fourway_models,
+  stars = TRUE,
+ # coef_map = coef_map,
+  coef_omit = bad_terms_regex_fourway,
+  estimate = "{estimate}{stars}",
+  statistic = "({std.error})",
+  gof_omit = "IC|Log|Adj|RMSE"
+)
+
+fourway_table
+
+dropped_terms_fourway
+```
 
 ```{r}
 ## change type is for effective maps
@@ -118,7 +194,7 @@ coef_map <- c(
 #   output = "gt"
 # )
 
-modelsummary(list(simp4way_notriad, simp4way, triad_mod_4way, triad_mod_4way_notria), stars = TRUE)
+# modelsummary(list(simp4way_notriad, simp4way, triad_mod_4way, triad_mod_4way_notria), stars = TRUE)
 
 ```
 
