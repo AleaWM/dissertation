@@ -1,0 +1,486 @@
+---
+title: "Q2 Marginal Effects"
+format: html
+---
+
+
+
+```{r setup}
+library(tidyverse)
+library(fixest)
+library(did)  
+library(etwfe)
+library(tidyverse)
+library(modelsummary)
+library(gt)
+library(marginaleffects)
+
+options(scipen = 999)
+
+# bldg_sfha <- readRDS("data/processed/variants/df_prep__bldg_sfha.RDS")
+# 
+# parcels <- readRDS("data/processed/variants/df_prep__parcel_sfha.RDS")
+# 
+# bldg_1in500 <- readRDS("data/processed/variants/df_prep__bldg_1in500.RDS")
+
+source("R/helper_pins_to_drop.R")
+```
+
+
+```{r}
+
+lake100ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within100ft_ExportTable_TableToExcel.xlsx")
+lake500ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within500ft_ExportTable_TableToExcel.xlsx")
+
+bldg_sfha <- readRDS("data/processed/targets/sales/df_prep_bldg_v2026_03.RDS")
+
+bldg_sfha <- bldg_sfha |> filter(!pin10 %in% drop_parcels  |
+               (pin10 == "0113301013" & sale_year > 2014)
+             )
+
+make_control_groups <- function(df, 
+                                ever_added,
+                                ever_removed,
+                    pre_eff_change_type, 
+                    type = c("pre", "eff")
+                                ){
+  
+  # Treated Group A: Added to Risk Zone
+  group_T_A <- df |>
+    filter( {{ever_added}} == TRUE )
+  
+  # Treated Group B: Removed from Risk Zone
+  group_T_B <- df |> 
+      filter( {{ever_removed}}  == TRUE)
+
+  # Control Group A:  Never in SFHA, FIRM panels never updated
+    
+   if(type == "pre"){
+   group_C_A <- df |> 
+      filter(
+        {{pre_eff_change_type}} == "Never SFHA" &
+             pre_date_chr %in% c("2005-01-01")
+         )
+  }else if(type == "eff"){  # for effective maps
+  group_C_A <- df |> 
+      filter(
+        {{pre_eff_change_type}} == "Never SFHA" &
+         eff_date_chr %in% c("2008-08-19") 
+         ) 
+  }  
+
+    # Control Group B: Never in SFHA, FIRM Panels are updated
+    group_C_B  <- df |> 
+      filter( 
+        {{pre_eff_change_type}} == "Never SFHA" &
+         (eff_date_chr %in% c("2019-11-01", "2021-09-10") | 
+             pre_date_chr %in% c("2015-02-12", "2019-07-01", "2021-09-22")
+         )
+         )
+
+    # Control Group C: Always in SFHA, FIRM Panels are not updated 
+    if(type == "pre"){
+    group_C_C <- df |> 
+      filter(
+        {{pre_eff_change_type}} == "Always SFHA" &             
+          pre_date_chr %in% c("2005-01-01")
+      )}
+    else if(type == "eff") {  # this probably is tainted by prelim map cohort in 2021 though....
+    group_C_C <- df |> 
+      filter(
+        {{pre_eff_change_type}} == "Always SFHA" &
+         (eff_date_chr %in% c("2008-08-19") )
+      )
+    
+    group_C_C_alt <- df |> 
+      filter(
+        {{pre_eff_change_type}} == "Always SFHA" &
+         (eff_date_chr %in% c("2008-08-19") | 
+            pre_date_chr %in% c("2005-01-01")
+          )
+      )
+    }
+    
+    # Always in SFHA but FIRM panels have been recently updated
+   
+    if(type == "eff") {
+      group_C_D <- df |> 
+        filter(
+        {{pre_eff_change_type}} == "Always SFHA" &
+         (eff_date_chr %in% c("2019-11-01", "2021-09-10"))
+         )
+      
+       group_C_D_alt <- df |> 
+        filter(
+        {{pre_eff_change_type}} == "Always SFHA" &
+         (eff_date_chr %in% c("2019-11-01", "2021-09-10") | 
+             pre_date_chr %in% c("2015-02-12", "2019-07-01", "2021-09-22")
+             )
+         )
+    } else if (type == "pre") {
+      group_C_D <- df |> 
+         filter(
+        {{pre_eff_change_type}} == "Always SFHA" &
+             pre_date_chr %in% c("2015-02-12", "2019-07-01", "2021-09-22")
+         )
+    }
+      list(
+    group_T_A = group_T_A,
+    group_T_B = group_T_B,
+    group_C_A = group_C_A,
+    group_C_B = group_C_B,
+    group_C_C = group_C_C,
+    group_C_D = group_C_D
+
+  )
+
+}
+
+groups <- make_control_groups(df = bldg_sfha, 
+                    ever_added = ever_added_prelim, 
+                    ever_removed = ever_removed_prelim, 
+                    pre_eff_change_type = change_type_prelim, 
+                    type = "pre")
+
+groups_long <- imap_dfr(groups, ~ {
+  .x |>
+    mutate(group = .y)
+})
+```
+
+
+```{r}
+
+bldg_sfha <- bldg_sfha |> mutate(event = sale_date> new_info_released)
+
+bldg_sfha <- bldg_sfha |> mutate(highff_post = high_ff_score == TRUE &  sale_date > new_info_released )
+
+bldg_sfha <- bldg_sfha |> 
+  group_by(pin) |>
+  mutate(pin_num = as.numeric(pin),
+    # ff_group = ifelse(high_ff_score==TRUE & sale_date > new_info_released, as.character(min(sale_year[sale_date > new_info_released])), "0")) |>
+      ff_group = ifelse(high_ff_score==TRUE & sale_date > new_info_released, "2020", "0")) |>
+
+  ungroup()
+
+
+```
+
+
+# Basic TWFE models 
+
+::: {.panel-tabset}
+
+## Using Effective Map Status
+
+```{r}
+models <- list(
+  "County" = feols(log_price ~ change_type * high_ff_score * event | pin + sale_year, data= bldg_sfha, cluster = ~ pin10),
+  
+  "Triad Interactions" = feols(log_price ~ change_type * high_ff_score * event *Triad | pin + sale_year, data= bldg_sfha, cluster = ~ pin10)
+
+)
+modelsummary(models, stars = TRUE)
+```
+
+## Using preliminary map status
+
+```{r}
+models <- list(
+  "County" = feols(log_price ~ prelim_sfha_category * high_ff_score * event | pin + sale_year, data= bldg_sfha, cluster = ~ pin10),
+  
+  "Triad Interactions" = feols(log_price ~ prelim_sfha_category * high_ff_score * event *Triad | pin + sale_year, data= bldg_sfha, cluster = ~ pin10)
+
+)
+modelsummary(models, stars = TRUE)
+```
+
+
+## Combined Indicator & Prelim SFHA Status
+
+
+```{r}
+models <- list(
+  "County" = feols(log_price ~ highff_post * change_type_prelim  | pin + sale_year, data= bldg_sfha, cluster = ~ pin10),
+  
+  "Triad Interactions" = feols(log_price ~ highff_post * change_type_prelim * Triad | pin + sale_year, data= bldg_sfha, cluster = ~ pin10)
+
+)
+modelsummary(models, stars = TRUE)
+```
+
+:::
+
+# ETWFE comparisons
+
+**Uses syntax from `etwfe(` package.** 
+
+::: {.panel-tabset}
+
+## Base Model
+
+**Does not include SFHA status or Triad in the equation**
+
+```{r}
+
+mod_etwfe <- etwfe(
+  fml  = log(sale_price) ~ 1, 
+  data = bldg_sfha, 
+  ivar   = pin_num, 
+  tvar = sale_year,
+  tref = "2019",
+  gref = "0",
+  gvar = ff_group, 
+  vcov = ~pin10
+)
+
+emfx(mod_etwfe)
+
+```
+
+## Regional Heterogeneity 
+
+```{r}
+mod_etwfe2 <- etwfe(
+  fml  = log(sale_price) ~ 1, 
+  data = bldg_sfha, 
+  ivar = pin, 
+  tvar = sale_year,
+  tref = "2019",
+  gref = "0",
+  gvar = ff_group, 
+  vcov = ~pin10,
+  xvar = Triad)
+
+# emfx(mod_etwfe2)# same as command below with type = "group"
+emfx(mod_etwfe2, type = "group")
+
+
+```
+
+:::
+
+
+# Question 2
+
+## Table 15: Question 2 Main Model
+
+```{r}
+
+## change type is for effective maps
+triad_mod_notriads = feols(log(sale_price) ~ change_type * high_ff_score * event  | pin + sale_year, vcov = ~pin10, data= bldg_sfha)
+
+## change type is for effective maps
+triad_mod = feols(log(sale_price) ~ change_type * high_ff_score * event * Triad | pin + sale_year, vcov = ~pin10, data= bldg_sfha)
+
+triad_mod_pre <- feols(log_price ~ change_type_prelim * high_ff_score * event * Triad | pin + sale_year, data = bldg_sfha, cluster = ~ pin10)
+
+
+etable(triad_mod)
+
+
+# a specific scenario I'm curious about
+example_grid = data.frame(event = TRUE, change_type = "Never SFHA", high_ff_score = TRUE, Triad = "City")
+
+
+```
+
+
+```{r}
+avg_results <- avg_comparisons(
+  triad_mod,
+  variables = list(change_type = "sequential")
+  )
+avg_results
+```
+
+```{r}
+# avg_results_pre <- avg_comparisons(
+#   triad_mod_pre,
+#   variables = list(change_type ="sequential")
+#   )
+# avg_results_pre
+```
+
+```{r}
+avg_results <- avg_comparisons(
+  triad_mod,
+  variables = list("event" = c(FALSE, TRUE)),
+  by = "change_type")
+
+avg_results
+```
+
+
+
+
+```{r}
+### this one works great!
+never_sfha_effect <- avg_comparisons(
+  triad_mod,
+  variables = "event",
+  newdata = datagrid(
+    change_type = "Never SFHA",
+    "high_ff_score"   = c(TRUE,FALSE)
+  ),
+   by = NULL)
+
+never_sfha_effect
+```
+
+
+```{r}
+
+## only shows coefficient for City
+never_sfha_effect_byTriad <- avg_comparisons(
+  triad_mod_pre,
+  variables = "event",
+  newdata = datagrid(
+    prelim_sfha_category = "Never SFHA",
+    high_ff_score   = c(TRUE,FALSE)
+  ),
+  by = "Triad")
+
+never_sfha_effect_byTriad
+```
+
+```{r}
+# always_sfha_effect <- avg_comparisons(
+#   triad_mod_pre,
+#   variables = "event",
+#   newdata = datagrid(
+#     prelim_sfha_category = "Always SFHA",
+#         high_ff_score   = c(FALSE,TRUE)
+# ),
+#    by = NULL
+# )
+# 
+# always_sfha_effect
+```
+
+```{r}
+# always_sfha_effect_byTriad <- avg_comparisons(
+#   triad_mod_pre,
+#   variables = "event",
+#   newdata = datagrid(
+#     prelim_sfha_category = "Always SFHA",
+#         "high_ff_score"   = c(TRUE,FALSE)
+# ),
+#    by = "Triad"
+# )
+# 
+# always_sfha_effect_byTriad
+```
+
+```{r}
+all_opts <- comparisons(triad_mod_notriads, newdata = datagrid(event = unique, high_ff_score = unique, change_type = unique))
+all_opts
+```
+
+**Is the effect of having a high flood score moderated by SFHA status?**
+
+`all_opts <- avg_comparisons(triad_mod, variables = "highff_post", by = "change_type")`
+
+The expected change in Y (logged sale price) assoiated with a change in X (one SFHA status to another) differs based on the value of `change_type`
+
+Never SFHA(-0.574) vs (-0.0450)
+
+Are these statistically significantly different from each other?
+
+```{r}
+triad_mod <- feols(log_price ~ change_type * highff_post | pin + sale_year, data = bldg_sfha, cluster = ~ pin10)
+
+all_opts <- avg_comparisons(triad_mod, variables = "highff_post", by = "change_type")
+all_opts
+
+avg_comparisons(triad_mod, variables = "highff_post", by = "change_type", hypothesis = "b1=b2")
+```
+Always SFHA not statistically significant from Never SFHA
+
+```{r}
+triad_mod <- feols(log_price ~ change_type * highff_post * Triad | pin + sale_year, data = bldg_sfha, cluster = ~ pin10)
+
+all_opts <- avg_comparisons(triad_mod, variables = "highff_post", by = "change_type")
+all_opts
+
+avg_comparisons(triad_mod, variables = "highff_post", by = "change_type", hypothesis = "b1=b2")
+```
+
+
+```{r}
+triad_mod2 <- feols(log_price ~ change_type:highff_post + highff_post:Triad | pin + sale_year, data = bldg_sfha, cluster  = ~ pin10)
+
+all_opts <- avg_comparisons(triad_mod2, variables = "highff_post", by = "change_type")
+all_opts
+```
+```{r}
+ff_effects_filtered <- comparisons(
+  triad_mod,
+  variables = "highff_post",
+  newdata = datagrid(
+    change_type = c("Never SFHA", "Always SFHA", "Changes SFHA"),
+    Triad = c("South", "North", "City")
+  ),
+  vcov = ~pin10
+)
+ff_effects_filtered
+```
+```{r}
+triad_mod <- feols(log_price ~ event* change_type * high_ff_score * Triad | pin + sale_year, data = bldg_sfha, cluster = ~ pin10)
+
+ff_effects_filtered <- comparisons(
+  triad_mod,
+  variables = "high_ff_score",
+  newdata = datagrid(
+    event = TRUE,
+    change_type = c("Never SFHA", "Always SFHA", "Changes SFHA"),
+    Triad = c("South", "North", "City")
+  ),
+  vcov = ~pin10
+)
+ff_effects_filtered
+```
+
+## Q2 Robustness Checks
+
+```{r}
+models <- list(
+  "South" = feols(log_price ~ prelim_sfha_category * high_ff_score * event | pin + sale_year, data = bldg_sfha |> filter(Triad == "South"), cluster = ~pin10),
+  "North" = feols(log_price ~ prelim_sfha_category * high_ff_score* event | pin + sale_year, data = bldg_sfha |> filter(Triad == "North"), cluster = ~pin10),
+    "City" = feols(log_price ~ prelim_sfha_category * high_ff_score * event | pin + sale_year, data = bldg_sfha |> filter(Triad == "City"), cluster = ~pin10)
+)
+
+modelsummary(
+  models,
+  output     = "gt",
+  stars      = TRUE,
+  estimate   = "{estimate}{stars}",
+  statistic  = "({std.error})",
+  gof_omit   = "IC|Log|Adj|AIC|BIC",
+#  add_rows   = data.frame(Term = "SE clustered", Value = "pin"),
+  title      = "Pre-event slope tests by Triad"
+)
+```
+
+
+```{r}
+models <- list(
+  "South" = feols(log_price ~ prelim_sfha_category * highff_post | pin + sale_year, data = bldg_sfha |> filter(Triad == "South"), cluster = ~pin10),
+  "North" = feols(log_price ~ prelim_sfha_category * highff_post | pin + sale_year, data = bldg_sfha |> filter(Triad == "North"), cluster = ~pin10),
+    "City" = feols(log_price ~ prelim_sfha_category * highff_post | pin + sale_year, data = bldg_sfha |> filter(Triad == "City"), cluster = ~pin10)
+)
+
+modelsummary(
+  models,
+  output     = "gt",
+  stars      = TRUE,
+  estimate   = "{estimate}{stars}",
+  statistic  = "({std.error})",
+  gof_omit   = "IC|Log|Adj|AIC|BIC",
+#  add_rows   = data.frame(Term = "SE clustered", Value = "pin"),
+  title      = "Pre-event slope tests by Triad"
+)
+```
+
+
+
