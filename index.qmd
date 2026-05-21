@@ -1,0 +1,101 @@
+---
+title: "Dissertation Data and Replication Materials"
+subtitle: "Flood Risk Information, Floodplain Map Updates, and Property Values in Cook County, Illinois"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: false
+---
+
+# Overview
+
+This website provides supporting tables, figures, code notes, and documentation for my dissertation research on flood risk information and residential property values in Cook County, Illinois. It also has a lot of my side quests that were explored but not incuded in the dissertation document.
+
+The dissertation examines how housing markets respond to different forms of flood risk information, including FEMA Flood Insurance Rate Map updates and non-governmental flood risk information from First Street Foundation Flood Factor scores.
+
+The materials hosted here are intended to make the dissertation analysis more transparent, reproducible, and easier to navigate.
+
+# Research Questions
+
+## Research Question 1
+
+How do residential property values respond when FEMA floodplain maps are updated and properties are added to or removed from the Special Flood Hazard Area?
+
+This portion of the analysis focuses on FEMA Flood Insurance Rate Map updates, including preliminary and effective floodplain designations.
+
+## Research Question 2
+
+How do residential property values respond to the public availability of First Street Foundation Flood Factor scores?
+
+This portion of the analysis examines whether properties with higher Flood Factor scores sold for less after this information became publicly available, and whether those effects differed by existing FEMA floodplain status and region within Cook County.
+
+# Website Contents
+
+The pages below organize the main tables, figures, and supporting analyses.
+
+| Page | Description |
+|---|---|
+| [Data and Variable Documentation](data.qmd) | Describes the data sources, sample restrictions, key variables, and flood risk measures used in the analysis. |
+| [FEMA FIRM Update Results](rq1-fema-firm-updates.qmd) | Presents the main models estimating price effects associated with FEMA floodplain map changes. |
+| [Extended TWFE Results](rq1-extended-twfe.qmd) | Presents extended two-way fixed effects models and cohort-specific estimates for FEMA map update analyses. |
+| [First Street Flood Factor Results](rq2-first-street.qmd) | Presents the main models estimating price effects associated with high Flood Factor scores after public release. |
+| [Assumptions and Diagnostics](assumptions-diagnostics.qmd) | Provides trend graphs, assumption checks, and supporting diagnostic figures. |
+| [Robustness Checks](robustness.qmd) | Presents alternative specifications, additional Flood Factor variable checks, and sensitivity analyses. |
+| [Code Notes](methods-code-notes.qmd) | Documents the structure of the replication files and describes how tables and figures were produced. |
+
+# Data Sources
+
+The analysis combines several property, flood risk, and spatial data sources, including:
+
+- Cook County residential property sales data
+- Cook County parcel data
+- FEMA National Flood Hazard Layer data
+- FEMA Flood Insurance Rate Map panel information
+- Microsoft building footprint data
+- First Street Foundation Flood Factor data
+
+Some source data may not be redistributed directly through this website because of file size. Where direct redistribution is not possible, this site documents the relevant data source, processing steps, and derived variables used in the analysis.
+
+# Reproducibility Notes
+
+The website is designed to display final tables and figures without rerunning every model during each site build.
+
+The recommended workflow is:
+
+1. Run the model scripts separately.
+2. Save model summaries, cleaned tables, and figures to the `outputs/` folder.
+3. Render the Quarto website using the saved outputs.
+
+This avoids rerunning long models every time the website is rebuilt.
+
+# Repository Structure
+
+The project is organized roughly as follows:
+
+```text
+.
+├── index.qmd
+├── data.qmd
+├── rq1-fema-firm-updates.qmd
+├── rq1-extended-twfe.qmd
+├── rq2-first-street.qmd
+├── assumptions-diagnostics.qmd
+├── robustness.qmd
+├── methods-code-notes.qmd
+├── R/
+│   ├── setup_data.R
+│   ├── helper_control_groups.R
+│   ├── helper_tables.R
+│   ├── helper_figures.R
+│   ├── run_models_rq1.R
+│   └── run_models_rq2.R
+├── outputs/
+│   ├── tables/
+│   ├── figures/
+│   └── models/
+└── data/
+    ├── raw/
+    ├── processed/
+    └── documentation/
+```
