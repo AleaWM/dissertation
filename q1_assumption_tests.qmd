@@ -1,5 +1,6 @@
 ---
-title: "Assessing Parallel Trends Under Staggered Treatment"
+title: "Q1 Assumption Tests"
+subtitle: "Assessing Parallel Trends Under Staggered Treatment"
 format:
   html: 
     code-fold: true
