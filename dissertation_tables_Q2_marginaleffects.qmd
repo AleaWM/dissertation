@@ -1,5 +1,6 @@
 ---
-title: "Q2 Marginal Effects"
+title: "Q2 Figures and Tables"
+subtitle: "Impact of visible flood factor scores on sale price"
 format:
   html:
     code-fold: true
@@ -16,6 +17,8 @@ library(tidyverse)
 library(modelsummary)
 library(gt)
 library(DT)
+library(fixest)
+library(did)  
 
 options(scipen = 999)
 
@@ -146,6 +149,10 @@ fmt_me <- function(x) {
     modelsummary::datasummary_df(output = "gt")
 }
 ```
+
+
+
+
 
 # Separated Timing and Underlying Risk
 
@@ -399,3 +406,153 @@ fmt_me(dropped_terms_robust_prelim_highff_post)
 ```
 
 :::
+
+
+
+## Ordinal & Continuous FF Risk Variable
+
+> See `q2_FF_variable_checks.qmd`
+
+# Appendix B
+
+## Figures 13-14 in Q2_assumption_graphs.qmd
+
+## Figures 17-19, 22 in Q2 assumption graphs.qmd
+
+
+## Table 18: Q2 PreTrend Slope Test
+
+
+
+```{r}
+# Option A: Linear pre-trend slope test (restrict to Pre)
+df = bldg_sfha
+
+pre <- df |> mutate(new_info_released = 2017) |>
+  filter(sale_year < 2020)
+
+# Compare slopes over time by SFHA, by High FF, and by their interaction
+m_sfha   <- feols(log_price ~ sale_year * in_eff_sfha, data = pre, cluster = ~pin10)
+m_highff <- feols(log_price ~ sale_year * high_ff_score, data = pre, cluster = ~pin10)
+
+# technically high_ff_Score is not known yet, but it could could convey true risk and if properties that were high risk were already on a different trend than less risky properties.
+m_both   <- feols(log_price ~ sale_year * in_eff_sfha * high_ff_score, data = pre, cluster = ~pin10)
+
+modelsummary(
+  list("SFHA × time" = m_sfha, "HighFF × time" = m_highff, "SFHA×HighFF × time" = m_both),
+  output     = "gt",
+  stars      = TRUE,
+  estimate   = "{estimate}{stars}",
+  statistic  = "({std.error})",
+  gof_omit   = "IC|Log|Adj|AIC|BIC",
+#  add_rows   = data.frame(Term = "SE clustered", Value = "pin"),
+  title      = "Pre-event slope tests"
+) |>
+  tab_options(data_row.padding = px(2)) |>
+  tab_source_note(md("We want NOT statistically significant interaction slope terms for variables interacted with sale_year."))
+```
+
+**Has TWFE:**
+
+```{r}
+# Optbldg_sfha# Option B: Linear pre-trend slope test (restrict to Pre)
+pre <- df |> filter(sale_date < new_info_released)
+pre <- pre |> mutate(prelim_sfha_category =  relevel(factor(prelim_sfha_category), ref = "Never SFHA"))
+
+# Compare slopes over time by SFHA, by High FF, and by their interaction
+m_sfha   <- feols(log_price ~ sale_year * prelim_sfha_category | pin + sale_year, data = pre, cluster = ~pin10)
+m_highff <- feols(log_price ~ sale_year * high_ff_score| pin + sale_year, data = pre, cluster = ~pin10)
+
+# technically high_ff_Score is not known yet, but it could could convey true risk and if properties that were high risk were already on a different trend than less risky properties.
+m_both   <- feols(log_price ~ sale_year * prelim_sfha_category * high_ff_score | pin + sale_year, data = pre, cluster = ~pin10)
+
+modelsummary(
+  list("SFHA × time" = m_sfha, "HighFF × time" = m_highff, "SFHA×HighFF × time" = m_both),
+  output     = "gt",
+  stars      = TRUE,
+  estimate   = "{estimate}{stars}",
+  statistic  = "({std.error})",
+  gof_omit   = "IC|Log|Adj|AIC|BIC",
+#  add_rows   = data.frame(Term = "SE clustered", Value = "pin"),
+  title      = "Pre-event slope tests"
+) |>
+  tab_options(data_row.padding = px(2))|>
+  tab_source_note(md("We want NOT statistically significant interaction slope terms for variables interacted with sale_year."))
+```
+
+
+### Models (by Triad)
+
+```{r}
+pre <- df |> 
+  filter(sale_date < new_info_released, !is.na(Triad)) |> 
+  mutate(prelim_sfha_category =  relevel(factor(prelim_sfha_category), ref = "Never SFHA"))
+
+triads <- unique(pre$Triad)
+
+mods <- purrr::map(triads, function(tr){
+  d <- dplyr::filter(pre, Triad == tr)
+  feols(log_price ~ sale_year * prelim_sfha_category * high_ff_score, data = d, cluster = ~pin10)
+}) |> rlang::set_names(triads)
+
+modelsummary(
+  mods,
+  output     = "gt",
+  stars      = TRUE,
+  estimate   = "{estimate}{stars}",
+  statistic  = "({std.error})",
+  gof_omit   = "IC|Log|Adj|AIC|BIC",
+#  add_rows   = data.frame(Term = "SE clustered", Value = "pin"),
+  title      = "Pre-event slope tests by Triad"
+)
+```
+
+**Does not have TWFE:**
+```{r}
+pre <- df |> dplyr::filter(sale_date < new_info_released, !is.na(Triad))  |> mutate(prelim_sfha_category =  relevel( as.factor(prelim_sfha_category), ref = "Never SFHA"))
+
+triads <- unique(pre$Triad)
+
+mods <- feols(log_price ~ sale_year * prelim_sfha_category * high_ff_score * Triad, data = pre, cluster = ~pin10)
+
+modelsummary(
+  mods,
+  output     = "gt",
+  stars      = TRUE,
+  estimate   = "{estimate}{stars}",
+  statistic  = "({std.error})",
+  gof_omit   = "IC|Log|Adj|AIC|BIC",
+#  add_rows   = data.frame(Term = "SE clustered", Value = "pin"),
+  title      = "Pre-event slope tests by Triad"
+)
+```
+
+## Table 21: Q2 placebo test
+
+
+```{r}
+placebo_cut <- 2017
+pre_placebo <- df |> filter(sale_year <= 2019) |> 
+  mutate(event_pb = if_else(sale_year > placebo_cut, "PostPB", "PrePB") |> factor(c("PrePB","PostPB")))
+
+models = list(
+    placebo_simple <- feols(log_price ~ high_ff_score * event_pb | pin + sale_year + qtr,
+             cluster = ~pin10, data = pre_placebo),
+  
+  placebo <- feols(log_price ~ high_ff_score * change_type * event_pb | pin + sale_year + qtr,
+             cluster = ~pin10, data = pre_placebo),
+    actual_simple <- feols(log_price ~ high_ff_score * event | pin + sale_year + qtr,
+             cluster = ~pin10, data = bldg_sfha),
+
+  actual <- feols(log_price ~ high_ff_score * change_type * event | pin + sale_year + qtr,
+             cluster = ~pin10, data = bldg_sfha)
+)
+
+modelsummary(models, output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
+             statistic = "({std.error})", gof_omit = "IC|Log|Adj|AIC|BIC",
+             title = "Placebo test (cut at 2017)")
+
+```
+
+
+
