@@ -1,5 +1,5 @@
 ---
-title: "Dissertation Data and Replication Materials"
+title: "Dissertation Replication Materials"
 subtitle: "Flood Risk Information, Floodplain Map Updates, and Property Values in Cook County, Illinois"
 format:
   html:
@@ -34,15 +34,16 @@ This portion of the analysis examines whether properties with higher Flood Facto
 
 The pages below organize the main tables, figures, and supporting analyses.
 
-| Page | Description |
-|---|---|
-| [Data and Variable Documentation](data.qmd) | Describes the data sources, sample restrictions, key variables, and flood risk measures used in the analysis. |
-| [FEMA FIRM Update Results](rq1-fema-firm-updates.qmd) | Presents the main models estimating price effects associated with FEMA floodplain map changes. |
-| [Extended TWFE Results](rq1-extended-twfe.qmd) | Presents extended two-way fixed effects models and cohort-specific estimates for FEMA map update analyses. |
-| [First Street Flood Factor Results](rq2-first-street.qmd) | Presents the main models estimating price effects associated with high Flood Factor scores after public release. |
-| [Assumptions and Diagnostics](assumptions-diagnostics.qmd) | Provides trend graphs, assumption checks, and supporting diagnostic figures. |
-| [Robustness Checks](robustness.qmd) | Presents alternative specifications, additional Flood Factor variable checks, and sensitivity analyses. |
-| [Code Notes](methods-code-notes.qmd) | Documents the structure of the replication files and describes how tables and figures were produced. |
+> Work in progress. Sorry future me if page references don't work. 
+
+| Navigation Section | Page | Description |
+|---|---|---|
+| Website Info | [Website Info](index.qmd) | Landing page for the dissertation replication materials website. |
+| Background Info | [Background Info](descriptive_statistics.qmd) | Descriptive statistics and background information for the Cook County dissertation data. |
+| Q1: FEMA FIRM Info | [Q1: FEMA FIRM Tables](dissertation_tables.qmd) | Main tables and supporting results for the FEMA Flood Insurance Rate Map update analysis. |
+| Q2: Flood Factor Info | [Q2: Flood Factor Marginal Effects](dissertation_tables_Q2_marginaleffects.qmd) | Main marginal effects tables and supporting results for the First Street Flood Factor analysis. |
+| Q2: Flood Factor Info | [Flood Factor Variable Checks](q2_FF_variable_checks.qmd) | Robustness checks comparing binary, ordinal, and continuous Flood Factor variables in model specifications. |
+| Additional Details | [File Information](file_info.qmd) | Notes on files, outputs, and supporting materials included in the website. |
 
 # Data Sources
 
@@ -61,29 +62,24 @@ Some source data may not be redistributed directly through this website because 
 
 The website is designed to display final tables and figures without rerunning every model during each site build.
 
-The recommended workflow is:
+Spatial data and data cleaning/merging largely take place in the _targets.R file. Models and exploration are done in the .qmd files. 
 
-1. Run the model scripts separately.
-2. Save model summaries, cleaned tables, and figures to the `outputs/` folder.
-3. Render the Quarto website using the saved outputs.
-
-This avoids rerunning long models every time the website is rebuilt.
 
 # Repository Structure
 
 The project is organized roughly as follows:
 
 ```text
-.
 ├── index.qmd
-├── data.qmd
-├── rq1-fema-firm-updates.qmd
+├── descriptive_stats.qmd
+├── rq1-desertation_tables.qmd
 ├── rq1-extended-twfe.qmd
-├── rq2-first-street.qmd
-├── assumptions-diagnostics.qmd
-├── robustness.qmd
-├── methods-code-notes.qmd
-├── R/
+├── rq1-assumptions-diagnostics.qmd
+├── rq1-robustness.qmd
+├── rq2-dissertation_tables.qmd
+├── rq2-assumptions-diagnostics.qmd
+├── rq2-robustness.qmd
+├── scripts/
 │   ├── setup_data.R
 │   ├── helper_control_groups.R
 │   ├── helper_tables.R
@@ -91,11 +87,18 @@ The project is organized roughly as follows:
 │   ├── run_models_rq1.R
 │   └── run_models_rq2.R
 ├── outputs/
+│   ├── q2_models/
+│   │   ├── tables/
+│   │   ├── figures/
+│   │   └── models/
+│   ├── q2_marginal_effects/
+│   │   ├── tables/
+│   │   ├── figures/
+│   │   └── models/
 │   ├── tables/
 │   ├── figures/
 │   └── models/
 └── data/
     ├── raw/
-    ├── processed/
-    └── documentation/
+    └── processed/
 ```
