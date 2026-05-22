@@ -1,0 +1,301 @@
+---
+title: "FF Variable Checks"
+format:
+  html:
+    code-fold: true
+    toc: true
+    toc-depth: 3
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(tidyverse)
+library(modelsummary)
+library(gt)
+library(knitr)
+
+options(scipen = 999)
+
+out_dir <- "outputs/q2_models"
+table_dir <- file.path(out_dir, "tables")
+me_dir <- file.path(out_dir, "marginaleffects")
+fig_dir <- file.path(out_dir, "figures")
+
+# ========================================================
+# LOAD SAVED MODEL TABLES
+# Created by: scripts/q2_01_run_ff_models.R
+# ========================================================
+
+binary_table <- readRDS(
+  file.path(out_dir, "binary_ff_table.rds")
+)
+
+ordinal_table <- readRDS(
+  file.path(out_dir, "ordinal_ff_table.rds")
+)
+
+continuous_table <- readRDS(
+  file.path(out_dir, "continuous_ff_table.rds")
+)
+
+# ========================================================
+# LOAD SAVED MODEL OBJECTS, IF NEEDED FOR FOLLOW-UP CHECKS
+# Created by: scripts/q2_01_run_ff_models.R
+# ========================================================
+
+binary_models <- readRDS(
+  file.path(out_dir, "binary_ff_models.rds")
+)
+
+ordinal_models <- readRDS(
+  file.path(out_dir, "ordinal_ff_models.rds")
+)
+
+continuous_models <- readRDS(
+  file.path(out_dir, "continuous_ff_models.rds")
+)
+
+# ========================================================
+# LOAD DIAGNOSTICS
+# Created by: scripts/q2_01_run_ff_models.R
+# ========================================================
+
+ordinal_dropped_terms <- readRDS(
+  file.path(out_dir, "ordinal_dropped_terms.rds")
+)
+
+continuous_dropped_terms <- readRDS(
+  file.path(out_dir, "continuous_dropped_terms.rds")
+)
+
+# ========================================================
+# LOAD MARGINAL EFFECTS OUTPUTS
+# Created by: scripts/q2_02_run_marginaleffects.R
+# ========================================================
+
+ordinal_event_effects <- readRDS(
+  file.path(me_dir, "ordinal_event_effects_by_score_triad.rds")
+)
+
+ordinal_change_type_event_effects <- readRDS(
+  file.path(me_dir, "ordinal_event_effects_by_change_type_score_triad.rds")
+)
+
+continuous_ff_slopes <- readRDS(
+  file.path(me_dir, "continuous_ff_slopes_post_by_triad.rds")
+)
+
+continuous_change_type_ff_slopes <- readRDS(
+  file.path(me_dir, "continuous_ff_slopes_post_by_change_type_triad.rds")
+)
+
+# ========================================================
+# LOAD SAVED GGPLOT OBJECTS
+# Created by: scripts/q2_02_run_marginaleffects.R
+# ========================================================
+
+p_ordinal_event <- readRDS(
+  file.path(fig_dir, "p_ordinal_event_effects_by_score_triad.rds")
+)
+
+p_ordinal_change_type <- readRDS(
+  file.path(fig_dir, "p_ordinal_event_effects_by_change_type_score_triad.rds")
+)
+
+p_continuous_slopes <- readRDS(
+  file.path(fig_dir, "p_continuous_ff_slopes_post_by_triad.rds")
+)
+
+p_continuous_change_type <- readRDS(
+  file.path(fig_dir, "p_continuous_ff_slopes_post_by_change_type_triad.rds")
+)
+```
+
+# Separated Timing and Underlying Risk
+
+The following models separate the timing of Flood Factor information release from the underlying level of flood risk. Property fixed effects absorb time-invariant parcel characteristics, while year fixed effects control for broader market conditions.
+
+## Binary High Flood Factor Models
+
+The binary specifications estimate whether properties with high Flood Factor scores experienced differential price changes after Flood Factor information became publicly available. The specification using `i(event, high_ff_score, ref = FALSE)` keeps the identified post-release contrast while avoiding the time-invariant main effect that is absorbed by property fixed effects.
+
+
+`Event == TRUE` for all sales that occurred after First Street released its flood risk data.
+
+`high_ff_score == TRUE` for properties that had a flood factor score of 5 or higher
+
+
+```{r binary-table}
+binary_table
+```
+
+
+After Flood Factor information became available, high-risk properties sold for roughly 10.6% less relative to lower-risk properties, net of property fixed effects and overall market time effects.
+
+
+
+## Ordinal Flood Factor Models
+
+::: {.panel-tabset}
+
+### Ordinal FF TWFE
+
+The ordinal specifications estimate separate post-release effects for each Flood Factor score category. These models are useful for identifying whether the price response is concentrated among higher Flood Factor scores rather than changing linearly across the full scale.
+
+```{r ordinal-table}
+ordinal_table
+```
+
+
+
+
+
+
+### Marginal Effects Figure
+
+```{r ordinal-me-figure, fig.width=8, fig.height=5.5}
+p_ordinal_event
+```
+
+The ordinal marginal effects are the clearest way to communicate the nonlinear pattern. Lower Flood Factor scores generally show smaller estimated price responses, while higher scores show larger negative post-release effects.
+
+### Marginal Effects Table
+
+
+The following marginal effects summarize the estimated post-release price change for each Flood Factor score across Cook County regions.
+
+```{r ordinal-me-table}
+ordinal_event_effects |>
+  select(
+    Triad,
+    ff_score_ord,
+    estimate,
+    std.error,
+    conf.low,
+    conf.high,
+    pct_change,
+    pct_low,
+    pct_high,
+    p.value
+  ) |>
+  modelsummary::datasummary_df(output = "gt")
+```
+
+### Ordinal Flood Factor by SFHA Change Type and Triad
+
+These models are more saturated and should usually be treated as appendix or robustness material. They are useful for checking whether Flood Factor effects differ depending on FEMA floodplain status, but the number of interaction cells makes direct coefficient interpretation difficult.
+
+```{r ordinal-change-type-me-table}
+ordinal_change_type_event_effects |>
+  select(
+    change_type,
+    Triad,
+    ff_score_ord,
+    estimate,
+    std.error,
+    conf.low,
+    conf.high,
+    pct_change,
+    pct_low,
+    pct_high,
+    p.value
+  ) |>
+  modelsummary::datasummary_df(output = "gt")
+```
+
+```{r ordinal-change-type-me-figure, fig.width=10, fig.height=7}
+p_ordinal_change_type
+```
+
+
+### Ordinal Model Diagnostics
+
+The following table identifies coefficients omitted from interpretation due to extremely large standard errors or lack of identification under the fixed-effects structure. Large standard errors typically indicate that a coefficient is not identified within the property fixed-effects framework because the underlying variable does not vary within parcels over time, or because certain interaction combinations contain extremely sparse observations.
+
+```{r ordinal-dropped-terms}
+ordinal_dropped_terms |> DT::datatable(rownames = FALSE)
+```
+
+:::
+
+## Continuous Flood Factor Models
+
+The continuous specifications estimate the marginal price effect associated with a one-point increase in Flood Factor score after public release of the information.
+
+::: {.panel-tabset}
+
+### Continuous FF TWFE 
+```{r continuous-table}
+continuous_table
+```
+
+
+
+### Marginal Effects Table
+
+The following marginal effects estimate the post-release association between a one-point increase in Flood Factor score and sale price across Cook County regions.
+
+
+```{r continuous-me-table}
+continuous_ff_slopes |>
+  select(
+    Triad,
+    estimate,
+    std.error,
+    conf.low,
+    conf.high,
+    pct_change,
+    pct_low,
+    pct_high,
+    p.value
+  ) |>
+  modelsummary::datasummary_df(output = "gt")
+```
+
+### Marginal Effects Figure
+
+```{r continuous-me-figure, fig.width=7, fig.height=4.5}
+p_continuous_slopes
+```
+
+The continuous marginal effects summarize how strongly prices changed with each additional Flood Factor point after information release. This is usually the most compact way to present regional heterogeneity in the continuous specification.
+
+### Continuous Flood Factor Slopes by SFHA Change Type and Triad
+
+These models are more saturated and should usually be treated as appendix or robustness material. They are useful for checking whether Flood Factor effects differ depending on FEMA floodplain status, but the number of interaction cells makes direct coefficient interpretation difficult.
+
+```{r continuous-change-type-me-table}
+continuous_change_type_ff_slopes |>
+  select(
+    change_type,
+    Triad,
+    estimate,
+    std.error,
+    conf.low,
+    conf.high,
+    pct_change,
+    pct_low,
+    pct_high,
+    p.value
+  ) |>
+  modelsummary::datasummary_df(output = "gt")
+```
+
+```{r continuous-change-type-me-figure, fig.width=9, fig.height=5.5}
+p_continuous_change_type
+```
+
+### Continuous Model Diagnostics
+
+The following table identifies coefficients omitted from interpretation due to extremely large standard errors or lack of identification under the fixed-effects structure. Large standard errors typically indicate that a coefficient is not identified within the property fixed-effects framework because the underlying variable does not vary within parcels over time, or because certain interaction combinations contain extremely sparse observations.
+
+```{r continuous-dropped-terms}
+continuous_dropped_terms |> DT::datatable(rownames = FALSE)
+```
+
+:::
+
+
