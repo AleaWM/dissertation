@@ -26,12 +26,24 @@ bldg_sfha <- bldg_sfha |>
     !pin10 %in% drop_parcels |
       (pin10 == "0113301013" & sale_year > 2014)
   ) |>
+  group_by(pin) |>
+  mutate(
+    ever_added_eff = any(addedto_eff_sfha == TRUE, na.rm = TRUE),
+    ever_removed_eff = any(removedfrom_eff_sfha == TRUE, na.rm = TRUE),
+  ) |>
+  ungroup() |>
   mutate(
     event = sale_date > new_info_released,
     highff_post = high_ff_score == TRUE & sale_date > new_info_released,
     Triad = as.character(Triad),
     triad_coast = if_else(pin10 %in% lake100ft$PIN10, "Coastal", Triad),
-    ff_score_ord = factor(env_flood_fs_factor, levels = 1:10)
+    ff_score_ord = factor(env_flood_fs_factor, levels = 1:10),
+    eff_sfha_category = case_when(
+      ever_added_eff & !ever_removed_eff ~ "Added to eff SFHA",
+      ever_removed_eff & !ever_added_eff ~ "Removed from eff SFHA",
+      change_type == "Always SFHA" ~ "Always SFHA",
+      change_type == "Never SFHA" ~ "Never SFHA",
+      TRUE ~ "CHECK ME!")
   ) |>
   group_by(pin) |>
   mutate(
@@ -107,11 +119,25 @@ groups_prelim <- make_control_groups(
   type = "pre"
 )
 
+groups_effective <- make_control_groups(
+  df = bldg_sfha,
+  ever_added = ever_added_eff,
+  ever_removed = ever_removed_eff,
+  pre_eff_change_type = change_type,
+  type = "eff"
+)
+
+
 groups_prelim_long <- imap_dfr(groups_prelim, ~ mutate(.x, group = .y))
+groups_eff_long <- imap_dfr(groups_effective, ~ mutate(.x, group = .y))
 
 saveRDS(bldg_sfha, file.path(out_dir, "bldg_sfha_q2_dissertation_prepped.rds"))
 saveRDS(groups_prelim, file.path(out_dir, "groups_prelim.rds"))
+saveRDS(groups_effective, file.path(out_dir, "groups_effective.rds"))
+
 saveRDS(groups_prelim_long, file.path(out_dir, "groups_prelim_long.rds"))
+saveRDS(groups_eff_long, file.path(out_dir, "groups_eff_long.rds"))
+
 saveRDS(lake100ft, file.path(out_dir, "lake100ft.rds"))
 saveRDS(lake500ft, file.path(out_dir, "lake500ft.rds"))
 
