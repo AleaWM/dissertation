@@ -27,7 +27,7 @@ fig_dir <- file.path(out_dir, "figures")
 
 # ========================================================
 # LOAD SAVED MODEL TABLES
-# Created by: scripts/FF_var_checks/q2_01_run_ff_models.R
+# Created by: scripts/q2_FF_variable_checks/q2_01_run_ff_models.R
 # ========================================================
 
 binary_table <- readRDS(
