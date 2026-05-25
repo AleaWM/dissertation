@@ -84,6 +84,15 @@ ordinal_change_type_event_effects <- readRDS(
   file.path(me_dir, "ordinal_event_effects_by_change_type_score_triad.rds")
 )
 
+ordinal_event_effects_sfha <- readRDS(
+  file.path(me_dir, "ordinal_event_effects_by_score_sfha.rds")
+)
+
+ordinal_change_type_event_effects_sfha <- readRDS(
+  file.path(me_dir, "ordinal_event_effects_by_change_type_score_sfha.rds")
+)
+
+
 continuous_ff_slopes <- readRDS(
   file.path(me_dir, "continuous_ff_slopes_post_by_triad.rds")
 )
@@ -91,6 +100,16 @@ continuous_ff_slopes <- readRDS(
 continuous_change_type_ff_slopes <- readRDS(
   file.path(me_dir, "continuous_ff_slopes_post_by_change_type_triad.rds")
 )
+
+
+continuous_ff_slopes <- readRDS(
+  file.path(me_dir, "continuous_ff_slopes_post_by_triad.rds")
+)
+
+continuous_change_type_ff_slopes <- readRDS(
+  file.path(me_dir, "continuous_ff_slopes_post_by_change_type_triad.rds")
+)
+
 
 # ========================================================
 # LOAD SAVED GGPLOT OBJECTS
@@ -223,7 +242,12 @@ ordinal_dropped_terms |> DT::datatable(rownames = FALSE)
 
 ## Continuous Flood Factor Models
 
-The continuous specifications estimate the marginal price effect associated with a one-point increase in Flood Factor score after public release of the information.
+After Flood Factor information became publicly available, did the within-property change in sale price differ systematically for properties with different Flood Factor scores, compared with other properties selling in the same years?
+
+So the continuous model is not estimating the effect of “a property’s Flood Factor score increasing by one point.” The Flood Factor score is fixed for a property. It does not vary within PIN. The model is estimating whether the post-release price shift is more negative for properties that already had higher Flood Factor scores.
+
+
+`env_flood_fs_factor:event`: Each additional Flood Factor point is associated with a more negative post-release price change, not because the same property’s score changed, but because higher-score properties followed a different post-release price trajectory than lower-score properties.
 
 ::: {.panel-tabset}
 
@@ -232,9 +256,37 @@ The continuous specifications estimate the marginal price effect associated with
 continuous_table
 ```
 
+### Marginal Effects Table by SFHA
+
+Did the relationship between Flood Factor score and post-release price changes differ depending on whether the property was never in the SFHA, always in the SFHA, or changed SFHA status?
+
+These models test whether post-release price trajectories differed by preexisting Flood Factor risk, and whether that differential post-release response was moderated by FEMA SFHA status.
+
+```{r continuous-me-table}
+continuous_ff_slopes |>
+  select(
+    change_type,
+    estimate,
+    std.error,
+    conf.low,
+    conf.high,
+    pct_change,
+    pct_low,
+    pct_high,
+    p.value
+  ) |>
+  modelsummary::datasummary_df(output = "gt")
+```
+
+### Marginal Effects Figure by SFHA
+
+```{r continuous-me-figure, fig.width=7, fig.height=4.5}
+p_continuous_slopes
+```
 
 
-### Marginal Effects Table
+
+### Marginal Effects Table by Triad
 
 The following marginal effects estimate the post-release association between a one-point increase in Flood Factor score and sale price across Cook County regions.
 
@@ -255,17 +307,15 @@ continuous_ff_slopes |>
   modelsummary::datasummary_df(output = "gt")
 ```
 
-### Marginal Effects Figure
+### Marginal Effects Figure by Triad
 
 ```{r continuous-me-figure, fig.width=7, fig.height=4.5}
 p_continuous_slopes
 ```
 
-The continuous marginal effects summarize how strongly prices changed with each additional Flood Factor point after information release. This is usually the most compact way to present regional heterogeneity in the continuous specification.
 
 ### Continuous Flood Factor Slopes by SFHA Change Type and Triad
 
-These models are more saturated and should usually be treated as appendix or robustness material. They are useful for checking whether Flood Factor effects differ depending on FEMA floodplain status, but the number of interaction cells makes direct coefficient interpretation difficult.
 
 ```{r continuous-change-type-me-table}
 continuous_change_type_ff_slopes |>
