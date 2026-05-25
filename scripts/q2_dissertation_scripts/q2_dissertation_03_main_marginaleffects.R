@@ -33,24 +33,34 @@ bldg_sfha <- readRDS(prep_path)
 # Main models ------------------------------------------------------------------
 
 q2_main_models <- list(
-  "Effective, no Triad" = feols(
+  "Post × HighFF" = feols(
+    log_price ~ high_ff_score * event |
+      pin + sale_year,
+    vcov = ~pin10,
+    data = bldg_sfha
+  ),
+
+
+  "Post × HighFF × SFHA" = feols(
     log_price ~ change_type * high_ff_score * event |
       pin + sale_year,
     vcov = ~pin10,
     data = bldg_sfha
   ),
-  "Effective × Triad" = feols(
+
+  "Post × HighFF × Triad × SFHA" = feols(
     log_price ~ change_type * high_ff_score * event * Triad |
       pin + sale_year,
     vcov = ~pin10,
     data = bldg_sfha
-  ) # ,
-  # "Preliminary × Triad" = feols(
-  #   log_price ~ change_type_prelim * high_ff_score * event * Triad |
-  #     pin + sale_year,
-  #   vcov = ~pin10,
-  #   data = bldg_sfha
-  # )
+  ),
+
+  "Post × HighFF × Triad" = feols(
+    log_price ~ high_ff_score * event  * Triad |
+      pin + sale_year,
+    vcov = ~pin10,
+    data = bldg_sfha
+  )
 )
 
 dropped_terms_q2_main <- flag_giant_se_terms(q2_main_models)
@@ -69,19 +79,48 @@ q2_main_table <- modelsummary(
 
 # Marginal effects/comparisons from original exploratory QMD -------------------
 
-me_change_type_sequential <- avg_comparisons(
-  q2_main_models[["Effective × Triad"]],
-  variables = list(change_type = "sequential")
+# no sfha or tria_ _ontrols
+me_way_event_sequential_simp <- avg_comparisons(
+  q2_main_models[["Post × HighFF"]],
+  variables = list(event = c(FALSE, TRUE))
+) # 0.0431
+
+me_way_event_ff_sfha <- avg_comparisons(
+  q2_main_models[["Post × HighFF × Triad × SFHA"]],
+  variables = "event",
+  by = c("change_type", "high_ff_score")
 )
+me_way_event_ff_sfha
+
+me_way_event_sequential <- avg_comparisons(
+  q2_main_models[["Post × HighFF × Triad × SFHA"]],
+  variables = list(event = c(FALSE, TRUE))
+)  # 0.0403
+
+# me_change_type_sequential <- avg_comparisons(
+#   q2_main_models[["Post × HighFF × SFHA"]],
+#   variables = list(change_type = "sequential")
+# )
+
 
 me_event_by_change_type <- avg_comparisons(
-  q2_main_models[["Effective × Triad"]],
+  q2_main_models[["Post × HighFF × Triad × SFHA"]],
   variables = list(event = c(FALSE, TRUE)),
   by = "change_type"
 )
 
+
+me_event_by_high_ff <- avg_comparisons(
+  q2_main_models[["Post × HighFF × Triad × SFHA"]],
+  variables = "event",
+  by = "high_ff_score"
+)
+me_event_by_high_ff
+# TRUE  -0.0456
+
+
 me_never_sfha_event <- avg_comparisons(
-  q2_main_models[["Effective × Triad"]],
+  q2_main_models[["Post × HighFF × Triad × SFHA"]],
   variables = "event",
   newdata = datagrid(
     change_type = "Never SFHA",
@@ -90,18 +129,18 @@ me_never_sfha_event <- avg_comparisons(
   by = NULL
 )
 
-me_never_prelim_event_by_triad <- avg_comparisons(
-  q2_main_models[["Preliminary × Triad"]],
-  variables = "event",
-  newdata = datagrid(
-    change_type_prelim = "Never SFHA",
-    high_ff_score = c(TRUE, FALSE)
-  ),
-  by = "Triad"
-)
+# me_never_prelim_event_by_triad <- avg_comparisons(
+#   q2_main_models[["Preliminary × Triad"]],
+#   variables = "event",
+#   newdata = datagrid(
+#     change_type_prelim = "Never SFHA",
+#     high_ff_score = c(TRUE, FALSE)
+#   ),
+#   by = "Triad"
+# )
 
 me_all_effective_grid <- comparisons(
-  q2_main_models[["Effective, no Triad"]],
+  q2_main_models[["Post × HighFF × SFHA"]],
   newdata = datagrid(
     event = unique,
     high_ff_score = unique,
@@ -110,7 +149,7 @@ me_all_effective_grid <- comparisons(
 )
 
 me_high_ff_post_by_change_type <- comparisons(
-  q2_main_models[["Effective × Triad"]],
+  q2_main_models[["Post × HighFF × Triad × SFHA"]],
   variables = "event",
   newdata = datagrid(
     high_ff_score = TRUE,
@@ -206,6 +245,12 @@ saveRDS(q2_main_table, file.path(out_dir, "q2_main_table.rds"))
 saveRDS(highff_post_models, file.path(out_dir, "highff_post_models.rds"))
 saveRDS(highff_post_table, file.path(out_dir, "highff_post_table.rds"))
 
+saveRDS(q2_main_models, file.path(out_dir, "q2_main_models.rds"))
+saveRDS(q2_main_table, file.path(out_dir, "q2_main_table.rds"))
+saveRDS(highff_post_models, file.path(out_dir, "highff_post_models.rds"))
+saveRDS(highff_post_table, file.path(out_dir, "highff_post_table.rds"))
+
+
 save_diagnostics(dropped_terms_q2_main, diagnostics_dir, "dropped_terms_q2_main")
 save_diagnostics(dropped_terms_highff_post, diagnostics_dir, "dropped_terms_highff_post")
 
@@ -213,10 +258,13 @@ gt::gtsave(q2_main_table, file.path(table_dir, "q2_main_table.html"))
 gt::gtsave(highff_post_table, file.path(table_dir, "highff_post_table.html"))
 
 main_me_outputs <- list(
-  me_change_type_sequential = me_change_type_sequential,
+  me_way_event_sequential_simp = me_way_event_sequential_simp,
+  me_way_event_ff_sfha = me_way_event_ff_sfha,
+  me_way_event_sequential = me_way_event_sequential,
+  me_event_by_high_ff = me_event_by_high_ff,
+  #  me_change_type_sequential = me_change_type_sequential,
   me_event_by_change_type = me_event_by_change_type,
   me_never_sfha_event = me_never_sfha_event,
-  me_never_prelim_event_by_triad = me_never_prelim_event_by_triad,
   me_all_effective_grid = me_all_effective_grid,
   me_high_ff_post_by_change_type = me_high_ff_post_by_change_type,
   me_highff_post_by_change_type = me_highff_post_by_change_type,
