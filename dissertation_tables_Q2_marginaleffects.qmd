@@ -10,6 +10,7 @@ execute:
   echo: false
   warning: false
   message: false
+  error: true
 ---
 
 ```{r setup}
@@ -28,28 +29,29 @@ me_dir <- file.path(out_dir, "marginaleffects")
 etwfe_dir <- file.path(out_dir, "etwfe")
 diagnostics_dir <- file.path(out_dir, "diagnostics")
 
-required_files <- c(
-  file.path(out_dir, "bldg_sfha_q2_dissertation_prepped.rds"),
-  file.path(out_dir, "basic_twfe_effective_table.rds"),
-  file.path(out_dir, "basic_twfe_prelim_table.rds"),
-  file.path(out_dir, "basic_twfe_highff_prelim_table.rds"),
-  file.path(etwfe_dir, "etwfe_base_table.rds"),
-  file.path(etwfe_dir, "etwfe_triad_table.rds"),
-  file.path(out_dir, "q2_main_table.rds"),
-  file.path(out_dir, "highff_post_table.rds"),
-  file.path(me_dir, "q2_main_marginaleffects_list.rds"),
-  file.path(out_dir, "robust_prelim_high_ff_table.rds"),
-  file.path(out_dir, "robust_prelim_highff_post_table.rds")
-)
-
-missing_files <- required_files[!file.exists(required_files)]
-
-if (length(missing_files) > 0) {
-  stop(
-    "These saved outputs are missing. Run source('scripts/q2_dissertation_run_all.R') from the project root first:\n",
-    paste(missing_files, collapse = "\n")
-  )
-}
+# good way to make sure files exist  before running but also kind of unnecessary 
+# required_files <- c(
+#   file.path(out_dir, "bldg_sfha_q2_dissertation_prepped.rds"),
+#   file.path(out_dir, "basic_twfe_effective_table.rds"),
+#   file.path(out_dir, "basic_twfe_prelim_table.rds"),
+#   file.path(out_dir, "basic_twfe_highff_prelim_table.rds"),
+#   file.path(etwfe_dir, "etwfe_base_table.rds"),
+#   file.path(etwfe_dir, "etwfe_triad_table.rds"),
+#   file.path(out_dir, "q2_main_table.rds"),
+#   file.path(out_dir, "highff_post_table.rds"),
+#   file.path(me_dir, "q2_main_marginaleffects_list.rds"),
+#   file.path(out_dir, "robust_prelim_high_ff_table.rds"),
+#   file.path(out_dir, "robust_prelim_highff_post_table.rds")
+# )
+# 
+# missing_files <- required_files[!file.exists(required_files)]
+# 
+# if (length(missing_files) > 0) {
+#   stop(
+#     "These saved outputs are missing. Run source('scripts/q2_dissertation_run_all.R') from the project root first:\n",
+#     paste(missing_files, collapse = "\n")
+#   )
+# }
 
 # ========================================================
 # LOAD DATA SUMMARIES / MODEL TABLES
@@ -106,7 +108,10 @@ robust_prelim_highff_post_table <- readRDS(
 main_me <- readRDS(
   file.path(me_dir, "q2_main_marginaleffects_list.rds")
 )
-
+me_way_event_sequential_simp <- main_me$me_way_event_sequential_simp
+me_way_event_ff_sfha <- main_me$me_way_event_ff_sfha
+me_way_event_sequential <- main_me$me_way_event_sequential
+me_event_by_high_ff <- main_me$me_event_by_high_ff
 me_change_type_sequential <- main_me$me_change_type_sequential
 me_event_by_change_type <- main_me$me_event_by_change_type
 me_never_sfha_event <- main_me$me_never_sfha_event
@@ -151,16 +156,123 @@ fmt_me <- function(x) {
 ```
 
 
+# Combined Indicator & Preliminary SFHA Status
+
+::: {.panel-tabset}
+
+## Naive/Combinded Indicator Model
+
+```{r basic-highff-prelim}
+basic_twfe_highff_prelim_table
+```
+
+## HighFF Post Model Table
+
+```{r highff-post-table}
+highff_post_table
+```
 
 
+## HighFF Post by Change Type
 
-# Separated Timing and Underlying Risk
+```
+me_highff_post_by_change_type <- avg_comparisons(
+  highff_post_models[["Change Type × HighFF Post"]],
+  variables = "highff_post",
+  by = "change_type"
+)
+```
+
+```{r highff-post-by-change-type}
+fmt_me(me_highff_post_by_change_type)
+```
+
+## Hypothesis Test: HighFF Post by Change Type
+
+```
+hyp_highff_post_by_change_type <- avg_comparisons(
+  highff_post_models[["Change Type × HighFF Post"]],
+  variables = "highff_post",
+  by = "change_type",
+  hypothesis = "b1=b2"
+)
+```
+
+```{r hyp-highff-post-by-change-type}
+fmt_me(hyp_highff_post_by_change_type)
+```
+
+## HighFF Post × Triad by Change Type
+
+```
+me_highff_post_triad_by_change_type <- avg_comparisons(
+  highff_post_models[["Change Type × HighFF Post × Triad"]],
+  variables = "highff_post",
+  by = "change_type"
+)
+```
+
+```{r highff-post-triad-by-change-type}
+fmt_me(me_highff_post_triad_by_change_type)
+```
+
+## Hypothesis Test: HighFF Post × Triad by Change Type
+
+```
+hyp_highff_post_triad_by_change_type <- avg_comparisons(
+  highff_post_models[["Change Type × HighFF Post × Triad"]],
+  variables = "highff_post",
+  by = "change_type",
+  hypothesis = "b1=b2"
+)
+```
+
+
+```{r hyp-highff-post-triad-by-change-type}
+fmt_me(hyp_highff_post_triad_by_change_type)
+```
+
+## Partially Interacted HighFF Post Model
+
+```
+me_highff_post_partial_by_change_type <- avg_comparisons(
+  highff_post_models[["Partially interacted"]],
+  variables = "highff_post",
+  by = "change_type"
+)
+```
+
+```{r highff-post-partial-by-change-type}
+fmt_me(me_highff_post_partial_by_change_type)
+```
+
+## HighFF Post Grid by Change Type and Triad
+
+```
+me_highff_post_grid_by_change_type_triad <- comparisons(
+  highff_post_models[["Change Type × HighFF Post × Triad"]],
+  variables = "highff_post",
+  newdata = datagrid(
+    change_type = c("Never SFHA", "Always SFHA", "Changes SFHA"),
+    Triad = c("South", "North", "City")
+  ),
+  vcov = ~pin10
+)
+```
+
+```{r highff-post-grid-change-type-triad}
+fmt_me(me_highff_post_grid_by_change_type_triad)
+```
+
+:::
+
+
+# Separated Timing and Underlying Risk: Base Models
 
 This file now loads saved model objects, tables, and marginal effects from scripts rather than estimating the models while rendering the Quarto document. The heavy computations are created by the scripts in the `scripts/` folder and saved under `outputs/q2_marginaleffects/`.
 
 `event == TRUE` for all sales that occurred after First Street released its flood risk data. `high_ff_score == TRUE` for properties with a Flood Factor score of 5 or higher.
 
-# Basic TWFE Models
 
 ::: {.panel-tabset}
 
@@ -176,39 +288,9 @@ basic_twfe_effective_table
 basic_twfe_prelim_table
 ```
 
-## Combined Indicator & Preliminary SFHA Status
-
-```{r basic-highff-prelim}
-basic_twfe_highff_prelim_table
-```
-
 :::
 
-# ETWFE Comparisons
-
-These models use the `etwfe` package. The saved outputs below are produced by `scripts/q2_dissertation_02_etwfe_models.R`.
-
-::: {.panel-tabset}
-
-## Base Model
-
-This version does not include SFHA status or Triad in the equation.
-
-```{r etwfe-base}
-etwfe_base_table
-```
-
-## Regional Heterogeneity
-
-```{r etwfe-triad}
-etwfe_triad_table
-```
-
-:::
-
-# Question 2
-
-## Table 15: Question 2 Main Model
+# Appendic C and model behind marginal effects below
 
 ```{r q2-main-table}
 q2_main_table
@@ -218,13 +300,90 @@ q2_main_table
 
 ::: {.panel-tabset}
 
+## Overall Post-Release Effect from Fully Interacted Model
+
+Not what I want.
+
+```
+me_way_event_sequential <- avg_comparisons(
+  q2_main_models[["Post × HighFF × Triad × SFHA"]],
+  variables = list(event = c(FALSE, TRUE))
+)  # 0.0403
+```
+
+```{r}
+fmt_me(me_way_event_sequential)
+```
+
+## Post-Release Effect by High Flood Factor Status
+
+What I want.
+
+```
+me_event_by_high_ff <- avg_comparisons(
+  q2_main_models[["Post × HighFF × Triad × SFHA"]],
+  variables = "event",
+  by = "high_ff_score"
+)
+```
+
+```{r}
+fmt_me(me_event_by_high_ff)
+```
+
+
 ## Change Type: Sequential Comparisons
 
 ```{r me-change-type-sequential}
 fmt_me(me_change_type_sequential)
 ```
 
+## Simple Post-Release Effect
+
+```
+me_way_event_sequential_simp <- avg_comparisons(
+  q2_main_models[["Post × HighFF"]],
+  variables = list(event = c(FALSE, TRUE))
+) # 0.0431
+```
+
+```{r me-way-event-sequential-simp}
+fmt_me(me_way_event_sequential_simp)
+```
+
+## By FF & SFHA
+
+```
+me_way_event_ff_sfha <- avg_comparisons(
+  q2_main_models[["Post × HighFF × Triad × SFHA"]],
+  variables = "event",
+  by = c("change_type", "high_ff_score")
+)
+```
+
+```{r me-way-event-ff-sfha}
+fmt_me(me_way_event_ff_sfha)
+```
+
+```{r}
+wald(
+  me_way_event_ff_sfha,
+  keep = "high_ff_scoreTRUE:eventTRUE:change_type.*:Triad"
+)
+```
+
 ## Post Release by Effective SFHA Change Type
+
+
+These outputs estimate whether the estimated effect of high Flood Factor exposure differs across FEMA SFHA status categories.
+
+```
+me_event_by_change_type <- avg_comparisons(
+  q2_main_models[["Post × HighFF × Triad × SFHA"]],
+  variables = list(event = c(FALSE, TRUE)),
+  by = "change_type"
+)
+```
 
 ```{r me-event-by-change-type}
 fmt_me(me_event_by_change_type)
@@ -234,6 +393,18 @@ fmt_me(me_event_by_change_type)
 
 This is the targeted contrast from the effective-map model for properties categorized as `Never SFHA`, allowing high and low Flood Factor properties to be represented in the comparison.
 
+```
+me_never_sfha_event <- avg_comparisons(
+  q2_main_models[["Post × HighFF × Triad × SFHA"]],
+  variables = "event",
+  newdata = datagrid(
+    change_type = "Never SFHA",
+    high_ff_score = c(TRUE, FALSE)
+  ),
+  by = NULL
+)
+```
+
 ```{r me-never-sfha-event}
 fmt_me(me_never_sfha_event)
 ```
@@ -242,15 +413,65 @@ fmt_me(me_never_sfha_event)
 
 ```{r me-never-prelim-event-by-triad}
 fmt_me(me_never_prelim_event_by_triad)
+
+
+
 ```
 
 ## All Effective Map Status Options
+
+```
+me_all_effective_grid <- comparisons(
+  q2_main_models[["Post × HighFF × SFHA"]],
+  newdata = datagrid(
+    event = unique,
+    high_ff_score = unique,
+    change_type = unique
+  )
+)
+```
 
 ```{r me-all-effective-grid}
 fmt_me(me_all_effective_grid) 
 ```
 
+```{r}
+me_all_effective_grid  |>
+    as.data.frame() |>
+    select(any_of(c(
+      "term", "contrast", "change_type", "change_type_prelim", "Triad",
+      "high_ff_score", "highff_post", "event", "estimate", "std.error",
+      "conf.low", "conf.high", "p.value"
+    ))) |>
+ filter( change_type != "Changes SFHA") |>
+    mutate(across(where(is.numeric), ~ round(.x, 3))) |> DT::datatable()
+
+me_all_effective_grid  |>
+    as.data.frame() |>
+   filter(term == "event" & change_type != "Changes SFHA") |>
+
+    select(any_of(c(
+      "term", "contrast", "change_type", "change_type_prelim", "Triad",
+      "high_ff_score", "highff_post", "event", "estimate", "std.error",
+      "conf.low", "conf.high", "p.value"
+    ))) |>
+    mutate(across(where(is.numeric), ~ round(.x, 3))) |> DT::datatable()
+```
+
 ## High Flood Factor Effects by SFHA Change Type and Triad
+
+```
+me_high_ff_post_by_change_type <- comparisons(
+  q2_main_models[["Post × HighFF × Triad × SFHA"]],
+  variables = "event",
+  newdata = datagrid(
+    high_ff_score = TRUE,
+    change_type = c("Never SFHA", "Always SFHA", "Changes SFHA"),
+    Triad = c("South", "North", "City")
+  ),
+  vcov = ~pin10
+)
+```
 
 ```{r me-high-ff-change-type-triad}
 fmt_me(me_high_ff_post_by_change_type)
@@ -258,67 +479,46 @@ fmt_me(me_high_ff_post_by_change_type)
 
 :::
 
-# Is the High Flood Factor Effect Moderated by SFHA Status?
 
-These outputs estimate whether the estimated effect of high Flood Factor exposure differs across FEMA SFHA status categories.
 
-## HighFF Post Model Table
+# Q2 Robustness Checks
 
-```{r highff-post-table}
-highff_post_table
-```
+## Calculated with ETWFE Package
+
+These models use the `etwfe` package. The saved outputs below are produced by `scripts/q2_dissertation_02_etwfe_models.R`.
 
 ::: {.panel-tabset}
 
-## HighFF Post by Change Type
+### Base Model
 
-```{r highff-post-by-change-type}
-fmt_me(me_highff_post_by_change_type)
+This version does not include SFHA status or Triad in the equation.
+
+```{r etwfe-base}
+etwfe_base_table
 ```
 
-## Hypothesis Test: HighFF Post by Change Type
+### Regional Heterogeneity
 
-```{r hyp-highff-post-by-change-type}
-fmt_me(hyp_highff_post_by_change_type)
-```
-
-## HighFF Post × Triad by Change Type
-
-```{r highff-post-triad-by-change-type}
-fmt_me(me_highff_post_triad_by_change_type)
-```
-
-## Hypothesis Test: HighFF Post × Triad by Change Type
-
-```{r hyp-highff-post-triad-by-change-type}
-fmt_me(hyp_highff_post_triad_by_change_type)
-```
-
-## Partially Interacted HighFF Post Model
-
-```{r highff-post-partial-by-change-type}
-fmt_me(me_highff_post_partial_by_change_type)
-```
-
-## HighFF Post Grid by Change Type and Triad
-
-```{r highff-post-grid-change-type-triad}
-fmt_me(me_highff_post_grid_by_change_type_triad)
+```{r etwfe-triad}
+etwfe_triad_table
 ```
 
 :::
 
-# Q2 Robustness Checks
+
+## Models using Preliminary FIRMs
+
+These models are pretty crappy and not used in the dissertation document, but they do make me feel better about the models using effective FIRM status for the dissertation. (Having no results is a good thing when there shouldn't be results, yay.)
 
 ::: {.panel-tabset}
 
-## Preliminary SFHA × High FF × Post by Triad
+### Preliminary SFHA × High FF × Post by Triad
 
 ```{r robust-prelim-high-ff}
 robust_prelim_high_ff_table
 ```
 
-## Preliminary SFHA × HighFF Post by Triad
+### Preliminary SFHA × HighFF Post by Triad
 
 ```{r robust-prelim-highff-post}
 robust_prelim_highff_post_table
@@ -349,6 +549,20 @@ tibble(
 
 ```{r prelim-control-groups}
 groups_prelim_long |>
+  count(group, name = "observations") |>
+  arrange(group) |>
+  modelsummary::datasummary_df(output = "gt")
+```
+
+## Effective Control Groups
+
+```{r eff-control-groups}
+
+groups_eff_long <- readRDS(
+  file.path(out_dir, "groups_eff_long.rds")
+)
+
+groups_eff_long |>
   count(group, name = "observations") |>
   arrange(group) |>
   modelsummary::datasummary_df(output = "gt")
