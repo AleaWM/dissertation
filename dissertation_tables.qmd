@@ -242,6 +242,9 @@ ggplot(group_trends, aes(x = sale_year, y = mean_log_price)) +
 ```{r}
 table(bldg_sfha$prelim_sfha_category)
 table(bldg_sfha$change_type_prelim)
+
+table(bldg_sfha$eff_sfha_category)
+table(bldg_sfha$change_type)
 ```
 
 
@@ -1804,4 +1807,287 @@ normal_did_remove <- run_normal_did(bldg_sfha, treated_label = "Removed from pre
 etable(normal_did_remove)
 ```
 
+# Appendix - Nearby Control PINs only
 
+### Nearby control properties only
+
+```{r}
+# way too big of buffer zone
+#close_comps <- readxl::read_xlsx("data/processed/parcelswithin600mof2026SFHA_ExportTable_TableToExcel.xlsx")
+
+#300 meter buffer
+close_comps <- readxl::read_xlsx("data/processed/bldgswithin300mof_SFHA_arcgis.xlsx")
+
+# already has eff_sfha_category in it
+data_path <- "outputs/q2_marginaleffects/bldg_sfha_q2_dissertation_prepped.RDS"
+df <- readRDS(data_path)
+
+
+df <- df |>
+  mutate(nearby_600 = pin10 %in% close_comps$PIN10)
+
+nearby_props_model_pre_add <- feols(
+  log_price ~ addedto_prelim_sfha | pin + sale_year ,
+  cluster = ~ pin10,
+  data = (df |> filter(nearby_600 == 
+                         TRUE))
+)
+
+nearby_props_model_pre_remove <- feols(
+  log_price ~ removedfrom_prelim_sfha  | pin + sale_year ,
+  cluster = ~ pin10,
+  data = (df |> filter(nearby_600 == 
+                         TRUE))
+)
+
+nearby_props_model_eff_add <- feols(
+  log_price ~ addedto_eff_sfha | pin + sale_year ,
+  cluster = ~ pin10,
+  data = (df |> filter(nearby_600 == 
+                         TRUE))
+)
+
+nearby_props_model_eff_remove <- feols(
+  log_price ~ removedfrom_eff_sfha| pin + sale_year ,
+  cluster = ~ pin10,
+  data = (df |> filter(nearby_600 == 
+                         TRUE))
+)
+modelsummary(list(
+  nearby_props_model_pre_add, nearby_props_model_pre_remove, nearby_props_model_eff_add, nearby_props_model_eff_remove), output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
+             statistic = "({std.error})", gof_omit = "IC|Log|Adj|AIC|BIC",
+            # coef_map = coef_map2_short,
+             title = "Main spec: log(price) ~ HighFF x Event × SFHA + Triad + FE") |>
+  tab_source_note(md("FE: pin, sale_year. SE clustered at 10-digit parcel level."))
+```
+
+```{r}
+
+prelim_twfe <- list(
+
+  
+ "I" =  feols(
+    log(sale_price) ~ addedto_prelim_sfha  | pin + sale_year,
+    cluster = ~pin10,
+        data = (df |> filter(nearby_600 == 
+                         TRUE))
+  ),
+
+    "I Subset" = feols(
+    log(sale_price) ~ addedto_prelim_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = (df |> filter(change_type_prelim != "Always SFHA" & treat_year_remove_prelim == 10000 & nearby_600 == TRUE))),
+
+  "II" =  feols(
+    log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data =(df |> filter(nearby_600 == TRUE))
+    ),
+
+
+  "II Subset" =  feols(
+    log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = (df |> filter(change_type_prelim != "Never SFHA" & treat_year_add_prelim == 10000& nearby_600 == TRUE))
+
+  ),
+ 
+  # Symmetric effect of location in risk zone
+    "Symmetric" = feols(
+    log(sale_price) ~ in_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = (df |> filter(nearby_600 == 
+                         TRUE))
+  ),
+ 
+  # Asymmetric: added vs removed in one equation
+  "0" = feols(
+    log(sale_price) ~ addedto_prelim_sfha + removedfrom_prelim_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = (df |> filter(nearby_600 == 
+                         TRUE))
+  )
+)
+
+all_models_formatted <- modelsummary::modelsummary(prelim_twfe,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+all_models_formatted
+```
+
+```{r}
+
+eff_twfe <- list(
+
+  
+ "I" =  feols(
+    log(sale_price) ~ addedto_eff_sfha  | pin + sale_year,
+    cluster = ~pin10,
+        data = (df |> filter(nearby_600 == 
+                         TRUE))
+  ),
+
+    "I Subset" = feols(
+    log(sale_price) ~ addedto_eff_sfha  | pin + sale_year,
+    cluster = ~ pin10,
+        data = (df |> filter(change_type != "Always SFHA" & treat_year_remove_eff == 10000 & nearby_600 == TRUE))),
+
+  "II" =  feols(
+    log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data =(df |> filter(nearby_600 == TRUE))
+    ),
+
+
+  "II Subset" =  feols(
+    log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = (df |> filter(change_type != "Never SFHA" & treat_year_add_eff == 10000& nearby_600 == TRUE))
+
+  ),
+ 
+  # Symmetric effect of location in risk zone
+    "Symmetric" = feols(
+    log(sale_price) ~ in_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = (df |> filter(nearby_600 == 
+                         TRUE))
+  ),
+ 
+  # Asymmetric: added vs removed in one equation
+  "0" = feols(
+    log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha | pin + sale_year,
+    cluster = ~ pin10,
+        data = (df |> filter(nearby_600 == 
+                         TRUE))
+  )
+)
+
+all_models_formatted <- modelsummary::modelsummary(eff_twfe,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+all_models_formatted
+```
+
+#### Year^Muni Fixed Effects
+
+```{r}
+
+prelim_twfe <- list(
+
+  
+ "I" =  feols(
+    log(sale_price) ~ addedto_prelim_sfha  | pin + sale_year^clean_name,
+    cluster = ~pin10,
+        data = (df |> filter(nearby_600 == 
+                         TRUE))
+  ),
+
+    "I Subset" = feols(
+    log(sale_price) ~ addedto_prelim_sfha  | pin + sale_year^clean_name,
+    cluster = ~ pin10,
+        data = (df |> filter(change_type_prelim != "Always SFHA" & treat_year_remove_prelim == 10000 & nearby_600 == TRUE))),
+
+  "II" =  feols(
+    log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year^clean_name,
+    cluster = ~ pin10,
+        data =(df |> filter(nearby_600 == TRUE))
+    ),
+
+
+  "II Subset" =  feols(
+    log(sale_price) ~ removedfrom_prelim_sfha | pin + sale_year^clean_name,
+    cluster = ~ pin10,
+        data = (df |> filter(change_type_prelim != "Never SFHA" & treat_year_add_prelim == 10000& nearby_600 == TRUE))
+
+  ),
+ 
+  # Symmetric effect of location in risk zone
+    "Symmetric" = feols(
+    log(sale_price) ~ in_prelim_sfha | pin + sale_year^clean_name,
+    cluster = ~ pin10,
+        data = (df |> filter(nearby_600 == 
+                         TRUE))
+  ),
+ 
+  # Asymmetric: added vs removed in one equation
+  "0" = feols(
+    log(sale_price) ~ addedto_prelim_sfha + removedfrom_prelim_sfha | pin + sale_year^clean_name,
+    cluster = ~ pin10,
+        data = (df |> filter(nearby_600 == 
+                         TRUE))
+  )
+)
+
+all_models_formatted <- modelsummary::modelsummary(prelim_twfe,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+all_models_formatted
+```
+
+
+```{r}
+
+eff_twfe <- list(
+
+  
+ "I" =  feols(
+    log(sale_price) ~ addedto_eff_sfha  | pin + sale_year^clean_name,
+    cluster = ~pin10,
+        data = (df |> filter(nearby_600 == 
+                         TRUE))
+  ),
+
+    "I Subset" = feols(
+    log(sale_price) ~ addedto_eff_sfha  | pin + sale_year^clean_name,
+    cluster = ~ pin10,
+        data = (df |> filter(change_type != "Always SFHA" & treat_year_remove_eff == 10000 & nearby_600 == TRUE))),
+
+  "II" =  feols(
+    log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year^clean_name,
+    cluster = ~ pin10,
+        data =(df |> filter(nearby_600 == TRUE))
+    ),
+
+
+  "II Subset" =  feols(
+    log(sale_price) ~ removedfrom_eff_sfha | pin + sale_year^clean_name,
+    cluster = ~ pin10,
+        data = (df |> filter(change_type != "Never SFHA" & treat_year_add_eff == 10000& nearby_600 == TRUE))
+
+  ),
+ 
+  # Symmetric effect of location in risk zone
+    "Symmetric" = feols(
+    log(sale_price) ~ in_eff_sfha | pin + sale_year^clean_name,
+    cluster = ~ pin10,
+        data = (df |> filter(nearby_600 == 
+                         TRUE))
+  ),
+ 
+  # Asymmetric: added vs removed in one equation
+  "0" = feols(
+    log(sale_price) ~ addedto_eff_sfha + removedfrom_eff_sfha | pin + sale_year^clean_name,
+    cluster = ~ pin10,
+        data = (df |> filter(nearby_600 == 
+                         TRUE))
+  )
+)
+
+all_models_formatted <- modelsummary::modelsummary(eff_twfe,
+               output = "flextable",
+               fmt = function(x) round(x, 2),
+
+             stars = TRUE)
+
+all_models_formatted
+```
