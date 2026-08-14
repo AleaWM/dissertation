@@ -132,11 +132,92 @@ ggsave(file.path(fig_dir, "ordinal_event_effects_by_score_sfha.pdf"), p_ordinal_
 
 # Are effects larger for higher Flood Factor values?
 
+# Table 20
+# full results in Appendix D
 ordinal_event_effects <- avg_comparisons(
   ordinal_models[["Ordinal × Triad"]],
   variables = "event",
   by = c("ff_score_ord", "Triad")
-) |>
+)
+
+ordinal_event_effects_all_avg <- avg_comparisons(
+  ordinal_models[["Ordinal"]],
+  variables = "event",
+  by = c("ff_score_ord")
+)
+ordinal_event_effects_all_avg
+
+ordinal_event_effects_all_avg |> select(ff_score_ord, estimate)
+
+
+me_ff_triad_wide <- ordinal_event_effects |>
+  as.data.frame() |>
+  select(
+    ff_score_ord,
+    Triad,
+    estimate,
+    # `Std. Error`,
+    # `Pr(>|z|)`,
+    # `2.5 %`,
+    # `97.5 %`
+  ) |>
+  pivot_wider(
+    names_from = Triad,
+    values_from = c(estimate,
+      #  `Std. Error`, `Pr(>|z|)`, `2.5 %`, `97.5 %`
+    ),
+    # names_glue = "{Triad}_{.value}"
+  )
+
+library(dplyr)
+library(gt)
+
+me_ff_triad_wide_pretty <- me_ff_triad_wide |>
+  mutate(
+    ff_score_ord = as.character(ff_score_ord),
+    across(c(City, North, South), ~ 100 * .x)
+  ) |>
+  gt() |>
+  cols_label(
+    ff_score_ord = "Flood Factor Score",
+    City = "City",
+    North = "North",
+    South = "South"
+  ) |>
+  fmt_number(
+    columns = c(City, North, South),
+    decimals = 1
+  ) |>
+  tab_header(
+    title = "Estimated Post-Release Price Effects by Flood Factor Score and Region",
+    subtitle = "Average marginal effects from repeat-sales model; estimates shown as percent changes"
+  ) |>
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) |>
+  tab_spanner(
+    label = "Triad",
+    columns = c(City, North, South)
+  ) |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(everything())
+  ) |>
+  tab_style(
+    style = cell_fill(color = "#F2F2F2"),
+    locations = cells_body(
+      rows = as.numeric(ff_score_ord) %% 2 == 0
+    )
+  ) |>
+  tab_source_note(
+    source_note = "Note: Values are converted from log-point estimates to approximate percent changes by multiplying by 100."
+  )
+
+me_ff_triad_wide_pretty
+
+
+ordinal_event_effects |>
   pct_transform() |>
   arrange(Triad, ff_score_ord)
 
@@ -214,6 +295,7 @@ ggsave(file.path(fig_dir, "ordinal_event_effects_by_change_type_score_triad.pdf"
 #   variables = "event",
 #   by = c("env_flood_fs_factor")
 # )
+# plot_predictions(mod, condition = c("X", "M"))
 
 continuous_ff_slopes <- avg_slopes(
   continuous_models[["Continuous"]],
@@ -259,18 +341,86 @@ ggsave(file.path(fig_dir, "continuous_ff_slopes_post_event.pdf"), p_continuous_s
 ## NOTE: env_flood_fs_factor is actually a numeric variable ##
 
 # Does one additional FF point reduce prices after disclosure?
-continuous_ff_slopes <- avg_slopes(
+continuous_ff_slopes_tri <- avg_slopes(
   continuous_models[["Continuous × Triad"]],
-  variables = "env_flood_fs_factor",
-  by = c("event", "Triad")
-) |>
+  variables = "event",
+  by = c("env_flood_fs_factor", "Triad")
+)
+
+continuous_ff_slopes_tri_tab <- continuous_ff_slopes_tri |> select(env_flood_fs_factor, Triad, estimate)
+
+
+me_ff_triad_wide <- continuous_ff_slopes_tri_tab |>
+  as.data.frame() |>
+  select(
+    env_flood_fs_factor,
+    Triad,
+    estimate,
+  ) |>
+  pivot_wider(
+    names_from = Triad,
+    values_from = c(estimate, ),
+  )
+
+
+me_ff_continuous_wide_pretty <- me_ff_triad_wide |>
+  mutate(
+    env_flood_fs_factor = as.character(env_flood_fs_factor),
+    across(c(City, North, South), ~ 100 * (exp(.x) - 1))
+  ) |>
+  gt() |>
+  cols_label(
+    env_flood_fs_factor = "Flood Factor Score",
+    City = "City",
+    North = "North",
+    South = "South"
+  ) |>
+  fmt_number(
+    columns = c(City, North, South),
+    decimals = 1
+  ) |>
+  tab_header(
+    title = "Estimated Price Effect by Flood Factor Score and Region",
+    subtitle = "Average marginal effects from repeat-sales model; estimates shown as exact percent changes"
+  ) |>
+  tab_spanner(
+    label = "Triad",
+    columns = c(City, North, South)
+  ) |>
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(everything())
+  ) |>
+  tab_style(
+    style = cell_fill(color = "#F2F2F2"),
+    locations = cells_body(
+      rows = as.numeric(env_flood_fs_factor) %% 2 == 0
+    )
+  ) |>
+  tab_source_note(
+    source_note = "Note: Values are transformed from log-point estimates using 100 × (exp(estimate) − 1), so they are interpreted as percent changes in sale price."
+  )
+
+me_ff_continuous_wide_pretty
+
+
+
+
+
+
+continuous_ff_slopes_tri_tab <- continuous_ff_slopes_tri |>
   filter(event == TRUE) |>
   pct_transform() |>
   arrange(Triad)
+
 saveRDS(continuous_ff_slopes, file.path(me_dir, "continuous_ff_slopes_post_by_triad.rds"))
 readr::write_csv(continuous_ff_slopes, file.path(me_dir, "continuous_ff_slopes_post_by_triad.csv"))
 
-continuous_slopes_table <- continuous_ff_slopes |>
+continuous_slopes_tri_table <- continuous_ff_slopes |>
   select(Triad, estimate, std.error, conf.low, conf.high,
     pct_change, pct_low, pct_high, p.value) |>
   modelsummary::datasummary_df(output = "gt")
