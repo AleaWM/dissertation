@@ -258,7 +258,7 @@ modelsummary(mpb, output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
 # Main specification & robustness
 
 ::: {.panel-tabset}
-### Main spec
+### Simple Main spec
 
 ```{r}
 lake100ft <- readxl::read_xlsx("data/processed/parcels_2025_lakeMI_within100ft_ExportTable_TableToExcel.xlsx")
@@ -324,26 +324,15 @@ main_mod_changetype_no100coast <- feols(
   data = (df |> filter(coastal_100 == FALSE))
 )
 main_mod_changetype_no500coast <- feols(
-  log_price ~ high_ff_score* change_type * event *Triad | pin + sale_year + sale_quarter,
+  log_price ~ highff_post * change_type * Triad| pin + sale_year + sale_quarter,
   cluster = ~ pin10,
   data = (df |> filter(coastal_500 == FALSE))
 )
 
-main_mod_mvh <- feols(
-  log_price ~ high_ff_score + change_type + event + Triad + high_ff_score*change_type * event *Triad 
-  | pin + sale_year + sale_quarter,
-  cluster = ~ pin10,
-  data = df
-)
 
-main_mod_mvh2 <- feols(
-  log_price ~ high_ff_score + change_type + event  + high_ff_score*change_type * event 
-  | pin + sale_year + sale_quarter,
-  cluster = ~ pin10,
-  data = df
-)
 
-modelsummary::modelsummary(list(main_mod_mvh, main_mod_mvh2), stars = TRUE)
+
+modelsummary::modelsummary(list(main_mod_changetype_no100coast, main_mod_changetype_no500coast), stars = TRUE)
 # modelsummary(main_mod, output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
 #              statistic = "({std.error})", gof_omit = "IC|Log|Adj|AIC|BIC",
 #              coef_map = c(
@@ -432,15 +421,26 @@ coef_map2 <- c(
 )
 ```
 
+#### Expanded form equation for comparison
 
 ```{r}
-modelsummary(list(main_modv2, main_modv3, main_modv3_2fe, main_mod_changetype_no100coast, main_mod_changetype_no500coast), output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
+main_mod_changetype_no100coast <- feols(
+  log_price ~ high_ff_score * change_type * event * Triad | pin + sale_year + sale_quarter,
+  cluster = ~ pin10,
+  data = (df |> filter(coastal_100 == FALSE))
+)
+main_mod_changetype_no500coast <- feols(
+  log_price ~ high_ff_score* change_type * event *Triad | pin + sale_year + sale_quarter,
+  cluster = ~ pin10,
+  data = (df |> filter(coastal_500 == FALSE))
+)
+
+modelsummary(list(main_mod_changetype_no100coast, main_mod_changetype_no500coast), output = "gt", stars = TRUE, estimate = "{estimate}{stars}",
              statistic = "({std.error})", gof_omit = "IC|Log|Adj|AIC|BIC",
             # coef_map = coef_map2_short,
-             title = "Main spec: log(price) ~ HighFF(Post) × SFHA + FE") |>
-  tab_source_note(md("FE: pin, sale_year. SE clustered at pin. Treatment switches on only after the information release for High-FF parcels."))
+             title = "Main spec: log(price) ~ HighFF x Event × SFHA + Triad + FE") |>
+  tab_source_note(md("FE: pin, sale_year. SE clustered at 10-digit parcel level."))
 ```
-
 
 
 ```{r}
