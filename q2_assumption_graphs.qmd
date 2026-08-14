@@ -469,12 +469,12 @@ df_prep |>
   geom_line() +
   geom_point(size = 2) + 
   geom_vline(xintercept=2020, lty = 2) +
-    scale_y_continuous(labels = scales::dollar) + 
+    scale_y_continuous() + 
 
   scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
   
   labs(title = "Pre- and Post-Event Trends",
-       y = "1/Sale Price",
+       y = " Average Inverse of Sale Price",
        shape = "FF > 4",
        lty = "Event",
        x = NULL) 
@@ -490,7 +490,7 @@ df_prep |>
   geom_point(size = 2) + 
   
   scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
-    scale_y_continuous(labels = scales::dollar) + 
+    scale_y_continuous() + 
 
   geom_vline(xintercept=2020, lty = 2) +
   
@@ -502,6 +502,74 @@ df_prep |>
        caption = "Inverse Price = 1 / sale_price") +
   facet_wrap(~Triad)
 
+```
+
+```{r}
+#| column: page
+#| layout-ncol: 2
+
+df_prep |> 
+  group_by(sale_year, high_ff_score, event) |> 
+  summarise(
+    asinh_price = mean(asinh(sale_price), na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) |> 
+  ggplot(aes(x = sale_year, y = asinh_price, shape = high_ff_score)) +
+  theme_classic() + 
+  geom_smooth(
+    aes(lty = event),
+    method = "lm",
+    se = FALSE,
+    color = "darkgray",
+    alpha = 0.5,
+    lwd = 1
+  ) + 
+  geom_line() +
+  geom_point(size = 2) + 
+  geom_vline(xintercept = 2020, lty = 2) +
+  scale_y_continuous() + 
+  scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
+  labs(
+    title = "Pre- and Post-Event Trends",
+    y = "Average asinh(Sale Price)",
+    shape = "FF > 4",
+    lty = "Event",
+    x = NULL,
+    caption = "Transformation = asinh(sale_price)"
+  ) 
+
+df_prep |> 
+  group_by(sale_year, high_ff_score, Triad, event) |> 
+  summarise(
+    asinh_price = mean(asinh(sale_price), na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) |> 
+  ggplot(aes(x = sale_year, y = asinh_price, shape = high_ff_score)) +
+  theme_classic() + 
+  geom_smooth(
+    aes(lty = event),
+    method = "lm",
+    se = FALSE,
+    color = "darkgray",
+    alpha = 0.5,
+    lwd = 1
+  ) + 
+  geom_line() +
+  geom_point(size = 2) + 
+  scale_x_continuous(breaks = c(2010, 2015, 2020, 2024)) + 
+  scale_y_continuous() + 
+  geom_vline(xintercept = 2020, lty = 2) +
+  labs(
+    title = "Pre- and Post-Event Trends by Triad",
+    y = "Average asinh(Sale Price)",
+    x = NULL,
+    shape = "FF > 4",
+    lty = "Event",
+    caption = "Transformation = asinh(sale_price)"
+  ) +
+  facet_wrap(~Triad)
 ```
 
 
