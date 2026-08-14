@@ -288,6 +288,37 @@ basic_twfe_effective_table
 basic_twfe_prelim_table
 ```
 
+## Alternate FEs - Combined Year-Region
+
+Allows for year-region specific slopes by using year-region fixed effects. 
+
+```{r}
+
+# already has eff_sfha_category in it
+data_path <- "outputs/q2_marginaleffects/bldg_sfha_q2_dissertation_prepped.RDS"
+df <- readRDS(data_path)
+
+models <- list(
+  muni_year_fe <- feols(log(sale_price) ~ high_ff_score*event | pin + year^clean_name, vcov = ~pin10, data = df),
+  muni_year_fe <- feols(log(sale_price) ~ high_ff_score*event | pin + year^Township, vcov = ~pin10, data = df),
+  muni_year_fe <- feols(log(sale_price) ~ high_ff_score*event | pin + year^Triad, vcov = ~pin10, data = df),
+  muni_year_fe <- feols(log(sale_price) ~ high_ff_score*event | pin + year^FIRM_PAN, vcov = ~pin10, data = df)
+)
+modelsummary(models, stars = TRUE)
+```
+
+### Alternate FEs - PIN + Year + Region
+
+```{r}
+models <- list(
+  muni_year_fe <- feols(log(sale_price) ~ high_ff_score*event | pin + year + clean_name, vcov = ~pin10, data = df),
+  muni_year_fe <- feols(log(sale_price) ~ high_ff_score*event | pin + year+ Township, vcov = ~pin10, data = df),
+  muni_year_fe <- feols(log(sale_price) ~ high_ff_score*event | pin + year + Triad, vcov = ~pin10, data = df),
+  muni_year_fe <- feols(log(sale_price) ~ high_ff_score*event | pin + year+FIRM_PAN, vcov = ~pin10, data = df)
+)
+modelsummary(models, stars = TRUE)
+```
+
 :::
 
 # Appendic C and model behind marginal effects below
@@ -747,10 +778,10 @@ modelsummary(
 ```{r}
 placebo_cut <- 2017
 pre_placebo <- df |> filter(sale_year <= 2019) |> 
-  mutate(event_pb = if_else(sale_year > placebo_cut, "PostPB", "PrePB") |> factor(c("PrePB","PostPB")))
+  mutate(event_pb = if_else(sale_year > placebo_cut, "TRUE", "FALSE") )
 
 models = list(
-    placebo_simple <- feols(log_price ~ high_ff_score * event_pb | pin + sale_year + qtr,
+    placebo_simple <- feols(log_price ~ high_ff_score * event_pb | pin + sale_year ,
              cluster = ~pin10, data = pre_placebo),
   
   placebo <- feols(log_price ~ high_ff_score * change_type * event_pb | pin + sale_year + qtr,
