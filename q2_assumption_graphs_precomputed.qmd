@@ -1,0 +1,298 @@
+---
+title: "Parallel Trends Graphs for Q2"
+format: 
+  html:
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    toc: true
+    toc-location: left
+    tbl-cap-location: margin
+    fig-cap-location: margin
+    error: true
+---
+
+| Variable | Description |
+| --- | --- |
+| `log_price` | log price, your main DV |
+| `high_ff_score x event` | Main treatment interaction |
+| `event` | Pre or Post data release. It is NOT the treatment. Just the additional extra value in homes after 2020 above and beyond the sale year fixed effects. |
+| `high_ff_score` | TRUE or FALSE. Represents persistent actual risk, even if it is not known. |
+| `sale_year` | Year of sale |
+| `sale_quarter` | Quarter of sale |
+| `change_type` | SFHA transition category, such as Added, Removed, Always, or Never |
+| `eff_date` | Flood map effective date. Used to create `in_eff_sfha` or `in_prelim_sfha`. |
+| `in_eff_sfha` | Indicator for whether property is in a FEMA SFHA at time of sale |
+| `clean_name` | Municipality |
+| `Triad` | Subregional identifier / potential FE subgroup |
+
+```{r setup, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(glue)
+library(fixest)
+library(skimr)
+library(modelsummary)
+library(flextable)
+library(DT)
+library(scales)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+data_path <- "outputs/q2_models/bldg_sfha_q2_prepped.RDS"
+df_prep <- readRDS(data_path)
+
+
+object_dir <- "outputs/q2_assumption_tests"
+required_objects <- file.path(
+  object_dir,
+  c(
+    "q2_assumption_plots.rds",
+    "q2_assumption_models.rds",
+    "q2_assumption_tables.rds"
+  )
+)
+
+if (!all(file.exists(required_objects))) {
+  missing_objects <- required_objects[!file.exists(required_objects)]
+  stop(
+    "Missing precomputed Q2 assumption-test objects. Run this from the project root first:\n",
+    "source('scripts/q2_assumption_tests/run_all_q2_assumption_tests.R')\n\n",
+    "Missing file(s):\n",
+    paste(missing_objects, collapse = "\n")
+  )
+}
+
+q2_plots <- readRDS(file.path(object_dir, "q2_assumption_plots.rds"))
+q2_models <- readRDS(file.path(object_dir, "q2_assumption_models.rds"))
+q2_tables <- readRDS(file.path(object_dir, "q2_assumption_tables.rds"))
+```
+
+```{r quick-checks}
+table(df_prep$in_prelim_sfha)
+```
+
+### A couple graphs for RQ1
+
+::: panel-tabset
+
+### Dissertation figures
+
+**Figure 6 and 7 in Q1**
+
+```{r fig-figure6}
+#| fig-height: 8
+#| fig-width: 8
+q2_plots$figure6_prelim_cohort_include_chicago
+```
+
+```{r fig-figure7}
+#| fig-height: 8
+#| fig-width: 8
+q2_plots$figure7_prelim_cohort_exclude_chicago
+```
+
+**Similar to Figure 6 and Figure 7 in Q1. Graphs in dissertation are by Cohort instead of Triad**
+
+```{r fig-rq1-triad-sfha-status}
+#| fig-height: 6
+#| fig-width: 8
+q2_plots$sfha_trends_by_triad
+```
+
+**Appendix A Figure 13**
+
+```{r fig-rq1-appendix-fig13}
+#| fig-height: 8
+#| fig-width: 8
+q2_plots$appendix_fig13_price_by_cohort
+```
+
+**Appendix A Figure 14**
+
+```{r fig-rq1-figure14}
+#| fig-height: 8
+#| fig-width: 8
+q2_plots$appendix_fig14_log_by_cohort
+```
+
+### Prelim Graphs
+
+```{r fig-prelim-by-triad}
+q2_plots$prelim_by_triad
+```
+
+```{r fig-prelim-by-pre-date}
+q2_plots$prelim_by_pre_date
+```
+
+### Coastal Property Sensitivity
+
+```{r fig-coastal-sensitivity}
+#| fig-height: 10
+q2_plots$coastal_sensitivity
+```
+
+```{r fig-coastal-sensitivity-excludes-coastal}
+#| fig-height: 10
+q2_plots$coastal_sensitivity_excludes_coastal_label_only
+```
+
+```{r coastal-sensitive-record-check, include=FALSE}
+df_prep |>
+  filter(high_ff_score == TRUE, in_eff_sfha == "Not SFHA", Triad == "North", sale_year == 2022) |>
+  mutate(pin10 = str_sub(pin, 1, 10)) |>
+  group_by(pin10) |>
+  mutate(n = n()) |>
+  arrange(desc(n), pin) |>
+  select(pin10, pin, clean_name, n, sale_price, flood_factor_score, times_sold, in_eff_sfha)
+```
+
+:::
+
+## Parallel Trends Assumptions
+
+::: panel-tabset
+
+### Not Logged Sales Price by FF
+
+```{r fig-ff-sale-price}
+#| column: page
+#| message: false
+#| layout-ncol: 2
+q2_plots$ff_sale_price_overall
+q2_plots$ff_sale_price_triad
+```
+
+### Transformations of Sale Price by FF Score
+
+**Appendix B Figure 18**
+
+```{r fig-ff-log-price}
+#| column: page
+#| message: false
+#| layout-ncol: 2
+q2_plots$ff_log_overall
+q2_plots$ff_log_triad
+```
+
+**Appendix B Figure 19**
+
+```{r fig-ff-inverse-price}
+#| column: page
+#| layout-ncol: 2
+q2_plots$ff_inverse_overall
+q2_plots$ff_inverse_triad
+```
+
+### Not Logged Sales Price by SFHA
+
+**Appendix B Figure 17**
+
+```{r fig-sfha-sale-price}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+q2_plots$sfha_sale_price_overall
+q2_plots$sfha_sale_price_triad
+```
+
+With fewer years pre-trend:
+
+```{r fig-sfha-sale-price-since-2014}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+q2_plots$sfha_sale_price_since_2014_overall
+q2_plots$sfha_sale_price_since_2014_triad
+```
+
+### Transformations of Sale Price by SFHA Status
+
+```{r fig-sfha-log-and-inverse}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+q2_plots$sfha_log_overall
+q2_plots$sfha_log_triad
+q2_plots$sfha_inverse_overall
+q2_plots$sfha_inverse_triad
+```
+
+```{r fig-sfha-asinh}
+#| column: page
+#| layout-ncol: 2
+#| message: false
+q2_plots$sfha_asinh_overall
+q2_plots$sfha_asinh_triad
+```
+
+:::
+
+### Q2 Testing slopes with Flood Factor Score
+
+**Models vary by transformation of the DV**
+
+```{r tbl-notloggedDV}
+#| layout-ncol: 1
+modelsummary(
+  q2_models$ff_transformations,
+  output = "flextable",
+  fmt = function(x) round(x, 2),
+  stars = TRUE
+)
+```
+
+**`sale_year:in_eff_sfha`**  
+If not statistically significant, then I fail to reject the null hypothesis: there is no evidence of different pre-treatment trends between properties that were in and out of SFHAs.
+
+**`sale_year:event:in_eff_sfha`**  
+If significant, it means the difference in slope between groups changed after the event. That does not support parallel trends assumptions for difference-in-differences models.
+
+```{r tbl-transformedDV-forsfha}
+#| layout-ncol: 1
+#| tbl-cap: "Sales Price, Logged Sales Price, and asymptotic sine of sale price as the DV."
+modelsummary(
+  q2_models$sfha_transformations,
+  output = "flextable",
+  fmt = function(x) round(x, 2),
+  stars = TRUE
+)
+```
+
+## Other random stuff
+
+```{r summary-tables-by-year}
+DT::datatable(q2_tables$ff_sfha_log_by_year, rownames = FALSE)
+DT::datatable(q2_tables$ff_sfha_price_by_year, rownames = FALSE)
+```
+
+```{r summary-tables-since-2016}
+q2_tables$ff_sfha_log_since_2016
+q2_tables$ff_sfha_price_since_2016
+```
+
+<!---
+Properties with high flood score but no SFHA
+- "02014000171053" = "1354 whispering springs Palatine IL" Parcel is a "condo" but a bunch of detached homes around a pond. Flood score is 7. Has a parcel inside of it (1733 EMERALD BAY 5, PALATINE, IL 60074) with a FF=6 that IS in a FEMA flood zone. Not sure if there was a specific pin division for this reason)
+--->
+
+```{r high-ff-no-sfha-check, eval=FALSE}
+df_prep |>
+  filter(high_ff_score == FALSE, in_eff_sfha == "SFHA") |>
+  mutate(parcel = str_sub(pin, 1, 10)) |>
+  distinct(parcel, in_eff_sfha, high_ff_score)
+```
+
+SOLVED "01014050100000" = "804 division st, barrington IL"  
+SOLVED "01021000330000" = "7 Marmon LN Barringonton IL"  
+"0102300012" = "221 Oakdene Drive Barrington" # only land barely touches SFHA  
+
+"02013020771280" = "2 Dundee Quarter 302 Palatine IL" # considered condo but its all detached homes or townhomes. AND IN A LOMR
+
+"0216410003" = "25 North Clyde Avenue, Palatine, IL, 60067, USA" # actually has a flood factor of 5
+
+"1505117011" = "100 S Roberta AVe Northlake" # parcel boundary touches SFHA but not house
+
+"1504117057" = "1642 N 39th Ave Stone Park" # score of 6, is in SFHA
+
+"1505205013" = "1652 43RD AVE, STONE PARK, IL 60165" # has a flood score of 7! and is in SFHA
