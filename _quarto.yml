@@ -1,0 +1,74 @@
+project:
+  type: website
+  output-dir: docs
+  
+  # helps ignore other quarto files in the directory
+  render:
+      - index.qmd
+      - descriptive_statistics.qmd
+      - dissertation_tables.qmd
+      - dissertation_tables_Q2_marginaleffects.qmd
+      - q2_FF_variable_checks.qmd
+      - file_info.qmd
+
+
+execute:
+  freeze: auto
+  
+
+website:
+  title: "Dissertation Replication Materials"
+  navbar:
+    search: true
+    left:
+      - text: "Website Info"
+        href: index.qmd
+        
+      - text: "Background Info"
+        href: descriptive_statistics.qmd
+
+      - text: "Q1: FEMA FIRM Info"  
+        menu:
+          - dissertation_tables.qmd
+                  # pulls
+          # - q1_assumption_tests.qmd   # assumptions
+          # - etwfe_models.qmd   # initial etwfe models. main ones pulled into dissertation_tables.qmd already.... I think
+          # - etwfe_summary_tables.qmd
+          # - etwfe_combined_mega_grid.qmd  # pulls in mega tables image into dissertation_tables already
+
+          # Robustness
+
+      - text: "Q2: Flood Factor Info"
+        menu:
+          - dissertation_tables_Q2_marginaleffects.qmd
+          # - q2_assumption_graphs.qmd
+          # - q2_simplermodel_assumptions_and_diagnostics.qmd
+          - q2_FF_variable_checks.qmd # Robustness check for Binary, Ordinal, or Continuous Flood factor scores in models
+          
+      - text: "Additional Details"
+        menu:
+          -  file_info.qmd
+        # - AssessedValues_andFIRMs.qmd
+        # - CC_Individual_FEMA_Assistance.qmd
+        # - Cook_sales_data.qmd
+        # - DAG_chart.qmd
+          # - targets_pipline image and script shown?
+          # - sfha_indicator_flags_updated which runs township_conflict_report.qmd
+
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 2
+    number-sections: false
+    code-fold: true
+    code-tools: true
+    code-overflow: wrap
+    code-copy: true
+    fig-cap-location: top
+    tbl-cap-location: top
+    
+# project:
+#   output-dir: "quarto_supportfiles"  # All outputs stored inside of support files folder
+#   post-render: "Rscript scripts/move_files_folders.R"
