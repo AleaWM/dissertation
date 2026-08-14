@@ -1,0 +1,514 @@
+---
+title: "example graph"
+format:
+  html:
+    code-fold: true
+    toc: true
+    toc-depth: 3
+---
+
+PIN fixed effects remove time-invariant differences across properties, such as location, structure type, and baseline price level. Year fixed effects remove market-wide shocks common to all properties in a given year. The remaining comparison asks whether properties with high Flood Factor scores followed different post-release price trajectories than otherwise similar repeated-sale properties after accounting for those fixed property differences and common year effects.
+
+```{r}
+library(tidyverse)
+
+toy_fe <- tibble::tribble(
+  ~pin, ~sale_year, ~high_ff_score, ~event, ~sale_price,
+  "A", 2018, FALSE, FALSE, 200000,
+  "A", 2022, FALSE, TRUE, 230000,
+  "B", 2018, TRUE,  FALSE, 200000,
+  "B", 2022, TRUE,  TRUE, 185000,
+  "C", 2018, FALSE, FALSE, 500000,
+  "C", 2022, FALSE, TRUE, 575000,
+  "D", 2018, TRUE,  FALSE, 500000,
+  "D", 2022, TRUE,  TRUE, 460000
+) |>
+  mutate(
+    log_price = log(sale_price),
+    group = if_else(high_ff_score, "High Flood Factor", "Low Flood Factor")
+  )
+```
+
+```{r}
+toy_fe |>
+  ggplot(aes(
+    x = sale_year,
+    y = sale_price,
+    group = pin,
+    linetype = group
+  )) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(labels = scales::dollar) +
+  labs(
+    x = "Sale year",
+    y = "Sale price",
+    linetype = "Flood Factor group",
+    title = "Raw within-property price trajectories",
+    subtitle = "PIN fixed effects compare each property to itself over time"
+  )
+
+```
+
+```{r}
+toy_changes <- toy_fe |>
+  arrange(pin, sale_year) |>
+  group_by(pin) |>
+  mutate(
+    first_log_price = first(log_price),
+    log_price_change = log_price - first_log_price,
+    pct_change_from_first_sale = 100 * (exp(log_price_change) - 1)
+  ) |>
+  ungroup()
+```
+
+```{r}
+toy_changes |>
+  ggplot(aes(
+    x = sale_year,
+    y = pct_change_from_first_sale,
+    group = pin,
+    linetype = group
+  )) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_line() +
+  geom_point() +
+  labs(
+    x = "Sale year",
+    y = "Change from property’s first sale (%)",
+    linetype = "Flood Factor group",
+    title = "After removing property-specific price levels",
+    subtitle = "The comparison is about different post-release trajectories, not raw price levels"
+  )
+```
+
+
+
+```{r}
+# toy_fe <- tibble::tribble(
+#   ~pin, ~sale_year, ~high_ff_score, ~sale_price,
+#   "A", 2018, FALSE, 200000,
+#   "A", 2022, FALSE, 240000,  # +20%
+#   "B", 2018, TRUE,  200000,
+#   "B", 2022, TRUE,  210000,  # +5%
+#   "C", 2018, FALSE, 500000,
+#   "C", 2022, FALSE, 600000,  # +20%
+#   "D", 2018, TRUE,  500000,
+#   "D", 2022, TRUE,  525000   # +5%
+# ) |>
+  
+toy_fe <- tibble::tribble(
+  ~pin, ~sale_year, ~high_ff_score, ~sale_price,
+  "A", 2018, FALSE, 200000,
+  "A", 2022, FALSE, 280000,  
+  "B", 2018, TRUE,  200000,
+  "B", 2022, TRUE,  210000,  # +5%
+  "C", 2018, FALSE, 500000,
+  "C", 2022, FALSE, 600000,  # +20%
+  "D", 2018, TRUE,  500000,
+  "D", 2022, TRUE,  535000   
+) |>
+  mutate(
+    log_price = log(sale_price),
+    ff_group = if_else(
+      high_ff_score,
+      "High Flood Factor",
+      "Low Flood Factor"
+    )
+  )
+
+toy_changes <- toy_fe |>
+  arrange(pin, sale_year) |>
+  group_by(pin) |>
+  mutate(
+    first_log_price = first(log_price),
+    pct_change_from_first_sale = 100 * (exp(log_price - first_log_price) - 1)
+  ) |>
+  ungroup()
+
+common_year_shock <- tibble::tribble(
+  ~sale_year, ~market_change,
+  2018, 0,
+  2022, 10
+)
+
+toy_residualized <- toy_changes |>
+  left_join(common_year_shock, by = "sale_year") |>
+  mutate(
+    net_of_year_effect = pct_change_from_first_sale - market_change
+  )
+
+toy_residualized |>
+  ggplot(aes(
+    x = sale_year,
+    y = net_of_year_effect,
+    group = pin,
+    linetype = ff_group
+  )) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(
+    breaks = c(2018, 2022)
+  ) +
+  labs(
+    x = "Sale year",
+    y = "Change net of common market movement (%)",
+    linetype = "Flood Factor group",
+    title = "After removing property fixed effects and common year movement",
+    subtitle = "Year fixed effects subtract changes shared by all sales in the same year"
+  )
+```
+
+
+```{r}
+toy_fe <- tibble::tribble(
+  ~pin, ~sale_year, ~high_ff_score, ~sale_price,
+  "A", 2018, FALSE, 200000,
+  "A", 2022, FALSE, 244000,  # +22%
+  "B", 2018, TRUE,  200000,
+  "B", 2022, TRUE,  216000,  # +8%
+  "C", 2018, FALSE, 500000,
+  "C", 2022, FALSE, 590000,  # +18%
+  "D", 2018, TRUE,  500000,
+  "D", 2022, TRUE,  555000   # +11%
+) |>
+  mutate(
+    log_price = log(sale_price),
+    ff_group = if_else(
+      high_ff_score,
+      "High Flood Factor",
+      "Low Flood Factor"
+    )
+  )
+toy_fe |>
+  ggplot(aes(
+    x = sale_year,
+    y = sale_price,
+    group = pin,
+    linetype = ff_group
+  )) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(labels = scales::dollar) +
+  labs(
+    x = "Sale year",
+    y = "Sale price",
+    linetype = "Flood Factor group",
+    title = "Raw within-property price trajectories",
+    subtitle = "PIN fixed effects compare each property to itself over time"
+  )
+```
+
+```{r}
+toy_changes <- toy_fe |>
+  arrange(pin, sale_year) |>
+  group_by(pin) |>
+  mutate(
+    first_log_price = first(log_price),
+    pct_change_from_first_sale = 100 * (exp(log_price - first_log_price) - 1)
+  ) |>
+  ungroup()
+```
+
+```{r}
+toy_changes |>
+  ggplot(aes(
+    x = sale_year,
+    y = pct_change_from_first_sale,
+    group = pin,
+    linetype =ff_group
+  )) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_line() +
+  geom_point() +
+  labs(
+    x = "Sale year",
+    y = "Change from property’s first sale (%)",
+    linetype = "Flood Factor group",
+    title = "After removing property-specific price levels",
+    subtitle = "The comparison is about different post-release trajectories, not raw price levels"
+  )
+```
+
+
+
+```{r}
+common_year_shock <- tibble::tribble(
+  ~sale_year, ~market_change,
+  2018, 0,
+  2022, 15
+)
+
+toy_residualized <- toy_changes |>
+  left_join(common_year_shock, by = "sale_year") |>
+  mutate(
+    net_of_year_effect = pct_change_from_first_sale - market_change
+  )
+
+toy_residualized |>
+  ggplot(aes(
+    x = sale_year,
+    y = net_of_year_effect,
+    group = pin,
+    linetype = ff_group
+  )) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(
+    breaks = c(2018, 2022)
+  ) +
+  labs(
+    x = "Sale year",
+    y = "Change net of common market movement (%)",
+    linetype = "Flood Factor group",
+    title = "After removing property fixed effects and common year movement",
+    subtitle = "All properties increased in value, but high-Flood-Factor properties rose less than the market trend"
+  )
+```
+
+
+
+```{r}
+adjustment_diagram <- toy_residualized |>
+  filter(sale_year == 2022) |>
+  transmute(
+    pin,
+    ff_group,
+    before_adjustment = pct_change_from_first_sale,
+    after_adjustment = net_of_year_effect
+  )
+
+ggplot(adjustment_diagram) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  
+  geom_segment(
+    aes(
+      x = 1,
+      xend = 2,
+      y = before_adjustment,
+      yend = after_adjustment,
+      linetype = ff_group
+    ),
+    arrow = arrow(length = unit(0.15, "inches")),
+    linewidth = 0.7
+  ) +
+  
+  geom_point(
+    aes(
+      x = 1,
+      y = before_adjustment,
+      shape = "Before year adjustment"
+    ),
+    size = 2.8
+  ) +
+  
+  geom_point(
+    aes(
+      x = 2,
+      y = after_adjustment,
+      shape = "After year adjustment"
+    ),
+    size = 2.8
+  ) +
+  
+  geom_text(
+    aes(
+      x = 2.08,
+      y = after_adjustment,
+      label = pin
+    ),
+    hjust = 0,
+    size = 3.5
+  ) +
+  
+  scale_x_continuous(
+    breaks = c(1, 2),
+    labels = c(
+      "Within-property change",
+      "After year FE adjustment"
+    ),
+    limits = c(0.8, 2.35)
+  ) +
+  
+  labs(
+    x = NULL,
+    y = "Price change from first sale (%)",
+    linetype = "Flood Factor group",
+    shape = NULL,
+    title = "How year fixed effects remove common market movement",
+    subtitle = "Arrows show the same year-specific market adjustment being subtracted from each property"
+  )
+```
+
+
+```{r}
+toy_decomp <- tibble::tribble(
+  ~pin, ~sale_year, ~sale_stage, ~observed_log_price, ~year_fe,
+  "A", 2015, "First sale",  12.20, 0.10,
+  "A", 2022, "Second sale", 12.45, 0.28
+) |>
+  mutate(
+    adjusted_log_price = observed_log_price - year_fe,
+    sale_stage = factor(sale_stage, levels = c("First sale", "Second sale"))
+  )
+
+ggplot(toy_decomp) +
+  geom_segment(
+    aes(
+      x = sale_stage,
+      xend = sale_stage,
+      y = observed_log_price,
+      yend = adjusted_log_price
+    ),
+    arrow = arrow(length = unit(0.15, "inches")),
+    linewidth = 0.8
+  ) +
+  
+  geom_point(
+    aes(
+      x = sale_stage,
+      y = observed_log_price,
+      shape = "Observed sale price"
+    ),
+    size = 3
+  ) +
+  
+  geom_point(
+    aes(
+      x = sale_stage,
+      y = adjusted_log_price,
+      shape = "After subtracting year FE"
+    ),
+    size = 3
+  ) +
+  
+  geom_line(
+    aes(
+      x = sale_stage,
+      y = adjusted_log_price,
+      group = pin
+    ),
+    linewidth = 0.8,
+    linetype = "dashed"
+  ) +
+  
+  geom_text(
+    aes(
+      x = sale_stage,
+      y = observed_log_price,
+      label = paste0("Observed\n", round(observed_log_price, 2))
+    ),
+    nudge_y = 0.035,
+    size = 3.5
+  ) +
+  
+  geom_text(
+    aes(
+      x = sale_stage,
+      y = adjusted_log_price,
+      label = paste0("Adjusted\n", round(adjusted_log_price, 2))
+    ),
+    nudge_y = -0.04,
+    size = 3.5
+  ) +
+  
+  annotate(
+    "text",
+    x = 1,
+    y = 12.11,
+    label = "Subtract 2015 year effect",
+    size = 3.5
+  ) +
+  
+  annotate(
+    "text",
+    x = 2,
+    y = 12.25,
+    label = "Subtract 2022 year effect",
+    size = 3.5
+  ) +
+  
+  labs(
+    x = NULL,
+    y = "Log sale price",
+    shape = NULL,
+    title = "How year fixed effects enter a repeated-sale comparison",
+    subtitle = "Each sale is adjusted by the market conditions in its own sale year"
+  ) +
+  
+  theme_minimal()
+```
+
+
+```{r}
+ggplot(toy_decomp) +
+  geom_line(
+    aes(
+      x = sale_stage,
+      y = observed_log_price,
+      group = pin,
+      linetype = "Raw observed change"
+    ),
+    linewidth = 0.8
+  ) +
+  
+  geom_line(
+    aes(
+      x = sale_stage,
+      y = adjusted_log_price,
+      group = pin,
+      linetype = "After year FE adjustment"
+    ),
+    linewidth = 0.8
+  ) +
+  
+  geom_segment(
+    aes(
+      x = sale_stage,
+      xend = sale_stage,
+      y = observed_log_price,
+      yend = adjusted_log_price
+    ),
+    arrow = arrow(length = unit(0.15, "inches")),
+    linewidth = 0.7
+  ) +
+  
+  geom_point(
+    aes(x = sale_stage, y = observed_log_price),
+    size = 3
+  ) +
+  
+  geom_point(
+    aes(x = sale_stage, y = adjusted_log_price),
+    size = 3
+  ) +
+  
+  annotate(
+    "text",
+    x = 1,
+    y = 12.14,
+    label = "2015 year FE",
+    size = 3.5
+  ) +
+  
+  annotate(
+    "text",
+    x = 2,
+    y = 12.32,
+    label = "2022 year FE",
+    size = 3.5
+  ) +
+  
+  labs(
+    x = NULL,
+    y = "Log sale price",
+    linetype = NULL,
+    title = "Year fixed effects adjust both sales in a repeated-sale pair",
+    subtitle = "The model compares adjusted price changes, not raw sale-price changes"
+  ) +
+  
+  theme_minimal()
+```
+
