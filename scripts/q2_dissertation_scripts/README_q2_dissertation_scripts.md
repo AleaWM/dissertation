@@ -5,11 +5,11 @@ Run these from the project root, not from inside the `scripts/` folder.
 Recommended order:
 
 ```r
-source("scripts/q2_dissertation_00_prep_data.R")
-source("scripts/q2_dissertation_01_basic_twfe_models.R")
-source("scripts/q2_dissertation_02_etwfe_models.R")
-source("scripts/q2_dissertation_03_main_marginaleffects.R")
-source("scripts/q2_dissertation_04_robustness_models.R")
+source("scripts/q2_dissertation_scripts/q2_dissertation_00_prep_data.R")
+source("scripts/q2_dissertation_scripts/q2_dissertation_01_basic_twfe_models.R")
+source("scripts/q2_dissertation_scripts/q2_dissertation_02_etwfe_models.R")
+source("scripts/q2_dissertation_scripts/q2_dissertation_03_main_marginaleffects.R")
+source("scripts/q2_dissertation_scripts/q2_dissertation_04_robustness_models.R")
 ```
 
 Or run everything with:

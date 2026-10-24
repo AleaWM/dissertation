@@ -22,7 +22,7 @@ dir.create(diagnostics_dir, recursive = TRUE, showWarnings = FALSE)
 
 prep_path <- file.path(out_dir, "bldg_sfha_q2_dissertation_prepped.rds")
 if (!file.exists(prep_path)) {
-  source("scripts/q2_dissertation_00_prep_data.R")
+  source("scripts/q2_dissertation_scripts/q2_dissertation_00_prep_data.R")
 }
 
 bldg_sfha <- readRDS(prep_path)
