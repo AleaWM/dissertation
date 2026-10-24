@@ -20,7 +20,7 @@ dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
 ordinal_models_path <- file.path(out_dir, "ordinal_ff_models.rds")
 continuous_models_path <- file.path(out_dir, "continuous_ff_models.rds")
 if (!file.exists(ordinal_models_path) || !file.exists(continuous_models_path)) {
-  source("scripts/q2_01_run_ff_models.R")
+  source("scripts/q2_FF_variable_checks/q2_FF_var_checks_01_run_ff_models.R")
 }
 
 ordinal_models <- readRDS(ordinal_models_path)

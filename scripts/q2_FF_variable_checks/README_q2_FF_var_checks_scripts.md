@@ -5,9 +5,9 @@ Run these from the project root, not from inside the `scripts/` folder.
 Recommended order:
 
 ```r
-source("scripts/q2_00_prep_data.R")
-source("scripts/q2_01_run_ff_models.R")
-source("scripts/q2_02_run_marginaleffects.R")
+source("scripts/q2_FF_variable_checks/q2_FF_var_checks_00_prep_data.R")
+source("scripts/q2_FF_variable_checks/q2_FF_var_checks_01_run_ff_models.R")
+source("scripts/q2_FF_variable_checks/q2_FF_var_checks_02_run_marginaleffects.R")
 ```
 
 Outputs go to:
