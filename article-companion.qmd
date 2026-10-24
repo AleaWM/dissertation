@@ -1,0 +1,132 @@
+---
+title: "Flood Risk Information and Residential Property Values"
+subtitle: "Article companion and online appendix"
+author: "Alea Wilbur"
+date: "2026-10-22"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+execute:
+  enabled: false
+---
+
+::: {.callout-important}
+## Draft companion materials
+This page organizes the supporting materials for the NTA article. Existing outputs below are source materials, not a certification that they reproduce the final article sample and specification. Proposed appendix exhibits are explicitly identified. The article and this page should be finalized together before submission. No models are estimated when this page is rendered.
+:::
+
+## Guide to the manuscript {#guide}
+
+| Article section | Online appendix | Contents |
+|---|---|---|
+| 3 Data and measurement | [Data and sample documentation](#data-and-sample) | Sample construction, exposure assignment and treatment support |
+| 4.1 and Appendix A FEMA diagnostics | [Appendix A](#appendix-a), [Appendix C](#appendix-c) | Event studies, placebo tests and outcome transformations |
+| 4.2 and Appendix B Flood Factor diagnostics | [Appendix B](#appendix-b), [Appendix C](#appendix-c) | Pretrends, timing, placebo tests and outcome transformations |
+| 5.1 and 5.2 FEMA results | [FEMA supporting results](#fema-results) | Full results and geographic sensitivity |
+| 5.3 and 5.4 Flood Factor results | [Flood Factor supporting results](#flood-factor-results) | Subgroup contrasts, moderation and alternative score specifications |
+| Data and replication materials statement | [Replication guide](#replication) | Source inventory, prerequisites and reproducibility status |
+
+Appendices A, B and C use the same labels in the manuscript and on this page. Other supporting materials are identified by subject rather than a separate appendix numbering system.
+
+## Data and sample documentation {#data-and-sample}
+
+**Available source outputs:** [Descriptive statistics](descriptive_statistics.html), [FEMA sample and results](q1-text-material.html), and [Flood Factor sample and results](q2-text-material.html).
+
+**Sample-flow table proposed:** Provide a sample-flow table for each design. Show transactions and unique PINs before and after every exclusion, followed by treated properties, treated sales, comparison properties, and repeat sellers observed on both sides of the event. Separate preliminary and effective timing, additions and removals, and map cohorts. Do not equate transactions with independent treated units.
+
+**Input documentation table proposed:** Document each input's provider, vintage, retrieval date, geographic unit, join key, exclusions, and access conditions. Include sales, parcel universe, parcel geometries, 2019–2020 building footprints, each NFHL vintage, map-release dates and the fixed Flood Factor score vintage. Describe the threshold of five and stable-SFHA endpoint classification. Verify intermediate status changes and the handling of individual map amendments.
+
+Source files: `descriptive_statistics.qmd`, `q1-text-material.qmd`, and `q2-text-material.qmd`. Public availability of a source page does not establish permission to redistribute all underlying records.
+
+## Appendix A FEMA identification diagnostics {#appendix-a}
+
+**Source available; article exhibits pending verification:** `q1_assumption_tests.qmd`; local historical rendered output `quarto_supportfiles/q1_assumption_tests.html`. The historical output is not linked as a published appendix because it is outside the configured website output directory.
+
+**Figure A1 proposed:** Two event-study panels: additions against never-designated controls and removals against continuously designated controls. Show log-price coefficients, 95% confidence intervals, the omitted reference period, zero and event-date lines, estimator, clustering and treated-PIN support by event bin. Distinguish preliminary from effective dates.
+
+**Table A1 proposed:** Joint lead tests with statistic, degrees of freedom and p-value; two-year-early placebo coefficients, standard errors, observations and distinct treated properties. Preserve adverse diagnostics. Reconcile the original figure narrative with the joint-test group labels before importing a graphic or declaring a design validated.
+
+Manuscript correspondence: Appendix A, proposed Figure A1 and Table A1. The main text retains only a short interpretation of the diagnostics.
+
+## Appendix B Flood Factor identification diagnostics {#appendix-b}
+
+**Source available; article reconciliation pending:** `q2-identification-diagnostics.qmd`, `q2_simplermodel_assumptions_and_diagnostics.qmd`, and `scripts/q2_identification/`. The newer diagnostic report requires a complete manifest and matching input, script and output hashes. Its existence alone does not establish successful replication of the historical estimates.
+
+**Table B1 proposed:** Pre-release slope tests and the 2017 placebo alongside the actual-event specification. Report the high-risk interaction separately from the SFHA triple interaction; show each model's sample, outcome scale, fixed effects, clustering and cutoff. Audit whether the post indicator varies within the transition year and whether a common post term is estimable with the stated time effects.
+
+**Figure B1 proposed:** Pre-release group trends by high/low Flood Factor and region, with the release cutoff and group counts. Verify plotted group labels against source data.
+
+**Figure B2 proposed:** High-versus-low Flood Factor event study using the final article sample and controls. Display leads and lags, confidence intervals, reference period, support counts and a joint lead test. This is a proposed exhibit, not a completed test.
+
+Distinguish public availability in June 2020 from platform adoption and buyer-level exposure. Retain the pretrend and placebo qualifications in the main text. Manuscript correspondence: Appendix B, proposed Figures B1–B2 and Table B1.
+
+## Appendix C Outcome transformations and distributional checks {#appendix-c}
+
+**Source available; captions and samples require audit:** `q2_assumption_graphs.qmd`, `q2_assumption_graphs_precomputed.qmd`, `scripts/q2_assumption_tests/`, and `q1_assumption_tests.qmd`.
+
+**Figure C1 proposed:** FEMA group trends under levels, natural logs, inverse prices and inverse hyperbolic sine. Use the same observations across transformations or explain exclusions. Identify additions/removals and their appropriate controls. Label axes with the exact transformation; inverse prices reverse ordering.
+
+**Figure C2 proposed:** Equivalent Flood Factor panels, distinguishing scores below five from scores of at least five. Include regional panels and, separately, stable-SFHA comparisons. Check the existing legend against the plotted grouping: some source descriptions refer to SFHA while headings refer to Flood Factor. Add annual group counts to reveal changes in transaction composition.
+
+**Figure C3 and Table C1 proposed:** Distributional diagnostic plots and test details for each design: method, sample, grouping, statistic, p-value, tuning choices and code location. Verify the reported values of 0.998 and 1 against saved outputs before labeling the exhibits complete.
+
+Similar-looking transformed trends and large diagnostic p-values do not prove parallel counterfactual trends or override adverse placebo results. These exhibits document sensitivity checks rather than certify causal identification.
+
+## FEMA supporting results {#fema-results}
+
+**Available source outputs:** [FEMA main results](q1-text-material.html) and [Nearby-property robustness checks](q1-robustness-nearby-properties-check.html).
+
+**Full FEMA results table proposed:** Full conventional and extended TWFE results, separated by timing and treatment direction. Include restricted comparison groups, cohort and triad trends, building versus parcel exposure, SFHA versus 1-in-500-year zones, and 300-meter restrictions. Report coefficients in log points, standard errors, observations, distinct treated properties and cohort support. Preserve the strong sensitivity of effective-removal estimates to triad trends.
+
+These broader results support main-text Table 3; they should not be reduced to statistically significant specifications. Source files: `q1-text-material.qmd` and `q1-robustness-nearby-properties-check.qmd`.
+
+## Flood Factor supporting results {#flood-factor-results}
+
+**Available source outputs:** [Main Flood Factor results](q2-text-material.html) and [Alternative score specifications](q2-robustness-FF-variable-forms.html).
+
+**Flood Factor contrasts table proposed:** Report the relative high-risk-by-post contrast separately from subgroup post shifts. Show the coefficient combinations and covariance-based standard errors used for each marginal contrast, the high-risk subgroup comparison across SFHA status, and the triple-interaction test. These are different estimands.
+
+**Flood Factor heterogeneity table proposed:** Full regional, binary, categorical and continuous-score specifications, including omitted or dropped terms and uncertainty. Do not interpret different individual significance levels as a significant difference between groups. Avoid describing all regional results as a uniform causal information effect.
+
+Source code: `scripts/q2_dissertation_scripts/` and `scripts/q2_FF_variable_checks/`. Main-text correspondence: Tables 4a, 4b and 5. Match final model/sample labels before transferring outputs.
+
+## Replication guide {#replication}
+
+[Source repository](https://github.com/AleaWM/dissertation). The current repository contains research-development material beyond this article. A frozen article release, commit identifier, dependency record and verified end-to-end instructions remain to be prepared.
+
+### Inventory and execution status
+
+| Component | Existing source | Status for this article |
+|---|---|---|
+| FEMA results | `q1-text-material.qmd` | Existing output; final sample mapping pending |
+| FEMA diagnostics | `q1_assumption_tests.qmd` | Group labels and narrative need reconciliation |
+| Flood Factor results | `scripts/q2_dissertation_scripts/` | Scripts present; runner paths require repair |
+| Score specification checks | `scripts/q2_FF_variable_checks/` | Sources and existing output available |
+| Transformation checks | `scripts/q2_assumption_tests/` | Input prerequisites and exhibit labels require verification |
+| Updated timing diagnostics | `scripts/q2_identification/`, `q2-identification-diagnostics.qmd` | Manifest-gated report; verify completed run and match to article |
+
+The current `scripts/q2_dissertation_scripts/q2_dissertation_run_all.R` sources files directly under `scripts/`, although the corresponding files are in the nested directory. Do not use that runner as verified instructions until its paths and dependencies are repaired. The assumption-test runner also names a preparation script whose availability must be checked before use.
+
+### Required release documentation
+
+1. Freeze the article's sample definitions, outcome, treatment coding, time effects and clustering.
+2. List required input filenames, providers, access procedures and licenses. State which records can be distributed and which users must obtain separately; do not imply the data are bundled.
+3. Document the R version and packages, project-root working directory and processing order. Separate data preparation, estimation and exhibit rendering.
+4. Repair and test runner paths, then record a successful run, session information and input/output checksums.
+5. Match every article and appendix estimate to its producing script and saved object. Record unresolved discrepancies instead of overwriting historical values silently.
+6. Create a versioned archive or release and cite its persistent identifier alongside this companion page.
+
+### Render this companion page
+
+From the project root:
+
+```bash
+quarto render article-companion.qmd
+```
+
+This page contains no executable analysis chunks and can be rendered without the research data. The existing linked result pages must remain in the same website directory. Rendering the companion does not rerun or validate their analyses.
+
+## Version and citation {#version}
+
+Draft prepared October 22, 2026. Intended page filename: `article-companion.html`. Final public URL and archive identifier are pending publication. Appendix labels A–C match the manuscript. Retain the section anchors when replacing outlines with verified exhibits.
