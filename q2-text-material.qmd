@@ -321,13 +321,55 @@ modelsummary(models, stars = TRUE)
 
 :::
 
-# Appendic C and model behind marginal effects below
+# Appendix C: Full Q2 regression coefficients {#appendix-c}
+
+Dissertation page 77 directs readers to Appendix C for the coefficients underlying the reported marginal effects. This section exposes the saved main-model objects as well as the existing formatted summary. The models use logged sale price, property and sale-year fixed effects, and 10-digit-parcel clustered standard errors. They progressively interact post-release timing and high Flood Factor status with SFHA categories and assessment triads.
+
+The source is `scripts/q2_dissertation_scripts/q2_dissertation_03_main_marginaleffects.R`. Its current text excludes changing-SFHA properties, but the saved fully interacted model still contains some `Changes SFHA` coefficients. The saved objects and current estimation script therefore do not describe identical model versions. These outputs are presented as saved evidence, not as a verified reproduction of dissertation Table XXVI. Reconcile the intended version before replacing results.
+
+## Existing formatted summary {#q2-formatted-coefficients}
+
+The saved summary below was produced with a coefficient-omission rule for flagged terms. The unfiltered estimated-coefficient table that follows makes those terms visible for inspection.
 
 ```{r q2-main-table}
 q2_main_table
 ```
 
-# Main Marginal Effects
+## All estimated slope coefficients {#q2-full-coefficients}
+
+Each row below is an estimated slope coefficient from a saved main model, before subgroup marginal-effect aggregation. Absorbed fixed effects and reference categories are not individual rows. Terms removed for collinearity are listed separately; they are not zero estimates. Very large standard errors or confidence intervals are retained rather than silently hidden.
+
+```{r}
+#| label: q2-unfiltered-coefficients
+q2_main_models_path <- "outputs/q2_marginaleffects/q2_main_models.rds"
+if (!file.exists(q2_main_models_path)) stop("Restore saved main models: ", q2_main_models_path)
+q2_main_models <- readRDS(q2_main_models_path)
+q2_all_coefficients <- purrr::imap_dfr(q2_main_models, function(model, label) {
+  broom::tidy(model, conf.int = TRUE) |>
+    dplyr::mutate(Model = label, Observations = stats::nobs(model), .before = 1)
+})
+DT::datatable(q2_all_coefficients, rownames = FALSE,
+              options = list(pageLength = 20, scrollX = TRUE),
+              caption = "Saved Q2 main models: all estimated slope coefficients")
+q2_collinear_terms <- purrr::imap_dfr(q2_main_models, function(model, label) {
+  terms <- model$collin.var
+  if (!length(terms)) terms <- "None recorded in saved object"
+  tibble::tibble(Model = label, `Term removed for collinearity` = terms)
+})
+knitr::kable(q2_collinear_terms)
+```
+
+## From coefficients to subgroup contrasts {#q2-coefficient-contrasts}
+
+For a linear log-price model, let `x(post, h, s, r)` be the model row for post-release status, high-score status, SFHA group, and region. The post-versus-pre contrast for a subgroup is `[x(1,h,s,r) - x(0,h,s,r)]' beta`. The high-versus-low difference in that post/pre contrast subtracts the same expression evaluated at `h = 0` from the expression at `h = 1`. These are different estimands: a post/pre change for high-risk properties is not automatically the high-minus-low difference-in-differences effect.
+
+For a contrast vector `c`, its standard error uses the full covariance matrix, `sqrt(c' V c)`, including covariances among interaction coefficients. The existing analysis computes contrasts with `marginaleffects::avg_comparisons()`. Saved estimates are in log points unless explicitly transformed; `100 * (exp(estimate) - 1)` gives the corresponding percentage conversion, not `estimate` itself. Nonlinear transformation and averaging should not be interchanged without specifying the target estimand.
+
+The [existing marginal-effect sections](#main-marginal-effects) display the saved contrasts. Their nearby code records each call's `variables`, `by`, and any `newdata` grid. These details determine the comparison and weighting and should be retained when linking a dissertation table to its underlying model.
+
+
+
+# Main Marginal Effects {#main-marginal-effects}
 
 ::: {.panel-tabset}
 
@@ -396,7 +438,11 @@ me_way_event_ff_sfha <- avg_comparisons(
 fmt_me(me_way_event_ff_sfha)
 ```
 
+The original Wald call below is retained as non-executing source pending clarification of the intended hypothesis. It passes a marginal-contrast object to a model-coefficient test. No replacement p-value is reported; see the code-lineage notes for the moderator question.
+
 ```{r}
+#| eval: false
+#| include: false
 wald(
   me_way_event_ff_sfha,
   keep = "high_ff_scoreTRUE:eventTRUE:change_type.*:Triad"
@@ -656,16 +702,58 @@ fmt_me(dropped_terms_robust_prelim_highff_post)
 
 ## Ordinal & Continuous FF Risk Variable
 
-> See `q2_FF_variable_checks.qmd`
+See the [binary, ordinal, and continuous Flood Factor checks](q2-robustness-FF-variable-forms.qmd).
 
-# Appendix B
+# Appendix B: Q2 research-design assumptions {#appendix-b}
 
-## Figures 13-14 in Q2_assumption_graphs.qmd
+This section supports dissertation page 69 and Appendix B. It connects saved plots and diagnostic results to the existing slope and placebo tests below. These outputs concern Flood Factor information; the sample and specification notes are part of the interpretation, especially when comparing historical diagnostics with the main models.
 
-## Figures 17-19, 22 in Q2 assumption graphs.qmd
+- [Countywide and regional trends](#q2-trend-figures).
+- [Alternative transformations](#q2-transformations).
+- [Pre-event slope tests](#q2-pretrend-tests).
+- [2017-cutoff placebo](#q2-placebo-tests).
+- [Distributional diagnostics](#q2-distributional-tests) and [anticipation](#q2-anticipation).
+
+## Countywide and regional trends {#q2-trend-figures}
+
+These saved plots supply the trend visualizations referenced from dissertation page 69 and Appendix B. They were generated by `scripts/q2_assumption_tests/01_create_q2_plot_objects.R` from `outputs/q2_models/bldg_sfha_q2_prepped.RDS`. That is a separate saved input from the `q2_marginaleffects` dataset used by the slope tests below; equality of their samples and data vintages has not been established.
+
+The first four figures group prices by high Flood Factor status (score at least 5), countywide and by assessment triad, in levels and logs. The next four group prices by effective SFHA status. These are descriptive group trends, not regression-adjusted effects. A change in the mix of sold properties can change a group's mean. Read the embedded legends and time windows; do not infer a causal information effect from a post-release divergence alone.
+
+```{r}
+#| label: q2-saved-trend-figures
+#| fig-width: 10
+#| fig-height: 6
+q2_saved_plots_path <- "outputs/q2_assumption_tests/q2_assumption_plots.rds"
+if (!file.exists(q2_saved_plots_path)) stop("Restore saved Q2 plots: ", q2_saved_plots_path)
+q2_saved_plots <- readRDS(q2_saved_plots_path)
+q2_trend_keys <- c("ff_sale_price_overall", "ff_sale_price_triad", "ff_log_overall",
+                   "ff_log_triad", "sfha_sale_price_overall", "sfha_sale_price_triad",
+                   "sfha_log_overall", "sfha_log_triad")
+if (!all(q2_trend_keys %in% names(q2_saved_plots))) stop("Missing named Q2 trend plots")
+for (key in q2_trend_keys) print(q2_saved_plots[[key]])
+```
+
+## Alternative outcome transformations {#q2-transformations}
+
+The levels and log plots above are complemented by inverse-price plots for Flood Factor and SFHA groups, and inverse-hyperbolic-sine plots for SFHA groups. Countywide and triad panels are shown for each. These are existing saved outputs, not newly fitted models or a verified reconstruction of the printed figure numbering. Inverse price is decreasing in price; inverse hyperbolic sine is increasing. Different vertical scales and changing group composition matter when comparing the shapes. Visual similarity does not establish parallel trends for every transformation.
+
+```{r}
+#| label: q2-saved-transformation-figures
+#| fig-width: 10
+#| fig-height: 6
+q2_transformation_keys <- c("ff_inverse_overall", "ff_inverse_triad",
+                           "sfha_inverse_overall", "sfha_inverse_triad",
+                           "sfha_asinh_overall", "sfha_asinh_triad")
+if (!all(q2_transformation_keys %in% names(q2_saved_plots))) stop("Missing named Q2 transformation plots")
+for (key in q2_transformation_keys) print(q2_saved_plots[[key]])
+```
 
 
-## Table 18: Q2 PreTrend Slope Test
+
+## Pre-event slope tests {#q2-pretrend-tests}
+
+The first tables examine linear slope differences by SFHA and high Flood Factor status in sales before 2020, with parcel-clustered standard errors but no property fixed effects. Subsequent specifications use the recorded release date and include property/year fixed effects or split the comparison by triad, as labeled. These are different specifications and pre-period definitions. A non-significant interaction does not establish equivalence of trends; inspect its magnitude and precision as well as the p-value.
 
 
 
@@ -673,7 +761,7 @@ fmt_me(dropped_terms_robust_prelim_highff_post)
 # Option A: Linear pre-trend slope test (restrict to Pre)
 df = bldg_sfha
 
-pre <- df |> mutate(new_info_released = 2017) |>
+pre <- df |>
   filter(sale_year < 2020)
 
 # Compare slopes over time by SFHA, by High FF, and by their interaction
@@ -694,7 +782,7 @@ modelsummary(
   title      = "Pre-event slope tests"
 ) |>
   tab_options(data_row.padding = px(2)) |>
-  tab_source_note(md("We want NOT statistically significant interaction slope terms for variables interacted with sale_year."))
+  tab_source_note(md("Interaction terms assess slope differences; non-rejection is not proof of parallel trends."))
 ```
 
 **Has TWFE:**
@@ -722,7 +810,7 @@ modelsummary(
   title      = "Pre-event slope tests"
 ) |>
   tab_options(data_row.padding = px(2))|>
-  tab_source_note(md("We want NOT statistically significant interaction slope terms for variables interacted with sale_year."))
+  tab_source_note(md("Interaction terms assess slope differences; non-rejection is not proof of parallel trends."))
 ```
 
 
@@ -772,7 +860,9 @@ modelsummary(
 )
 ```
 
-## Table 21: Q2 placebo test
+## Placebo analysis: existing 2017 cutoff {#q2-placebo-tests}
+
+The first two models restrict sales to 2019 or earlier and define post-placebo as `sale_year > 2017`: 2018-2019 versus earlier years. The next two show actual-release specifications using the broader prepared sample. Their time windows and some fixed effects differ, so they are reference models rather than an exact one-variable timing substitution. This makes the existing implementation explicit without silently changing the dissertation's placebo design.
 
 
 ```{r}
@@ -801,3 +891,33 @@ modelsummary(models, output = "gt", stars = TRUE, estimate = "{estimate}{stars}"
 
 
 
+
+
+## Distributional diagnostics and anticipation {#q2-distributional-tests}
+
+The saved distributional diagnostics come from `scripts/Q2_FloodFactor_didFF_test.R`. That script uses the older `data/processed/df_prep_buildings.rds` input, applies its missing-data and parcel filters, averages observations within property-year, and assigns the treated group to 2020 for a property with a high Flood Factor score and an observed post-release sale. The last condition makes group assignment depend on observed sales as well as risk status. This historical construction must be reviewed before treating these outputs as a definitive check of the current main model.
+
+The logged and unlogged saved objects both report p-values of 1. The displays below load those results without rerunning the exploratory script. They are not evidence that the current main-model sample passes every identifying assumption: failure to reject a distributional diagnostic does not prove mean parallel trends, absence of anticipation, or causal identification.
+
+```{r}
+#| label: q2-saved-distributional-results
+#| fig-width: 9
+#| fig-height: 5
+q2_distribution_files <- c(
+  `Logged sale price: historical Q2 diagnostic` = "outputs/didFF_model_out.rds",
+  `Sale price: historical Q2 diagnostic` = "outputs/didFF_model_out2.rds"
+)
+for (description in names(q2_distribution_files)) {
+  path <- q2_distribution_files[[description]]
+  if (!file.exists(path)) stop("Missing saved Q2 diagnostic: ", path)
+  diagnostic <- readRDS(path)
+  if (is.null(diagnostic$pval) || is.null(diagnostic$plot)) stop("Incomplete diagnostic: ", path)
+  cat("\n", description, "\nSaved p-value: ", diagnostic$pval, "\n", sep = "")
+  print(diagnostic$plot + ggplot2::labs(title = description))
+  rm(diagnostic)
+}
+```
+
+### What the anticipation checks can establish {#q2-anticipation}
+
+The pre-event slope tests and the pre-2020 placebo sample address patterns before the recorded Flood Factor release. The existing placebo code defines its post period as years greater than 2017, so 2018-2019 are post-placebo and 2017 itself remains pre-placebo. A significant placebo interaction may reflect differential trends, other events, or anticipation; it does not distinguish among them. A non-significant result cannot rule out advance information or limited power. The assumed information date and sample construction must be considered alongside these diagnostics.
