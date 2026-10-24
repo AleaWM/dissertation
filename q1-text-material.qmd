@@ -1506,7 +1506,11 @@ vcov = ~nbhd_code
 ```
 
 
-## Table 12 & 13
+## Alternative exposure definitions: conventional TWFE {#q1-spatial-definitions}
+
+This section supports the page-56 reference to alternative spatial identifiers and Tables XIII-XIV. The saved grid compares building-footprint and parcel-based SFHA exposure with the two corresponding 1-in-500-year exposure variants. Preliminary and effective map timing appear in separate columns. The 1-in-500-year variants represent the broader flood-exposure definition used by their source datasets; their exact geometry and inclusion rules should be read with the spatial-processing code.
+
+The conventional TWFE grid is loaded from `outputs/tables/grid_tbl_twfe.rds`, written by `Q1_Model_Comparison.qmd`. Its rows distinguish specifications and addition/removal indicators; cells show estimates and standard errors with significance markers. Changes across columns may reflect both classification and sample differences. The grid's correspondence to individual printed table cells remains to be reconciled; it should not be treated as a new estimation run.
 
 
 ```{r}
@@ -1515,7 +1519,9 @@ tbl
 ```
 
 
-## Table 14
+## Alternative exposure definitions: extended TWFE {#q1-spatial-etwfe}
+
+This grid loads `outputs/tables/grid_tbl_etwfe.rds`, assembled by `etwfe_combined_mega_grid.qmd` from saved preliminary/effective model results. It reports countywide, triad, or cohort aggregations as labeled, across the four exposure definitions. These aggregations differ from the conventional coefficient grid above. The source file contains both general and no-Chicago result paths; the precise saved-grid sample must be reconciled before claiming an exact replication of Table XIV.
 
 ```{r}
 tbl <- readRDS("outputs/tables/grid_tbl_etwfe.rds")
@@ -1524,24 +1530,86 @@ tbl
 
 
 
-# Appendix A
 
-## Table 16 & 17, and Figure 11
+### Treated-observation inventory {#q1-exposure-counts}
+
+The small number of treated properties discussed around dissertation page 56 can vary sharply with the exposure definition. This inventory uses the four current `df_prep_*_v2026_03` exports and the project's manual parcel exclusions. It counts post-transition sales and distinct 10-digit parcels separately for preliminary/effective additions/removals. These are input-sample counts, not the effective estimation sample of every model in the saved grids: missing variables, fixed-effect singleton removal, control-group restrictions, and geographic exclusions can change a fitted model's sample. They should not be labeled as exact dissertation table counts until reconciled with the original fitted models.
+
+```{r}
+#| label: q1-exposure-count-inventory
+q1_exposure_paths <- c(
+  `Building - SFHA` = "data/processed/targets/sales/df_prep_bldg_v2026_03.RDS",
+  `Parcel - SFHA` = "data/processed/targets/sales/df_prep_land_v2026_03.RDS",
+  `Building - 1-in-500` = "data/processed/targets/sales/df_prep_risk500_v2026_03.RDS",
+  `Parcel - 1-in-500` = "data/processed/targets/sales/df_prep_risk500_land_v2026_03.RDS"
+)
+q1_exposure_counts <- purrr::imap_dfr(q1_exposure_paths, function(path, definition) {
+  if (!file.exists(path)) stop("Missing exposure dataset: ", path)
+  d <- readRDS(path) |>
+    dplyr::filter(!pin10 %in% drop_parcels | (pin10 == "0113301013" & sale_year > 2014))
+  indicators <- c(
+    `Preliminary: added` = "addedto_prelim_sfha",
+    `Preliminary: removed` = "removedfrom_prelim_sfha",
+    `Effective: added` = "addedto_eff_sfha",
+    `Effective: removed` = "removedfrom_eff_sfha"
+  )
+  if (!all(c("pin10", unname(indicators)) %in% names(d))) {
+    stop("Missing transition identifiers in ", path)
+  }
+  purrr::imap_dfr(indicators, function(variable, transition) {
+    flag <- as.character(d[[variable]])
+    if (!all(stats::na.omit(flag) %in% c("TRUE", "FALSE", "1", "0"))) {
+      stop("Unexpected transition coding in ", path, ": ", variable)
+    }
+    treated <- !is.na(flag) & flag %in% c("TRUE", "1")
+    tibble::tibble(
+      Definition = definition, Transition = transition,
+      `Input sales` = nrow(d), `Treated sales` = sum(treated),
+      `Treated parcels` = dplyr::n_distinct(d$pin10[treated], na.rm = TRUE),
+      `Missing transition flag` = sum(is.na(flag))
+    )
+  })
+})
+knitr::kable(q1_exposure_counts, caption = "Current input-sample treatment counts by exposure definition")
+```
+
+# Appendix A: Q1 research-design assumptions {#appendix-a}
+
+This section supports the Appendix A reference on dissertation page 35 and the discussion on printed pages 91-99. It examines pretreatment trends, possible anticipation, and sensitivity to outcome scale and regional controls. The event studies below use preliminary-map timing and distinguish additions from removals; they are not a diagnostic for every effective-map or alternative-exposure specification elsewhere on the site.
+
+| Supporting item | Location |
+|---|---|
+| Event studies, individual leads, and joint pretrend tests | [Additions](#q1-added-event-study) and [removals](#q1-removed-event-study) |
+| Extended-TWFE event profiles | [Existing event-profile output](#q1-etwfe-event-profiles) |
+| Two-year-early placebo tests | [Placebo results](#q1-placebo-tests) |
+| Conditional parallel trends | [Regional-control comparison](#q1-conditional-trends) |
+| Levels, logs, inverse price, and inverse hyperbolic sine | [Transformation comparison](#q1-outcome-transformations) |
+| Historical distributional diagnostics | [Saved results and provenance](#q1-distributional-tests) |
+
+The regional and transformation comparisons are newly assembled supporting outputs. Existing event-study and placebo formulas are retained. Saved distributional diagnostics come from older samples and are identified separately. No diagnostic alone proves the causal assumptions.
+
+[Return to the dissertation index](index.qmd#page-35-question-1-research-design-assumptions).
+
+## Additions: event study and pretrend tests {#q1-added-event-study}
+
+Properties added to the preliminary SFHA are compared with never-SFHA properties. Event time is relative to the preliminary map year; sales earlier than the preliminary date within that year are assigned to year -1. The endpoint bins pool years at or below -5 and at or above +5. Year -1 is the omitted reference period.
+
+The plotted model uses logged sale price, property and year fixed effects, and standard errors clustered by 10-digit parcel. The coefficient table below the plot lists estimated pretreatment leads; the Wald test jointly tests the included leads -5 through -2 against zero relative to year -1. Rejection raises concerns about the specification or pre-event comparability. Non-rejection is not proof of parallel trends, especially when treated samples are small.
 
 ```{r}
 
 out_dir <- "outputs/q2_marginaleffects"
 prep_path <- file.path(out_dir, "bldg_sfha_q2_dissertation_prepped.rds")
 if (!file.exists(prep_path)) {
-  source("scripts/q2_dissertation_00_prep_data.R")
+  source("scripts/q2_dissertation_scripts/q2_dissertation_00_prep_data.R")
 }
 
 bldg_sfha <- readRDS(prep_path)
 
 df_prep <- bldg_sfha |>
   mutate(
-    pre_year = if ("pre_year" %in% names(df)) pre_year else as.integer(format(pre_date, "%Y")),
-    eff_year = if ("eff_year" %in% names(df)) eff_year else as.integer(format(eff_date, "%Y")),
+    pre_year = if ("pre_year" %in% names(bldg_sfha)) pre_year else as.integer(format(pre_date, "%Y")),
+    eff_year = if ("eff_year" %in% names(bldg_sfha)) eff_year else as.integer(format(eff_date, "%Y")),
     event_time = sale_year - pre_year,
     event_time = ifelse(event_time == 0 & sale_date < pre_date, -1, event_time)
   )
@@ -1590,7 +1658,9 @@ pretrends
 wald(mod_es_add_none, keep = "event_time_binned::-(5|4|3|2)")
 ```
 
-## Removed from SFHA - Event Study
+## Removals: event study and pretrend tests {#q1-removed-event-study}
+
+Properties removed from the preliminary SFHA are compared with always-SFHA properties. The event-time bins, omitted period, fixed effects, and clustering follow the addition specification. The plot and joint lead test provide the removal-side diagnostics discussed in Appendix A; the appropriate comparison is within this design, rather than between its coefficient levels and those of the addition design.
 
 ```{r}
 # --- define sample + treatment (Removed vs Always) ----
@@ -1613,7 +1683,7 @@ iplot(mod_es_removed_none, xlab = "Years relative to map year", main = "Event St
 
 
 
-This spec is implicitly assuming North Cook, South Cook, and Chicago share a single price trend. That assumption is false. Regional growth differences get misattributed to the flood-risk information shock.
+This specification controls for common year effects but does not allow year effects to differ across North Cook, South Cook, and Chicago. The regional-control comparison below examines sensitivity to that restriction; the baseline specification alone does not establish whether regional differences explain its estimates.
 
 ```{r}
 # ---- pre-trend check (leads only) ----
@@ -1630,10 +1700,12 @@ wald(mod_es_removed_none, keep = "event_time_binned::-(5|4|3|2)")
 
 ```
 
-> Passed pre-trend test: Coefficients were not statistically significant from each other. 
+> Read the joint test as a test that the included pretreatment coefficients are zero relative to the omitted period. It is not a test that the coefficients equal one another, and a non-significant result does not prove parallel trends. 
 
 
-## Figure 12: Local Average Treatment Effect
+## Extended-TWFE event profiles {#q1-etwfe-event-profiles}
+
+These existing extended-TWFE models produce grouped marginal effects and event profiles for preliminary-map removals, followed by additions. Each model excludes the opposite transition and uses the corresponding always-SFHA or never-SFHA comparison category. These outputs supplement the binned event studies; different estimators, aggregation, and comparison sets can produce different profiles. The earlier heading associated this output with Figure 12; an exact match to the printed figure has not been established here.
 
 ```{r}
 mod2 = etwfe(
@@ -1705,11 +1777,11 @@ plot(emfx(mod2, type = "event"), pch = c(16, 15, 18, 19))
 ```
 
 
-## Table 17: Q1 Placebo Test
+## Two-year-early placebo tests {#q1-placebo-tests}
 
-**Purpose**: Estimate treatment effects in periods before any treatment occurs.
+Appendix A discusses whether estimated changes appear before the preliminary map date. These placebo models move each preliminary date two years earlier, restrict observations to sales strictly before the actual preliminary date, and estimate the treated-by-placebo-period interaction with property and year fixed effects and parcel-clustered standard errors. Removals are displayed first, then additions.
 
-**Why**: If “effects” show up before treatment, you’ve got either model misspecification or anticipation dynamics. Either way, your core assumptions are shaky.
+A nonzero placebo estimate can reflect anticipation, differential trends, or other misspecification; it does not identify which explanation is responsible. A non-significant estimate does not rule these out. The final two tables use the actual preliminary date and the broader time window, providing a reference specification rather than additional placebo tests.
 
 
 ```{r}
@@ -1807,3 +1879,134 @@ normal_did_remove <- run_normal_did(bldg_sfha, treated_label = "Removed from pre
 etable(normal_did_remove)
 ```
 
+
+
+## Regional controls and conditional parallel trends {#q1-conditional-trends}
+
+Appendix A considers whether regional housing-market differences affect the Q1 comparisons. The specifications below adapt the existing triad-by-year event studies in `q1_assumption_tests.qmd` to the same addition and removal samples used above. They replace common year effects with `sale_year^Triad` while retaining property fixed effects and parcel-clustered standard errors. These are region-by-year fixed effects, not separate linear trend slopes.
+
+The comparisons use a common complete-case sample for each treatment direction, so differences between the two specifications are not caused by missing triad identifiers. The joint tests concern the included pretreatment coefficients relative to year -1; failure to reject does not establish the unobserved post-treatment counterfactual. These tables are newly assembled from the existing specifications, not a verified reproduction of a numbered dissertation table.
+
+```{r}
+#| label: q1-conditional-trend-comparison
+q1_regional_samples <- list(
+  Added = df_es_add,
+  Removed = df_es_removed
+)
+q1_regional_models <- lapply(q1_regional_samples, function(d) {
+  d <- d |>
+    dplyr::filter(is.finite(sale_price), sale_price > 0) |>
+    tidyr::drop_na(pin, pin10, sale_year, Triad, event_time_binned, treated)
+  list(
+    `Common year effects` = fixest::feols(
+      log(sale_price) ~ i(event_time_binned, treated, ref = -1) | pin + sale_year,
+      cluster = ~pin10, data = d
+    ),
+    `Triad-by-year effects` = fixest::feols(
+      log(sale_price) ~ i(event_time_binned, treated, ref = -1) | pin + sale_year^Triad,
+      cluster = ~pin10, data = d
+    )
+  )
+})
+for (direction in names(q1_regional_models)) {
+  cat("\n", direction, "to/from preliminary SFHA: coefficient comparison\n")
+  print(fixest::etable(q1_regional_models[[direction]],
+                      keep = "%event_time_binned::"))
+  for (specification in names(q1_regional_models[[direction]])) {
+    cat("\nJoint pretreatment test:", direction, "-", specification, "\n")
+    print(fixest::wald(q1_regional_models[[direction]][[specification]],
+                      keep = "event_time_binned::-(5|4|3|2)"))
+  }
+  fixest::iplot(q1_regional_models[[direction]][["Triad-by-year effects"]],
+                xlab = "Years relative to preliminary map year",
+                main = paste(direction, "- triad-by-year fixed effects"))
+}
+```
+
+## Outcome transformations {#q1-outcome-transformations}
+
+Appendix A (printed pages 95-97) discusses sale price in levels, logarithms, inverse price, and inverse hyperbolic sine. The plots below assemble all four transformations for the Q1 event-study samples. They use the same observations across transformations: finite, strictly positive prices in the pretreatment period, with addition and removal comparisons shown separately. The last two plots are supporting variations, not estimates of a new treatment effect.
+
+Points are means of transformed sale prices by calendar year and treatment group, not transformations of the group mean. The panels use separate vertical scales. A year can pool observations from different preliminary-map cohorts, and the mix of sold properties can change over time; these descriptive plots therefore supplement the event studies rather than proving parallel trends. Inverse price is decreasing in price, so its direction must be interpreted accordingly. This newly assembled comparison is not an exact reconstruction of dissertation Figures 15-16.
+
+```{r}
+#| label: q1-transformation-comparison
+#| fig-width: 10
+#| fig-height: 6
+q1_transformation_data <- dplyr::bind_rows(
+  Added = df_es_add,
+  Removed = df_es_removed,
+  .id = "comparison"
+) |>
+  dplyr::filter(sale_date < pre_date, is.finite(sale_price), sale_price > 0) |>
+  dplyr::mutate(
+    group = dplyr::if_else(treated, "Transition group", "Comparison group"),
+    `Sale price` = sale_price,
+    `Log sale price` = log(sale_price),
+    `Inverse sale price` = 1 / sale_price,
+    `Inverse hyperbolic sine` = asinh(sale_price)
+  )
+q1_transformation_counts <- q1_transformation_data |>
+  dplyr::group_by(comparison, group) |>
+  dplyr::summarise(Sales = dplyr::n(), Properties = dplyr::n_distinct(pin),
+                   .groups = "drop")
+knitr::kable(q1_transformation_counts,
+             caption = "Pretreatment observations used in each transformation")
+q1_transformation_means <- q1_transformation_data |>
+  dplyr::select(comparison, group, sale_year, `Sale price`, `Log sale price`,
+                `Inverse sale price`, `Inverse hyperbolic sine`) |>
+  tidyr::pivot_longer(cols = c(`Sale price`, `Log sale price`,
+                              `Inverse sale price`, `Inverse hyperbolic sine`),
+                      names_to = "transformation", values_to = "value") |>
+  dplyr::group_by(comparison, group, sale_year, transformation) |>
+  dplyr::summarise(mean_value = mean(value), Sales = dplyr::n(), .groups = "drop")
+for (direction in c("Added", "Removed")) {
+  print(ggplot2::ggplot(
+    dplyr::filter(q1_transformation_means, comparison == direction),
+    ggplot2::aes(sale_year, mean_value, colour = group, shape = group)
+  ) + ggplot2::geom_line() + ggplot2::geom_point() +
+    ggplot2::facet_wrap(~transformation, scales = "free_y", ncol = 2) +
+    ggplot2::labs(title = paste(direction, "to/from preliminary SFHA: pretreatment prices"),
+                  x = "Sale year", y = "Mean transformed price", colour = NULL, shape = NULL) +
+    ggplot2::theme_minimal() + ggplot2::theme(legend.position = "bottom"))
+}
+```
+
+## Saved distributional parallel-trends diagnostics {#q1-distributional-tests}
+
+Appendix A (printed pages 98-99) reports distributional diagnostics associated with Roth and Sant'Anna's functional-form analysis. Existing results were located in `scripts/Q1_SFHA_DiD_test.R` and its saved `didFF` objects. The cells below display those saved results without re-estimating them or running the exploratory script.
+
+The unlogged 2014/2022 object has a saved p-value of 0.99778, consistent with the rounded 0.998 in the dissertation. A second unlogged object has p-value 1. The saved logged-price object has p-value 0. These are different historical specifications; they should not be presented as uniformly supporting the same conclusion. The script overwrites the logged-price output during its later exploratory specification, so it is not a clean same-sample levels-versus-logs comparison. A large p-value is a failure to reject the diagnostic's null, not proof of parallel trends or of the causal interpretation.
+
+| Saved object | Code provenance and interpretation |
+|---|---|
+| `didFF_Q1_model_notlogged.rds` | Uses the older parcel dataset `df_prep_land_updated_final.rds`, retains 2014 and 2022 sales, averages within property-year, and assigns the transition group to 2022. Outcome: sale price. |
+| `didFF_Q1_model_out.rds` | Last written by the later logged-price specification, which assigns group 2021 using transition status and sale date relative to the preliminary date. This assignment can vary within property. |
+| `didFF_model_Q1_out2.rds` | Later unlogged-price specification with the same sale-date-dependent group construction. It is distinct from the 2014/2022 comparison. |
+
+The latter two grouping constructions require methodological review before being used as confirmatory evidence. The saved objects do not establish that these samples match the current building-based Q1 models. The historical output is shown here to make the dissertation's diagnostic evidence traceable, including the result that differs from its summary.
+
+```{r}
+#| label: q1-saved-distributional-results
+#| fig-width: 9
+#| fig-height: 5
+q1_distribution_files <- c(
+  `Sale price: 2014/2022 specification` = "outputs/didFF_Q1_model_notlogged.rds",
+  `Logged price: later exploratory specification` = "outputs/didFF_Q1_model_out.rds",
+  `Sale price: later exploratory specification` = "outputs/didFF_model_Q1_out2.rds"
+)
+q1_missing_distribution <- q1_distribution_files[!file.exists(q1_distribution_files)]
+if (length(q1_missing_distribution)) {
+  stop("Missing saved Q1 diagnostics: ", paste(q1_missing_distribution, collapse = ", "),
+       ". Restore the saved outputs; do not substitute another specification.")
+}
+for (description in names(q1_distribution_files)) {
+  saved_diagnostic <- readRDS(q1_distribution_files[[description]])
+  if (is.null(saved_diagnostic$pval) || is.null(saved_diagnostic$plot)) {
+    stop("Saved diagnostic lacks a p-value or plot: ", q1_distribution_files[[description]])
+  }
+  cat("\n", description, "\nSaved p-value: ", saved_diagnostic$pval, "\n", sep = "")
+  print(saved_diagnostic$plot + ggplot2::labs(title = description))
+  rm(saved_diagnostic)
+}
+```
