@@ -5,11 +5,15 @@ project:
   # helps ignore other quarto files in the directory
   render:
       - index.qmd
+      - article-companion.qmd
       - descriptive_statistics.qmd
-      - dissertation_tables.qmd
-      - dissertation_tables_Q2_marginaleffects.qmd
-      - q2_FF_variable_checks.qmd
+      - q1-text-material.qmd
+      - q1-robustness-nearby-properties-check.qmd
+
+      - q2-text-material.qmd
+      - q2-robustness-FF-variable-forms.qmd
       - file_info.qmd
+      - replication-guide.qmd
 
 
 execute:
@@ -21,6 +25,8 @@ website:
   navbar:
     search: true
     left:
+      - text: "Article companion"
+        href: article-companion.qmd
       - text: "Website Info"
         href: index.qmd
         
@@ -29,8 +35,9 @@ website:
 
       - text: "Q1: FEMA FIRM Info"  
         menu:
-          - dissertation_tables.qmd
-                  # pulls
+          - q1-text-material.qmd
+          - q1-robustness-nearby-properties-check.qmd
+          
           # - q1_assumption_tests.qmd   # assumptions
           # - etwfe_models.qmd   # initial etwfe models. main ones pulled into dissertation_tables.qmd already.... I think
           # - etwfe_summary_tables.qmd
@@ -40,14 +47,17 @@ website:
 
       - text: "Q2: Flood Factor Info"
         menu:
-          - dissertation_tables_Q2_marginaleffects.qmd
+          - q2-text-material.qmd
           # - q2_assumption_graphs.qmd
           # - q2_simplermodel_assumptions_and_diagnostics.qmd
-          - q2_FF_variable_checks.qmd # Robustness check for Binary, Ordinal, or Continuous Flood factor scores in models
+          - q2-robustness-FF-variable-forms.qmd
+
+          # Variable-form checks are linked above through the current page.
           
       - text: "Additional Details"
         menu:
           -  file_info.qmd
+          -  replication-guide.qmd
         # - AssessedValues_andFIRMs.qmd
         # - CC_Individual_FEMA_Assistance.qmd
         # - Cook_sales_data.qmd
