@@ -1,0 +1,66 @@
+---
+title: "Dissertation replication and workflow guide"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+---
+
+# Materials overview {#materials-overview}
+
+
+| Dissertation material | Reader-facing destination | Main source or saved output |
+|---|---|---|
+| Page 2: flood-risk coverage | [Background calculations](descriptive_statistics.qmd#dissertation-page-2) | `scripts/pull_distinct_resPINs.R`, `scripts/pull_floodfactor_pin_list.R` |
+| Page 35 / Appendix A | [Q1 assumptions](q1-text-material.qmd#appendix-a) | Q1 page, historical `q1_assumption_tests.qmd`, `scripts/Q1_SFHA_DiD_test.R` |
+| Page 56 / Tables XIII-XIV | [Exposure comparisons](q1-text-material.qmd#q1-spatial-definitions) | `Q1_Model_Comparison.qmd`, `etwfe_combined_mega_grid.qmd`, saved grid tables |
+| Page 62 | [Q1 robustness](q1-robustness-nearby-properties-check.qmd#dissertation-page-62) | Nearby-controls Quarto page and prepared building data |
+| Page 69 / Appendix B | [Q2 diagnostics](q2-text-material.qmd#appendix-b) | `scripts/q2_assumption_tests/`, `scripts/Q2_FloodFactor_didFF_test.R` |
+| Page 77 / Appendix C | [Q2 coefficients](q2-text-material.qmd#appendix-c) | `scripts/q2_dissertation_scripts/`, `outputs/q2_marginaleffects/` |
+
+Additional analyses include [Flood Factor variable-form checks](q2-robustness-FF-variable-forms.qmd) and the [file inventory](file_info.qmd). The inventory contains historical entries as well as active files; use actual paths and the limitations below when reproducing results.
+
+# Repository organization {#repository-organization}
+
+| Location | Role |
+|---|---|
+| `_targets.R`, `R/` | Spatial and sales-data construction and helper functions |
+| `inputs/`, `data/raw/` | Spatial inputs, sales exports, lookups, and acquisition inputs |
+| `data/processed/targets/sales/` | Current `allsales_*` exports alongside older `df_prep_*` analysis inputs |
+| `data/data_used_in_dissertation/` | Saved data snapshots; its README identifies March 8, 2026 sales data |
+| `scripts/q2_dissertation_scripts/` | Numbered preparation, model, marginal-effect, and robustness scripts |
+| `scripts/q2_FF_variable_checks/` | Binary, ordinal, and continuous score comparisons |
+| `scripts/q2_assumption_tests/` | Saved diagnostic plot/model construction |
+| `outputs/` | Model objects, tables, figures, maps, and diagnostics |
+| Root `.qmd` files | Main website pages and additional exploratory analyses |
+| `_quarto.yml`, `docs/` | Website build configuration and generated HTML |
+| `_targets/`, `_freeze/`, `.quarto/` | Target objects and execution/build caches; not source data |
+| `archived/`, `quarto_supportfiles/` | Historical analyses and rendered materials |
+
+# Data and software {#data-and-software}
+
+Use the dissertation project root as the working directory and begin with a fresh R session. The inspected project has no `renv.lock`, so the original package environment is not pinned. R and Quarto are required. Data processing uses packages including `targets`, `tarchetypes`, `sf`, `tidyverse`, `readxl`, `DBI`, and `RSQLite`; analyses and reports additionally use `fixest`, `did`, `etwfe`, `marginaleffects`, `didFF`, `broom`, `modelsummary`, `gt`, `flextable`, `DT`, and `knitr`. Check each source file's imports and record `sessionInfo()` for a reproducibility run.
+
+The inputs combine Cook County sales and parcels, FEMA flood boundaries and map timing, Microsoft building footprints, and First Street Flood Factor information. The current targets configuration selects `data/raw/Assessor_-_Parcel_Sales_20260308.csv`. The residential-PIN acquisition script uses a separately located PTAXSIM database; targets also reads a municipality lookup outside this repository. Manual GIS buffers, corrections, and parcel exclusions are additional inputs. Exact acquisition dates, permitted redistribution, and a complete input manifest remain to be documented; local availability is not the same as public availability. See the [background source notes](descriptive_statistics.qmd#data-sources).
+
+# Computational workflow {#computational-workflow}
+
+```text
+External source data + manual GIS/lookup inputs
+  -> _targets.R + R/ helpers
+  -> processed spatial and sales exports
+  -> analysis preparation / Q1 Quarto models / Q2 numbered scripts
+  -> saved model, contrast, table, and diagnostic objects
+  -> selected Quarto pages
+  -> docs/ HTML
+  -> separate publication step
+```
+
+1. **Inventory inputs and versions.** Preserve the dissertation snapshots and identify which saved output belongs to which source vintage. Do not replace a `df_prep_*` input with `allsales_*` solely because its name is newer.
+2. **Inspect the data pipeline.** From the root, `targets::tar_manifest()` lists declared targets and `targets::tar_outdated()` identifies recorded changes. A later `targets::tar_make()` rebuilds affected targets after input paths are resolved. Some files are read inside commands rather than declared as file targets; these require explicit attention when inputs change.
+3. **Prepare analysis inputs.** The current pipeline exports `allsales_*`; downstream models still require saved `df_prep_*` inputs. Restoring the reproducible bridge between these is a prerequisite for a clean build.
+4. **Generate analysis results.** Q1 models are distributed across Quarto files. `Q1_Model_Comparison.qmd` writes the TWFE grid; `etwfe_combined_mega_grid.qmd` assembles the ETWFE grid from saved results. For Q2, the intended order in `scripts/q2_dissertation_scripts/` is `00` preparation, `01` basic TWFE, `02` ETWFE, `03` main marginal effects, and `04` robustness. The Flood Factor form-check sequence is `00`, `01`, `02`, with `03` a loading example. The numbered script source paths have been repaired; verify the saved model version and external inputs before running these sequences.
+5. **Prepare diagnostics.** Existing Q2 plot and model RDS files are under `outputs/q2_assumption_tests/`. Their runner now reuses the existing prepared dataset or calls the existing Flood Factor preparation script when the dataset is absent. The website can display saved objects, but a clean diagnostic rebuild is not yet documented end to end. Historical distributional-test scripts contain exploratory alternatives; do not run them indiscriminately, because some overwrite outputs.
+6. **Render and inspect.** The website explicitly renders selected pages to `docs/`. For a chosen page, use `quarto render filename.qmd`; use `quarto render` for the configured site. Some pages fit models during rendering. The `freeze: auto` setting can reuse cached execution in project builds, so external RDS changes must be considered when refreshing output. Inspect tables, labels, links, and figure provenance before publication.
+7. **Publish separately.** Confirm the approved local sources and outputs are versioned and publish through the project's chosen GitHub Pages workflow. Preserve the stable homepage URL used by the dissertation. This documentation edit does not publish the site.
+
