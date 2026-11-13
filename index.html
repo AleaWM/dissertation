@@ -2,17 +2,23 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.4.550">
+<meta name="generator" content="quarto-1.10.18">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
 <title>Dissertation Replication Materials</title>
 <style>
-code{white-space: pre-wrap;}
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -21,8 +27,9 @@ ul.task-list li input[type="checkbox"] {
   vertical-align: middle;
 }
 /* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
 pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
 pre > code.sourceCode > span:empty { height: 1.2em; }
 .sourceCode { overflow: visible; }
 code.sourceCode > span { color: inherit; text-decoration: inherit; }
@@ -64,15 +71,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="site_libs/quarto-search/fuse.min.js"></script>
 <script src="site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="./">
-<script src="site_libs/quarto-html/quarto.js"></script>
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
 <script src="site_libs/quarto-html/popper.min.js"></script>
 <script src="site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="site_libs/quarto-html/anchor.min.js"></script>
 <link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="site_libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-2f5524832805d734b96ee676820b2dda.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -104,7 +112,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 </head>
 
-<body class="nav-fixed">
+<body class="nav-fixed quarto-light">
 
 <div id="quarto-search-results"></div>
   <header id="quarto-header" class="headroom fixed-top">
@@ -116,11 +124,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     </a>
   </div>
             <div id="quarto-search" class="" title="Search"></div>
-          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
   <span class="navbar-toggler-icon"></span>
 </button>
           <div class="collapse navbar-collapse" id="navbarCollapse">
             <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="./article-companion.html"> 
+<span class="menu-text">Article companion</span></a>
+  </li>  
   <li class="nav-item">
     <a class="nav-link active" href="./index.html" aria-current="page"> 
 <span class="menu-text">Website Info</span></a>
@@ -130,33 +142,37 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span class="menu-text">Background Info</span></a>
   </li>  
   <li class="nav-item dropdown ">
-    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-q1-fema-firm-info" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-q1-fema-firm-info" role="link" data-bs-toggle="dropdown" aria-expanded="false">
  <span class="menu-text">Q1: FEMA FIRM Info</span>
     </a>
     <ul class="dropdown-menu" aria-labelledby="nav-menu-q1-fema-firm-info">    
         <li>
-    <a class="dropdown-item" href="./dissertation_tables.html">
+    <a class="dropdown-item" href="./q1-text-material.html">
  <span class="dropdown-text">Q1 Figures and Tables</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./q1-robustness-nearby-properties-check.html">
+ <span class="dropdown-text">Q1 Nearby Property Controls</span></a>
   </li>  
     </ul>
   </li>
   <li class="nav-item dropdown ">
-    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-q2-flood-factor-info" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-q2-flood-factor-info" role="link" data-bs-toggle="dropdown" aria-expanded="false">
  <span class="menu-text">Q2: Flood Factor Info</span>
     </a>
     <ul class="dropdown-menu" aria-labelledby="nav-menu-q2-flood-factor-info">    
         <li>
-    <a class="dropdown-item" href="./dissertation_tables_Q2_marginaleffects.html">
+    <a class="dropdown-item" href="./q2-text-material.html">
  <span class="dropdown-text">Q2 Figures and Tables</span></a>
   </li>  
         <li>
-    <a class="dropdown-item" href="./q2_FF_variable_checks.html">
+    <a class="dropdown-item" href="./q2-robustness-FF-variable-forms.html">
  <span class="dropdown-text">FF Variable Checks</span></a>
   </li>  
     </ul>
   </li>
   <li class="nav-item dropdown ">
-    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-additional-details" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-additional-details" role="link" data-bs-toggle="dropdown" aria-expanded="false">
  <span class="menu-text">Additional Details</span>
     </a>
     <ul class="dropdown-menu" aria-labelledby="nav-menu-additional-details">    
@@ -164,11 +180,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <a class="dropdown-item" href="./file_info.html">
  <span class="dropdown-text">File Overview</span></a>
   </li>  
+        <li>
+    <a class="dropdown-item" href="./replication-guide.html">
+ <span class="dropdown-text">Dissertation replication and workflow guide</span></a>
+  </li>  
     </ul>
   </li>
 </ul>
           </div> <!-- /navcollapse -->
-          <div class="quarto-navbar-tools">
+            <div class="quarto-navbar-tools">
 </div>
       </div> <!-- /container-fluid -->
     </nav>
@@ -188,9 +208,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#research-question-1" id="toc-research-question-1" class="nav-link" data-scroll-target="#research-question-1">Research Question 1</a></li>
   <li><a href="#research-question-2" id="toc-research-question-2" class="nav-link" data-scroll-target="#research-question-2">Research Question 2</a></li>
   </ul></li>
-  <li><a href="#website-contents" id="toc-website-contents" class="nav-link" data-scroll-target="#website-contents">Website Contents</a></li>
+  <li><a href="#website-contents" id="toc-website-contents" class="nav-link" data-scroll-target="#website-contents">Website Contents</a>
+  <ul class="collapse">
+  <li><a href="#find-supporting-material-by-dissertation-page" id="toc-find-supporting-material-by-dissertation-page" class="nav-link" data-scroll-target="#find-supporting-material-by-dissertation-page">Find supporting material by dissertation page</a></li>
+  <li><a href="#page-2-fema-flood-zone-and-flood-factor-coverage" id="toc-page-2-fema-flood-zone-and-flood-factor-coverage" class="nav-link" data-scroll-target="#page-2-fema-flood-zone-and-flood-factor-coverage">Page 2: FEMA flood-zone and Flood Factor coverage</a></li>
+  <li><a href="#page-22-replication-materials-and-methods-overview" id="toc-page-22-replication-materials-and-methods-overview" class="nav-link" data-scroll-target="#page-22-replication-materials-and-methods-overview">Page 22: Replication materials and methods overview</a></li>
+  <li><a href="#page-35-question-1-research-design-assumptions" id="toc-page-35-question-1-research-design-assumptions" class="nav-link" data-scroll-target="#page-35-question-1-research-design-assumptions">Page 35: Question 1 research-design assumptions</a></li>
+  <li><a href="#page-56-alternative-definitions-of-flood-exposure" id="toc-page-56-alternative-definitions-of-flood-exposure" class="nav-link" data-scroll-target="#page-56-alternative-definitions-of-flood-exposure">Page 56: Alternative definitions of flood exposure</a></li>
+  <li><a href="#page-62-question-1-additional-robustness-checks" id="toc-page-62-question-1-additional-robustness-checks" class="nav-link" data-scroll-target="#page-62-question-1-additional-robustness-checks">Page 62: Question 1 additional robustness checks</a></li>
+  <li><a href="#page-69-question-2-research-design-assumptions" id="toc-page-69-question-2-research-design-assumptions" class="nav-link" data-scroll-target="#page-69-question-2-research-design-assumptions">Page 69: Question 2 research-design assumptions</a></li>
+  <li><a href="#page-77-full-question-2-regression-coefficients" id="toc-page-77-full-question-2-regression-coefficients" class="nav-link" data-scroll-target="#page-77-full-question-2-regression-coefficients">Page 77: Full Question 2 regression coefficients</a></li>
+  <li><a href="#page-111-reproducibility-and-computational-workflow" id="toc-page-111-reproducibility-and-computational-workflow" class="nav-link" data-scroll-target="#page-111-reproducibility-and-computational-workflow">Page 111: Reproducibility and computational workflow</a></li>
+  </ul></li>
   <li><a href="#data-sources" id="toc-data-sources" class="nav-link" data-scroll-target="#data-sources">Data Sources</a></li>
-  <li><a href="#reproducibility-notes" id="toc-reproducibility-notes" class="nav-link" data-scroll-target="#reproducibility-notes">Reproducibility Notes</a></li>
   <li><a href="#repository-structure" id="toc-repository-structure" class="nav-link" data-scroll-target="#repository-structure">Repository Structure</a></li>
   </ul>
 </nav>
@@ -220,9 +250,21 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 <section id="overview" class="level1">
 <h1>Overview</h1>
-<p>This website provides supporting tables, figures, code notes, and documentation for my dissertation research on flood risk information and residential property values in Cook County, Illinois. It also has a lot of my side quests that were explored but not incuded in the dissertation document.</p>
+<p>This website provides supporting tables, figures, code notes, and documentation for my dissertation research on flood risk information and residential property values in Cook County, Illinois. It also includes supplementary and exploratory analyses beyond the dissertation.</p>
 <p>The dissertation examines how housing markets respond to different forms of flood risk information, including FEMA Flood Insurance Rate Map updates and non-governmental flood risk information from First Street Foundation Flood Factor scores.</p>
 <p>The materials hosted here are intended to make the dissertation analysis more transparent, reproducible, and easier to navigate.</p>
+<p>This page provides a stable index to the additional materials referenced throughout the dissertation, <em>Risk Perception and Real Estate Values in Cook County, Illinois</em>. Items are listed in the order in which they appear in the dissertation so readers can locate the relevant supporting material using the printed page number.</p>
+<p>The dissertation links to this landing page rather than directly to individual files. The links below can therefore be updated as the website changes without creating stale links in the dissertation itself.</p>
+<p>The dissertation directs readers to the online repository for replication code, supplemental analyses, extended tables and figures, documentation, and additional methodological details.</p>
+<p>This page should serve as the main guide to the repository and include:</p>
+<ul>
+<li>a description of each major data source;</li>
+<li>a diagram of the data-processing workflow;</li>
+<li>an explanation of the repository’s folder structure;</li>
+<li>links to the Question 1 and Question 2 materials;</li>
+<li>instructions for reproducing tables and figures; and</li>
+<li>a list of supplemental analyses not included in the dissertation document.</li>
+</ul>
 </section>
 <section id="research-questions" class="level1">
 <h1>Research Questions</h1>
@@ -240,10 +282,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="website-contents" class="level1">
 <h1>Website Contents</h1>
 <p>The pages below organize the main tables, figures, and supporting analyses.</p>
-<blockquote class="blockquote">
-<p>Work in progress. Sorry future me if page references don’t work.</p>
-</blockquote>
-<table class="table">
+<table class="caption-top table">
 <thead>
 <tr class="header">
 <th>Navigation Section</th>
@@ -264,17 +303,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tr>
 <tr class="odd">
 <td>Q1: FEMA FIRM Info</td>
-<td><a href="./dissertation_tables.html">Q1: FEMA FIRM Tables</a></td>
+<td><a href="./q1-text-material.html">Q1: FEMA FIRM Tables</a></td>
 <td>Main tables and supporting results for the FEMA Flood Insurance Rate Map update analysis.</td>
 </tr>
 <tr class="even">
 <td>Q2: Flood Factor Info</td>
-<td><a href="./dissertation_tables_Q2_marginaleffects.html">Q2: Flood Factor Marginal Effects</a></td>
+<td><a href="./q2-text-material.html">Q2: Flood Factor Marginal Effects</a></td>
 <td>Main marginal effects tables and supporting results for the First Street Flood Factor analysis.</td>
 </tr>
 <tr class="odd">
 <td>Q2: Flood Factor Info</td>
-<td><a href="./q2_FF_variable_checks.html">Flood Factor Variable Checks</a></td>
+<td><a href="./q2-robustness-FF-variable-forms.html">Flood Factor Variable Checks</a></td>
 <td>Robustness checks comparing binary, ordinal, and continuous Flood Factor variables in model specifications.</td>
 </tr>
 <tr class="even">
@@ -284,9 +323,165 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tr>
 </tbody>
 </table>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>How to use this page
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Page numbers refer to the printed dissertation page numbers, not the PDF viewer’s page count.</p>
+</div>
+</div>
+<section id="find-supporting-material-by-dissertation-page" class="level2">
+<h2 class="anchored" data-anchor-id="find-supporting-material-by-dissertation-page">Find supporting material by dissertation page</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th style="text-align: right;">Dissertation page</th>
+<th>Supporting material</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;"><strong>2</strong></td>
+<td><a href="./descriptive_statistics.html#dissertation-page-2">FEMA flood-zone and Flood Factor coverage</a></td>
+<td>Data, calculations, and code supporting the comparison between FEMA-designated SFHAs and First Street major-risk properties.</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>22</strong></td>
+<td><a href="./replication-guide.html#materials-overview">Replication materials and methods overview</a></td>
+<td>Repository map, supporting outputs, data dependencies, and workflow.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;"><strong>35</strong></td>
+<td><a href="./q1-text-material.html#appendix-a">Question 1 research-design assumptions</a></td>
+<td>Parallel trends, event studies, placebo tests, and functional-form diagnostics for the FEMA map analysis.</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>56</strong></td>
+<td><a href="./q1-text-material.html#q1-spatial-definitions">Alternative definitions of flood exposure</a></td>
+<td>Models comparing building and parcel intersections with the SFHA and 1-in-500-year floodplain.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;"><strong>62</strong></td>
+<td><a href="./q1-robustness-nearby-properties-check.html#dissertation-page-62">Question 1 additional robustness checks</a></td>
+<td>Spatial buffers, spillover exclusions, and alternative geographic time controls.</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>69</strong></td>
+<td><a href="./q2-text-material.html#appendix-b">Question 2 research-design assumptions</a></td>
+<td>Parallel-trend visualizations, slope tests, functional-form checks, and placebo-event results for the Flood Factor analysis.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;"><strong>77</strong></td>
+<td><a href="./q2-text-material.html#appendix-c">Full Question 2 regression coefficients</a></td>
+<td>Unaggregated coefficients underlying the reported marginal effects.</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>111</strong></td>
+<td><a href="./replication-guide.html#computational-workflow">Reproducibility and computational workflow</a></td>
+<td>Code, data-source instructions, R and Quarto files, pipelines, and replication guidance.</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="page-2-fema-flood-zone-and-flood-factor-coverage" class="level2">
+<h2 class="anchored" data-anchor-id="page-2-fema-flood-zone-and-flood-factor-coverage">Page 2: FEMA flood-zone and Flood Factor coverage</h2>
+<p>The supporting page explains the source files and the numerator and denominator in the existing Flood Factor calculation. It also identifies what remains to be verified before reproducing the exact FEMA-versus-First-Street percentages in the dissertation.</p>
+<ul>
+<li><a href="./descriptive_statistics.html#dissertation-page-2">Source provenance and population definition</a>.</li>
+<li><a href="./descriptive_statistics.html#residential-parcels-with-high-flood-factor-scores">Existing high-Flood-Factor calculation</a>.</li>
+<li><a href="./descriptive_statistics.html#coverage-counts">Numerator, denominator, and matching checks</a>.</li>
+</ul>
+<p><a href="./descriptive_statistics.html#dissertation-page-2" class="btn btn-primary">Open supporting material</a></p>
+</section>
+<section id="page-22-replication-materials-and-methods-overview" class="level2">
+<h2 class="anchored" data-anchor-id="page-22-replication-materials-and-methods-overview">Page 22: Replication materials and methods overview</h2>
+<p>The dissertation promises a guide to the data, code, supplemental results, and methodology. The guide below maps each dissertation reference to its source and explains the distinction between existing saved outputs and a verified clean rebuild.</p>
+<ul>
+<li><a href="./replication-guide.html#materials-overview">Dissertation-to-output map</a>.</li>
+<li><a href="./replication-guide.html#repository-organization">Repository organization</a>.</li>
+<li><a href="./replication-guide.html#data-and-software">Data and software requirements</a>.</li>
+</ul>
+<p><a href="./replication-guide.html#materials-overview" class="btn btn-primary">Open supporting material</a></p>
+</section>
+<section id="page-35-question-1-research-design-assumptions" class="level2">
+<h2 class="anchored" data-anchor-id="page-35-question-1-research-design-assumptions">Page 35: Question 1 research-design assumptions</h2>
+<p>Page 35 directs readers to Appendix A (printed pages 91-99) for the Q1 difference-in-differences assumptions. The supporting sections below explain the existing event studies and placebo tests, assemble supplementary regional and transformation comparisons, and display saved distributional diagnostics with their specification history.</p>
+<ul>
+<li><a href="./q1-text-material.html#q1-added-event-study">Addition event study and joint pretrend test</a>.</li>
+<li><a href="./q1-text-material.html#q1-removed-event-study">Removal event study and joint pretrend test</a>.</li>
+<li><a href="./q1-text-material.html#q1-placebo-tests">Placebo-treatment tests</a>: move the preliminary date two years earlier and restrict sales to before the actual date.</li>
+<li><a href="./q1-text-material.html#q1-outcome-transformations">Outcome transformations</a>: compare levels, logs, inverse price, and inverse hyperbolic sine on common pretreatment samples.</li>
+<li><a href="./q1-text-material.html#q1-distributional-tests">Saved distributional parallel-trends diagnostics</a>: display the historical results and distinguish their samples and specifications.</li>
+<li><a href="./q1-text-material.html#q1-conditional-trends">Conditional parallel trends and regional controls</a>: compare common year effects with triad-by-year effects.</li>
+</ul>
+<p><a href="./q1-text-material.html#appendix-a" class="btn btn-primary">Open supporting material</a></p>
+</section>
+<section id="page-56-alternative-definitions-of-flood-exposure" class="level2">
+<h2 class="anchored" data-anchor-id="page-56-alternative-definitions-of-flood-exposure">Page 56: Alternative definitions of flood exposure</h2>
+<p>The dissertation refers to Tables XIII and XIV for alternative spatial definitions. The existing Q1 page displays the saved grids for building versus parcel exposure, SFHA versus 1-in-500-year exposure, and preliminary versus effective timing. It now also includes a separately labeled inventory of treated observations in the current input datasets.</p>
+<ul>
+<li><a href="./q1-text-material.html#q1-spatial-definitions">Definitions and conventional TWFE comparison</a>.</li>
+<li><a href="./q1-text-material.html#q1-spatial-etwfe">Extended-TWFE comparison</a>.</li>
+<li><a href="./q1-text-material.html#q1-exposure-counts">Current treated-sales and treated-parcel counts</a>.</li>
+</ul>
+<p><a href="./q1-text-material.html#q1-spatial-definitions" class="btn btn-primary">Open supporting material</a></p>
+</section>
+<section id="page-62-question-1-additional-robustness-checks" class="level2">
+<h2 class="anchored" data-anchor-id="page-62-question-1-additional-robustness-checks">Page 62: Question 1 additional robustness checks</h2>
+<p>Section 5.4.9 of the dissertation (printed pages 61-62) examines whether the Q1 FEMA map results depend on the choice of nearby comparison properties or on controls for local housing-market changes. The supporting page contains the existing model tables, with explanations of the samples and fixed effects used.</p>
+<ul>
+<li><a href="./q1-robustness-nearby-properties-check.html#nearby-control-properties-only">Properties within 300 meters of an SFHA</a>: restrict the estimation sample to the existing GIS proximity list.</li>
+<li><a href="./q1-robustness-nearby-properties-check.html#spatial-spillover-concerns">Spatial spillover exclusion</a>: exclude nearby properties without a recorded SFHA transition, retaining properties that were ever added or removed.</li>
+<li><a href="./q1-robustness-nearby-properties-check.html#yearmuni-fixed-effects">Year-by-municipality controls</a>: allow annual housing-market conditions to differ across municipalities within the nearby sample.</li>
+<li><a href="./q1-robustness-nearby-properties-check.html#yeartownship-fixed-effects-within-300-meters-of-treated-properties">Year-by-township controls</a>: show the nearby-sample models, followed by a comparison using the full prepared sample.</li>
+<li><a href="./q1-robustness-nearby-properties-check.html#yearfirm_pan-fixed-effects">Year-by-FIRM-panel controls</a>: allow annual conditions to differ across FIRM panels within the nearby sample.</li>
+</ul>
+<p><a href="./q1-robustness-nearby-properties-check.html#dissertation-page-62" class="btn btn-primary">Open supporting material</a></p>
+</section>
+<section id="page-69-question-2-research-design-assumptions" class="level2">
+<h2 class="anchored" data-anchor-id="page-69-question-2-research-design-assumptions">Page 69: Question 2 research-design assumptions</h2>
+<p>Appendix B is supported by saved trend figures, existing slope and placebo tests, and historical distributional diagnostics. The linked explanations identify differences in samples and clarify what each diagnostic can establish.</p>
+<ul>
+<li><a href="./q2-text-material.html#q2-trend-figures">Countywide and regional trends</a>.</li>
+<li><a href="./q2-text-material.html#q2-transformations">Outcome transformations</a>.</li>
+<li><a href="./q2-text-material.html#q2-pretrend-tests">Pre-event slope tests</a>.</li>
+<li><a href="./q2-text-material.html#q2-distributional-tests">Saved distributional diagnostics</a>.</li>
+<li><a href="./q2-text-material.html#q2-placebo-tests">Placebo analysis with the existing 2017 cutoff</a>.</li>
+<li><a href="./q2-text-material.html#q2-anticipation">Anticipation and interpretation</a>.</li>
+</ul>
+<p><a href="./q2-text-material.html#appendix-b" class="btn btn-primary">Open supporting material</a></p>
+</section>
+<section id="page-77-full-question-2-regression-coefficients" class="level2">
+<h2 class="anchored" data-anchor-id="page-77-full-question-2-regression-coefficients">Page 77: Full Question 2 regression coefficients</h2>
+<p>Appendix C’s supporting section displays the saved main-model coefficients before marginal-effect aggregation, including terms omitted from the formatted summary and a separate list of collinear terms. It explains the construction of subgroup contrasts and identifies a saved-model/current-code version discrepancy that still requires reconciliation with the dissertation.</p>
+<ul>
+<li><a href="./q2-text-material.html#q2-full-coefficients">All estimated slope coefficients</a>.</li>
+<li><a href="./q2-text-material.html#q2-coefficient-contrasts">Interaction coefficients and subgroup contrasts</a>.</li>
+<li><a href="./q2-text-material.html#main-marginal-effects">Existing marginal-effect results and code</a>.</li>
+</ul>
+<p><a href="./q2-text-material.html#appendix-c" class="btn btn-primary">Open supporting material</a></p>
+</section>
+<section id="page-111-reproducibility-and-computational-workflow" class="level2">
+<h2 class="anchored" data-anchor-id="page-111-reproducibility-and-computational-workflow">Page 111: Reproducibility and computational workflow</h2>
+<p>The workflow guide documents software, input sources, analysis order, output locations, and rendering instructions. It distinguishes the available saved materials from unresolved requirements for rebuilding the dissertation from a clean checkout.</p>
+<ul>
+<li><a href="./replication-guide.html#data-and-software">Data and software requirements</a>.</li>
+<li><a href="./replication-guide.html#computational-workflow">Processing, estimation, and reporting order</a>.</li>
+<li><a href="./replication-guide.html#reproducibility-limits">Remaining reproducibility limits</a>.</li>
+</ul>
+<p><a href="./replication-guide.html#computational-workflow" class="btn btn-primary">Open supporting material</a></p>
+</section>
 </section>
 <section id="data-sources" class="level1">
 <h1>Data Sources</h1>
+<p><a href="./descriptive_statistics.html#data-sources">data sources</a></p>
 <p>The analysis combines several property, flood risk, and spatial data sources, including:</p>
 <ul>
 <li>Cook County residential property sales data</li>
@@ -297,46 +492,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li>First Street Foundation Flood Factor data</li>
 </ul>
 <p>Some source data may not be redistributed directly through this website because of file size. Where direct redistribution is not possible, this site documents the relevant data source, processing steps, and derived variables used in the analysis.</p>
-</section>
-<section id="reproducibility-notes" class="level1">
-<h1>Reproducibility Notes</h1>
-<p>The website is designed to display final tables and figures without rerunning every model during each site build.</p>
 <p>Spatial data and data cleaning/merging largely take place in the _targets.R file. Models and exploration are done in the .qmd files.</p>
 </section>
 <section id="repository-structure" class="level1">
 <h1>Repository Structure</h1>
-<p>The project is organized roughly as follows:</p>
-<pre class="text"><code>├── index.qmd
-├── descriptive_stats.qmd
-├── rq1-desertation_tables.qmd
-├── rq1-extended-twfe.qmd
-├── rq1-assumptions-diagnostics.qmd
-├── rq1-robustness.qmd
-├── rq2-dissertation_tables.qmd
-├── rq2-assumptions-diagnostics.qmd
-├── rq2-robustness.qmd
-├── scripts/
-│   ├── setup_data.R
-│   ├── helper_control_groups.R
-│   ├── helper_tables.R
-│   ├── helper_figures.R
-│   ├── run_models_rq1.R
-│   └── run_models_rq2.R
-├── outputs/
-│   ├── q2_models/
-│   │   ├── tables/
-│   │   ├── figures/
-│   │   └── models/
-│   ├── q2_marginal_effects/
-│   │   ├── tables/
-│   │   ├── figures/
-│   │   └── models/
-│   ├── tables/
-│   ├── figures/
-│   └── models/
-└── data/
-    ├── raw/
-    └── processed/</code></pre>
+<p>The <a href="./replication-guide.html#repository-organization">repository and workflow guide</a> describes the actual data, script, output, and website folders. The <a href="./file_info.html">file inventory</a> provides additional detail, including historical files.</p>
 
 
 <!-- -->
@@ -345,43 +505,58 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
-window.document.addEventListener("DOMContentLoaded", function (event) {
-  const toggleBodyColorMode = (bsSheetEl) => {
-    const mode = bsSheetEl.getAttribute("data-mode");
-    const bodyEl = window.document.querySelector("body");
-    if (mode === "dark") {
-      bodyEl.classList.add("quarto-dark");
-      bodyEl.classList.remove("quarto-light");
-    } else {
-      bodyEl.classList.add("quarto-light");
-      bodyEl.classList.remove("quarto-dark");
-    }
-  }
-  const toggleBodyColorPrimary = () => {
-    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
-    if (bsSheetEl) {
-      toggleBodyColorMode(bsSheetEl);
-    }
-  }
-  toggleBodyColorPrimary();  
-  const icon = "";
-  const anchorJS = new window.AnchorJS();
-  anchorJS.options = {
-    placement: 'right',
-    icon: icon
-  };
-  anchorJS.add('.anchored');
-  const isCodeAnnotation = (el) => {
-    for (const clz of el.classList) {
-      if (clz.startsWith('code-annotation-')) {                     
-        return true;
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
       }
+      return false;
     }
-    return false;
-  }
-  const clipboard = new window.ClipboardJS('.code-copy-button', {
-    text: function(trigger) {
-      const codeEl = trigger.previousElementSibling.cloneNode(true);
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
       for (const childEl of codeEl.children) {
         if (isCodeAnnotation(childEl)) {
           childEl.remove();
@@ -389,213 +564,235 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
       }
       return codeEl.innerText;
     }
-  });
-  clipboard.on('success', function(e) {
-    // button target
-    const button = e.trigger;
-    // don't keep focus
-    button.blur();
-    // flash "checked"
-    button.classList.add('code-copy-button-checked');
-    var currentTitle = button.getAttribute("title");
-    button.setAttribute("title", "Copied!");
-    let tooltip;
-    if (window.bootstrap) {
-      button.setAttribute("data-bs-toggle", "tooltip");
-      button.setAttribute("data-bs-placement", "left");
-      button.setAttribute("data-bs-title", "Copied!");
-      tooltip = new bootstrap.Tooltip(button, 
-        { trigger: "manual", 
-          customClass: "code-copy-button-tooltip",
-          offset: [0, -8]});
-      tooltip.show();    
-    }
-    setTimeout(function() {
-      if (tooltip) {
-        tooltip.hide();
-        button.removeAttribute("data-bs-title");
-        button.removeAttribute("data-bs-toggle");
-        button.removeAttribute("data-bs-placement");
-      }
-      button.setAttribute("title", currentTitle);
-      button.classList.remove('code-copy-button-checked');
-    }, 1000);
-    // clear code selection
-    e.clearSelection();
-  });
-  const viewSource = window.document.getElementById('quarto-view-source') ||
-                     window.document.getElementById('quarto-code-tools-source');
-  if (viewSource) {
-    const sourceUrl = viewSource.getAttribute("data-quarto-source-url");
-    viewSource.addEventListener("click", function(e) {
-      if (sourceUrl) {
-        // rstudio viewer pane
-        if (/\bcapabilities=\b/.test(window.location)) {
-          window.open(sourceUrl);
-        } else {
-          window.location.href = sourceUrl;
-        }
-      } else {
-        const modal = new bootstrap.Modal(document.getElementById('quarto-embedded-source-code-modal'));
-        modal.show();
-      }
-      return false;
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
     });
-  }
-  function toggleCodeHandler(show) {
-    return function(e) {
-      const detailsSrc = window.document.querySelectorAll(".cell > details > .sourceCode");
-      for (let i=0; i<detailsSrc.length; i++) {
-        const details = detailsSrc[i].parentElement;
-        if (show) {
-          details.open = true;
-        } else {
-          details.removeAttribute("open");
-        }
-      }
-      const cellCodeDivs = window.document.querySelectorAll(".cell > .sourceCode");
-      const fromCls = show ? "hidden" : "unhidden";
-      const toCls = show ? "unhidden" : "hidden";
-      for (let i=0; i<cellCodeDivs.length; i++) {
-        const codeDiv = cellCodeDivs[i];
-        if (codeDiv.classList.contains(fromCls)) {
-          codeDiv.classList.remove(fromCls);
-          codeDiv.classList.add(toCls);
-        } 
-      }
-      return false;
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
     }
-  }
-  const hideAllCode = window.document.getElementById("quarto-hide-all-code");
-  if (hideAllCode) {
-    hideAllCode.addEventListener("click", toggleCodeHandler(false));
-  }
-  const showAllCode = window.document.getElementById("quarto-show-all-code");
-  if (showAllCode) {
-    showAllCode.addEventListener("click", toggleCodeHandler(true));
-  }
-  function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
-    const config = {
-      allowHTML: true,
-      maxWidth: 500,
-      delay: 100,
-      arrow: false,
-      appendTo: function(el) {
-          return el.parentElement;
-      },
-      interactive: true,
-      interactiveBorder: 10,
-      theme: 'quarto',
-      placement: 'bottom-start',
-    };
-    if (contentFn) {
-      config.content = contentFn;
-    }
-    if (onTriggerFn) {
-      config.onTrigger = onTriggerFn;
-    }
-    if (onUntriggerFn) {
-      config.onUntrigger = onUntriggerFn;
-    }
-    window.tippy(el, config); 
-  }
-  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
-  for (var i=0; i<noterefs.length; i++) {
-    const ref = noterefs[i];
-    tippyHover(ref, function() {
-      // use id or data attribute instead here
-      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
-      try { href = new URL(href).hash; } catch {}
-      const id = href.replace(/^#\/?/, "");
-      const note = window.document.getElementById(id);
-      return note.innerHTML;
-    });
-  }
-  const xrefs = window.document.querySelectorAll('a.quarto-xref');
-  const processXRef = (id, note) => {
-    // Strip column container classes
-    const stripColumnClz = (el) => {
-      el.classList.remove("page-full", "page-columns");
-      if (el.children) {
-        for (const child of el.children) {
-          stripColumnClz(child);
-        }
-      }
-    }
-    stripColumnClz(note)
-    if (id === null || id.startsWith('sec-')) {
-      // Special case sections, only their first couple elements
-      const container = document.createElement("div");
-      if (note.children && note.children.length > 2) {
-        container.appendChild(note.children[0].cloneNode(true));
-        for (let i = 1; i < note.children.length; i++) {
-          const child = note.children[i];
-          if (child.tagName === "P" && child.innerText === "") {
-            continue;
+    const viewSource = window.document.getElementById('quarto-view-source') ||
+                       window.document.getElementById('quarto-code-tools-source');
+    if (viewSource) {
+      const sourceUrl = viewSource.getAttribute("data-quarto-source-url");
+      viewSource.addEventListener("click", function(e) {
+        if (sourceUrl) {
+          // rstudio viewer pane
+          if (/\bcapabilities=\b/.test(window.location)) {
+            window.open(sourceUrl);
           } else {
-            container.appendChild(child.cloneNode(true));
-            break;
+            window.location.href = sourceUrl;
+          }
+        } else {
+          const modal = new bootstrap.Modal(document.getElementById('quarto-embedded-source-code-modal'));
+          modal.show();
+        }
+        return false;
+      });
+    }
+    function toggleCodeHandler(show) {
+      return function(e) {
+        const cellDetails = window.document.querySelectorAll(".cell details.code-fold");
+        for (let i=0; i<cellDetails.length; i++) {
+          const details = cellDetails[i];
+          if (show) {
+            details.open = true;
+          } else {
+            details.removeAttribute("open");
           }
         }
-        if (window.Quarto?.typesetMath) {
-          window.Quarto.typesetMath(container);
+        const cellCodeDivs = window.document.querySelectorAll(".cell div.sourceCode.cell-code");
+        const fromCls = show ? "hidden" : "unhidden";
+        const toCls = show ? "unhidden" : "hidden";
+        for (let i=0; i<cellCodeDivs.length; i++) {
+          const codeDiv = cellCodeDivs[i];
+          if (codeDiv.classList.contains(fromCls)) {
+            codeDiv.classList.remove(fromCls);
+            codeDiv.classList.add(toCls);
+          } 
         }
-        return container.innerHTML
+        return false;
+      }
+    }
+    const hideAllCode = window.document.getElementById("quarto-hide-all-code");
+    if (hideAllCode) {
+      hideAllCode.addEventListener("click", toggleCodeHandler(false));
+    }
+    const showAllCode = window.document.getElementById("quarto-show-all-code");
+    if (showAllCode) {
+      showAllCode.addEventListener("click", toggleCodeHandler(true));
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/AleaWM\.github\.io\/dissertation\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
       } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
         if (window.Quarto?.typesetMath) {
           window.Quarto.typesetMath(note);
         }
-        return note.innerHTML;
-      }
-    } else {
-      // Remove any anchor links if they are present
-      const anchorLink = note.querySelector('a.anchorjs-link');
-      if (anchorLink) {
-        anchorLink.remove();
-      }
-      if (window.Quarto?.typesetMath) {
-        window.Quarto.typesetMath(note);
-      }
-      // TODO in 1.5, we should make sure this works without a callout special case
-      if (note.classList.contains("callout")) {
-        return note.outerHTML;
-      } else {
-        return note.innerHTML;
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
       }
     }
-  }
-  for (var i=0; i<xrefs.length; i++) {
-    const xref = xrefs[i];
-    tippyHover(xref, undefined, function(instance) {
-      instance.disable();
-      let url = xref.getAttribute('href');
-      let hash = undefined; 
-      if (url.startsWith('#')) {
-        hash = url;
-      } else {
-        try { hash = new URL(url).hash; } catch {}
-      }
-      if (hash) {
-        const id = hash.replace(/^#\/?/, "");
-        const note = window.document.getElementById(id);
-        if (note !== null) {
-          try {
-            const html = processXRef(id, note.cloneNode(true));
-            instance.setContent(html);
-          } finally {
-            instance.enable();
-            instance.show();
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
           }
         } else {
-          // See if we can fetch this
-          fetch(url.split('#')[0])
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
           .then(res => res.text())
           .then(html => {
             const parser = new DOMParser();
             const htmlDoc = parser.parseFromString(html, "text/html");
-            const note = htmlDoc.getElementById(id);
+            const note = htmlDoc.querySelector('main.content');
             if (note !== null) {
-              const html = processXRef(id, note);
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
               instance.setContent(html);
             } 
           }).finally(() => {
@@ -603,289 +800,356 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
             instance.show();
           });
         }
-      } else {
-        // See if we can fetch a full url (with no hash to target)
-        // This is a special case and we should probably do some content thinning / targeting
-        fetch(url)
-        .then(res => res.text())
-        .then(html => {
-          const parser = new DOMParser();
-          const htmlDoc = parser.parseFromString(html, "text/html");
-          const note = htmlDoc.querySelector('main.content');
-          if (note !== null) {
-            // This should only happen for chapter cross references
-            // (since there is no id in the URL)
-            // remove the first header
-            if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
-              note.children[0].remove();
-            }
-            const html = processXRef(null, note);
-            instance.setContent(html);
-          } 
-        }).finally(() => {
-          instance.enable();
-          instance.show();
-        });
-      }
-    }, function(instance) {
-    });
-  }
-      let selectedAnnoteEl;
-      const selectorForAnnotation = ( cell, annotation) => {
-        let cellAttr = 'data-code-cell="' + cell + '"';
-        let lineAttr = 'data-code-annotation="' +  annotation + '"';
-        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
-        return selector;
-      }
-      const selectCodeLines = (annoteEl) => {
-        const doc = window.document;
-        const targetCell = annoteEl.getAttribute("data-target-cell");
-        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
-        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
-        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
-        const lineIds = lines.map((line) => {
-          return targetCell + "-" + line;
-        })
-        let top = null;
-        let height = null;
-        let parent = null;
-        if (lineIds.length > 0) {
-            //compute the position of the single el (top and bottom and make a div)
-            const el = window.document.getElementById(lineIds[0]);
-            top = el.offsetTop;
-            height = el.offsetHeight;
-            parent = el.parentElement.parentElement;
-          if (lineIds.length > 1) {
-            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
-            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
-            height = bottom - top;
-          }
-          if (top !== null && height !== null && parent !== null) {
-            // cook up a div (if necessary) and position it 
-            let div = window.document.getElementById("code-annotation-line-highlight");
-            if (div === null) {
-              div = window.document.createElement("div");
-              div.setAttribute("id", "code-annotation-line-highlight");
-              div.style.position = 'absolute';
-              parent.appendChild(div);
-            }
-            div.style.top = top - 2 + "px";
-            div.style.height = height + 4 + "px";
-            div.style.left = 0;
-            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
-            if (gutterDiv === null) {
-              gutterDiv = window.document.createElement("div");
-              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
-              gutterDiv.style.position = 'absolute';
-              const codeCell = window.document.getElementById(targetCell);
-              const gutter = codeCell.querySelector('.code-annotation-gutter');
-              gutter.appendChild(gutterDiv);
-            }
-            gutterDiv.style.top = top - 2 + "px";
-            gutterDiv.style.height = height + 4 + "px";
-          }
-          selectedAnnoteEl = annoteEl;
-        }
-      };
-      const unselectCodeLines = () => {
-        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
-        elementsIds.forEach((elId) => {
-          const div = window.document.getElementById(elId);
-          if (div) {
-            div.remove();
-          }
-        });
-        selectedAnnoteEl = undefined;
-      };
-        // Handle positioning of the toggle
-    window.addEventListener(
-      "resize",
-      throttle(() => {
-        elRect = undefined;
-        if (selectedAnnoteEl) {
-          selectCodeLines(selectedAnnoteEl);
-        }
-      }, 10)
-    );
-    function throttle(fn, ms) {
-    let throttle = false;
-    let timer;
-      return (...args) => {
-        if(!throttle) { // first call gets through
-            fn.apply(this, args);
-            throttle = true;
-        } else { // all the others get throttled
-            if(timer) clearTimeout(timer); // cancel #2
-            timer = setTimeout(() => {
-              fn.apply(this, args);
-              timer = throttle = false;
-            }, ms);
-        }
-      };
-    }
-      // Attach click handler to the DT
-      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
-      for (const annoteDlNode of annoteDls) {
-        annoteDlNode.addEventListener('click', (event) => {
-          const clickedEl = event.target;
-          if (clickedEl !== selectedAnnoteEl) {
-            unselectCodeLines();
-            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
-            if (activeEl) {
-              activeEl.classList.remove('code-annotation-active');
-            }
-            selectCodeLines(clickedEl);
-            clickedEl.classList.add('code-annotation-active');
-          } else {
-            // Unselect the line
-            unselectCodeLines();
-            clickedEl.classList.remove('code-annotation-active');
-          }
-        });
-      }
-  const findCites = (el) => {
-    const parentEl = el.parentElement;
-    if (parentEl) {
-      const cites = parentEl.dataset.cites;
-      if (cites) {
-        return {
-          el,
-          cites: cites.split(' ')
-        };
-      } else {
-        return findCites(el.parentElement)
-      }
-    } else {
-      return undefined;
-    }
-  };
-  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
-  for (var i=0; i<bibliorefs.length; i++) {
-    const ref = bibliorefs[i];
-    const citeInfo = findCites(ref);
-    if (citeInfo) {
-      tippyHover(citeInfo.el, function() {
-        var popup = window.document.createElement('div');
-        citeInfo.cites.forEach(function(cite) {
-          var citeDiv = window.document.createElement('div');
-          citeDiv.classList.add('hanging-indent');
-          citeDiv.classList.add('csl-entry');
-          var biblioDiv = window.document.getElementById('ref-' + cite);
-          if (biblioDiv) {
-            citeDiv.innerHTML = biblioDiv.innerHTML;
-          }
-          popup.appendChild(citeDiv);
-        });
-        return popup.innerHTML;
+      }, function(instance) {
       });
     }
-  }
-});
-</script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
-<div class="sourceCode" id="cb2" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Dissertation Replication Materials"</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="an">subtitle:</span><span class="co"> "Flood Risk Information, Floodplain Map Updates, and Property Values in Cook County, Illinois"</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="an">format:</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="co">  html:</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co">    toc-depth: 2</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co">    number-sections: false</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="fu"># Overview</span></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>This website provides supporting tables, figures, code notes, and documentation for my dissertation research on flood risk information and residential property values in Cook County, Illinois. It also has a lot of my side quests that were explored but not incuded in the dissertation document.</span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>The dissertation examines how housing markets respond to different forms of flood risk information, including FEMA Flood Insurance Rate Map updates and non-governmental flood risk information from First Street Foundation Flood Factor scores.</span>
-<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>The materials hosted here are intended to make the dissertation analysis more transparent, reproducible, and easier to navigate.</span>
-<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="fu"># Research Questions</span></span>
-<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a><span class="fu">## Research Question 1</span></span>
-<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>How do residential property values respond when FEMA floodplain maps are updated and properties are added to or removed from the Special Flood Hazard Area?</span>
-<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>This portion of the analysis focuses on FEMA Flood Insurance Rate Map updates, including preliminary and effective floodplain designations.</span>
-<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a><span class="fu">## Research Question 2</span></span>
-<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>How do residential property values respond to the public availability of First Street Foundation Flood Factor scores?</span>
-<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>This portion of the analysis examines whether properties with higher Flood Factor scores sold for less after this information became publicly available, and whether those effects differed by existing FEMA floodplain status and region within Cook County.</span>
-<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a><span class="fu"># Website Contents</span></span>
-<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>The pages below organize the main tables, figures, and supporting analyses.</span>
-<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a><span class="at">&gt; Work in progress. Sorry future me if page references don't work. </span></span>
-<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a>| Navigation Section | Page | Description |</span>
-<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a>|---|---|---|</span>
-<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a>| Website Info | <span class="co">[</span><span class="ot">Website Info</span><span class="co">](index.qmd)</span> | Landing page for the dissertation replication materials website. |</span>
-<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a>| Background Info | <span class="co">[</span><span class="ot">Background Info</span><span class="co">](descriptive_statistics.qmd)</span> | Descriptive statistics and background information for the Cook County dissertation data. |</span>
-<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a>| Q1: FEMA FIRM Info | <span class="co">[</span><span class="ot">Q1: FEMA FIRM Tables</span><span class="co">](dissertation_tables.qmd)</span> | Main tables and supporting results for the FEMA Flood Insurance Rate Map update analysis. |</span>
-<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a>| Q2: Flood Factor Info | <span class="co">[</span><span class="ot">Q2: Flood Factor Marginal Effects</span><span class="co">](dissertation_tables_Q2_marginaleffects.qmd)</span> | Main marginal effects tables and supporting results for the First Street Flood Factor analysis. |</span>
-<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a>| Q2: Flood Factor Info | <span class="co">[</span><span class="ot">Flood Factor Variable Checks</span><span class="co">](q2_FF_variable_checks.qmd)</span> | Robustness checks comparing binary, ordinal, and continuous Flood Factor variables in model specifications. |</span>
-<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a>| Additional Details | <span class="co">[</span><span class="ot">File Information</span><span class="co">](file_info.qmd)</span> | Notes on files, outputs, and supporting materials included in the website. |</span>
-<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-48"><a href="#cb2-48" aria-hidden="true" tabindex="-1"></a><span class="fu"># Data Sources</span></span>
-<span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a>The analysis combines several property, flood risk, and spatial data sources, including:</span>
-<span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Cook County residential property sales data</span>
-<span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Cook County parcel data</span>
-<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>FEMA National Flood Hazard Layer data</span>
-<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>FEMA Flood Insurance Rate Map panel information</span>
-<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Microsoft building footprint data</span>
-<span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>First Street Foundation Flood Factor data</span>
-<span id="cb2-58"><a href="#cb2-58" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a>Some source data may not be redistributed directly through this website because of file size. Where direct redistribution is not possible, this site documents the relevant data source, processing steps, and derived variables used in the analysis.</span>
-<span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a><span class="fu"># Reproducibility Notes</span></span>
-<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>The website is designed to display final tables and figures without rerunning every model during each site build.</span>
-<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a>Spatial data and data cleaning/merging largely take place in the _targets.R file. Models and exploration are done in the .qmd files. </span>
-<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a><span class="fu"># Repository Structure</span></span>
-<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>The project is organized roughly as follows:</span>
-<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a><span class="in">```text</span></span>
-<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a><span class="in">├── index.qmd</span></span>
-<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a><span class="in">├── descriptive_stats.qmd</span></span>
-<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a><span class="in">├── rq1-desertation_tables.qmd</span></span>
-<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a><span class="in">├── rq1-extended-twfe.qmd</span></span>
-<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a><span class="in">├── rq1-assumptions-diagnostics.qmd</span></span>
-<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a><span class="in">├── rq1-robustness.qmd</span></span>
-<span id="cb2-79"><a href="#cb2-79" aria-hidden="true" tabindex="-1"></a><span class="in">├── rq2-dissertation_tables.qmd</span></span>
-<span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a><span class="in">├── rq2-assumptions-diagnostics.qmd</span></span>
-<span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a><span class="in">├── rq2-robustness.qmd</span></span>
-<span id="cb2-82"><a href="#cb2-82" aria-hidden="true" tabindex="-1"></a><span class="in">├── scripts/</span></span>
-<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a><span class="in">│   ├── setup_data.R</span></span>
-<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a><span class="in">│   ├── helper_control_groups.R</span></span>
-<span id="cb2-85"><a href="#cb2-85" aria-hidden="true" tabindex="-1"></a><span class="in">│   ├── helper_tables.R</span></span>
-<span id="cb2-86"><a href="#cb2-86" aria-hidden="true" tabindex="-1"></a><span class="in">│   ├── helper_figures.R</span></span>
-<span id="cb2-87"><a href="#cb2-87" aria-hidden="true" tabindex="-1"></a><span class="in">│   ├── run_models_rq1.R</span></span>
-<span id="cb2-88"><a href="#cb2-88" aria-hidden="true" tabindex="-1"></a><span class="in">│   └── run_models_rq2.R</span></span>
-<span id="cb2-89"><a href="#cb2-89" aria-hidden="true" tabindex="-1"></a><span class="in">├── outputs/</span></span>
-<span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a><span class="in">│   ├── q2_models/</span></span>
-<span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a><span class="in">│   │   ├── tables/</span></span>
-<span id="cb2-92"><a href="#cb2-92" aria-hidden="true" tabindex="-1"></a><span class="in">│   │   ├── figures/</span></span>
-<span id="cb2-93"><a href="#cb2-93" aria-hidden="true" tabindex="-1"></a><span class="in">│   │   └── models/</span></span>
-<span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a><span class="in">│   ├── q2_marginal_effects/</span></span>
-<span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a><span class="in">│   │   ├── tables/</span></span>
-<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a><span class="in">│   │   ├── figures/</span></span>
-<span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a><span class="in">│   │   └── models/</span></span>
-<span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a><span class="in">│   ├── tables/</span></span>
-<span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a><span class="in">│   ├── figures/</span></span>
-<span id="cb2-100"><a href="#cb2-100" aria-hidden="true" tabindex="-1"></a><span class="in">│   └── models/</span></span>
-<span id="cb2-101"><a href="#cb2-101" aria-hidden="true" tabindex="-1"></a><span class="in">└── data/</span></span>
-<span id="cb2-102"><a href="#cb2-102" aria-hidden="true" tabindex="-1"></a><span class="in">    ├── raw/</span></span>
-<span id="cb2-103"><a href="#cb2-103" aria-hidden="true" tabindex="-1"></a><span class="in">    └── processed/</span></span>
-<span id="cb2-104"><a href="#cb2-104" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Dissertation Replication Materials"</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="an">subtitle:</span><span class="co"> "Flood Risk Information, Floodplain Map Updates, and Property Values in Cook County, Illinois"</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="an">format:</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co">  html:</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co">    toc-depth: 2</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="co">    number-sections: false</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="fu"># Overview</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>This website provides supporting tables, figures, code notes, and documentation for my dissertation research on flood risk information and residential property values in Cook County, Illinois. It also includes supplementary and exploratory analyses beyond the dissertation.</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>The dissertation examines how housing markets respond to different forms of flood risk information, including FEMA Flood Insurance Rate Map updates and non-governmental flood risk information from First Street Foundation Flood Factor scores.</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>The materials hosted here are intended to make the dissertation analysis more transparent, reproducible, and easier to navigate.</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>This page provides a stable index to the additional materials referenced throughout the dissertation, *Risk Perception and Real Estate Values in Cook County, Illinois*. Items are listed in the order in which they appear in the dissertation so readers can locate the relevant supporting material using the printed page number.</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>The dissertation links to this landing page rather than directly to individual files. The links below can therefore be updated as the website changes without creating stale links in the dissertation itself.</span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>The dissertation directs readers to the online repository for replication code, supplemental analyses, extended tables and figures, documentation, and additional methodological details.</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>This page should serve as the main guide to the repository and include:</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>a description of each major data source;</span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>a diagram of the data-processing workflow;</span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>an explanation of the repository's folder structure;</span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>links to the Question 1 and Question 2 materials;</span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>instructions for reproducing tables and figures; and</span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>a list of supplemental analyses not included in the dissertation document.</span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a><span class="fu"># Research Questions</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a><span class="fu">## Research Question 1</span></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a>How do residential property values respond when FEMA floodplain maps are updated and properties are added to or removed from the Special Flood Hazard Area?</span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a>This portion of the analysis focuses on FEMA Flood Insurance Rate Map updates, including preliminary and effective floodplain designations.</span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a><span class="fu">## Research Question 2</span></span>
+<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a>How do residential property values respond to the public availability of First Street Foundation Flood Factor scores?</span>
+<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a>This portion of the analysis examines whether properties with higher Flood Factor scores sold for less after this information became publicly available, and whether those effects differed by existing FEMA floodplain status and region within Cook County.</span>
+<span id="cb1-48"><a href="#cb1-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-49"><a href="#cb1-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-50"><a href="#cb1-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-51"><a href="#cb1-51" aria-hidden="true" tabindex="-1"></a><span class="fu"># Website Contents</span></span>
+<span id="cb1-52"><a href="#cb1-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-53"><a href="#cb1-53" aria-hidden="true" tabindex="-1"></a>The pages below organize the main tables, figures, and supporting analyses.</span>
+<span id="cb1-54"><a href="#cb1-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-55"><a href="#cb1-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-56"><a href="#cb1-56" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Navigation Section <span class="pp">|</span> Page <span class="pp">|</span> Description <span class="pp">|</span></span>
+<span id="cb1-57"><a href="#cb1-57" aria-hidden="true" tabindex="-1"></a><span class="pp">|---|---|---|</span></span>
+<span id="cb1-58"><a href="#cb1-58" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Website Info <span class="pp">|</span> <span class="co">[</span><span class="ot">Website Info</span><span class="co">](index.qmd)</span> <span class="pp">|</span> Landing page for the dissertation replication materials website. <span class="pp">|</span></span>
+<span id="cb1-59"><a href="#cb1-59" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Background Info <span class="pp">|</span> <span class="co">[</span><span class="ot">Background Info</span><span class="co">](descriptive_statistics.qmd)</span> <span class="pp">|</span> Descriptive statistics and background information for the Cook County dissertation data. <span class="pp">|</span></span>
+<span id="cb1-60"><a href="#cb1-60" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Q1: FEMA FIRM Info <span class="pp">|</span> <span class="co">[</span><span class="ot">Q1: FEMA FIRM Tables</span><span class="co">](q1-text-material.qmd)</span> <span class="pp">|</span> Main tables and supporting results for the FEMA Flood Insurance Rate Map update analysis. <span class="pp">|</span></span>
+<span id="cb1-61"><a href="#cb1-61" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Q2: Flood Factor Info <span class="pp">|</span> <span class="co">[</span><span class="ot">Q2: Flood Factor Marginal Effects</span><span class="co">](q2-text-material.qmd)</span> <span class="pp">|</span> Main marginal effects tables and supporting results for the First Street Flood Factor analysis. <span class="pp">|</span></span>
+<span id="cb1-62"><a href="#cb1-62" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Q2: Flood Factor Info <span class="pp">|</span> <span class="co">[</span><span class="ot">Flood Factor Variable Checks</span><span class="co">](q2-robustness-FF-variable-forms.qmd)</span> <span class="pp">|</span> Robustness checks comparing binary, ordinal, and continuous Flood Factor variables in model specifications. <span class="pp">|</span></span>
+<span id="cb1-63"><a href="#cb1-63" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Additional Details <span class="pp">|</span> <span class="co">[</span><span class="ot">File Information</span><span class="co">](file_info.qmd)</span> <span class="pp">|</span> Notes on files, outputs, and supporting materials included in the website. <span class="pp">|</span></span>
+<span id="cb1-64"><a href="#cb1-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-65"><a href="#cb1-65" aria-hidden="true" tabindex="-1"></a> </span>
+<span id="cb1-66"><a href="#cb1-66" aria-hidden="true" tabindex="-1"></a>::: {.callout-note}</span>
+<span id="cb1-67"><a href="#cb1-67" aria-hidden="true" tabindex="-1"></a><span class="fu">## How to use this page</span></span>
+<span id="cb1-68"><a href="#cb1-68" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-69"><a href="#cb1-69" aria-hidden="true" tabindex="-1"></a>Page numbers refer to the printed dissertation page numbers, not the PDF viewer's page count.</span>
+<span id="cb1-70"><a href="#cb1-70" aria-hidden="true" tabindex="-1"></a>:::</span>
+<span id="cb1-71"><a href="#cb1-71" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-72"><a href="#cb1-72" aria-hidden="true" tabindex="-1"></a><span class="fu">## Find supporting material by dissertation page</span></span>
+<span id="cb1-73"><a href="#cb1-73" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-74"><a href="#cb1-74" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Dissertation page <span class="pp">|</span> Supporting material <span class="pp">|</span> Description <span class="pp">|</span></span>
+<span id="cb1-75"><a href="#cb1-75" aria-hidden="true" tabindex="-1"></a><span class="pp">|---:|---|---|</span></span>
+<span id="cb1-76"><a href="#cb1-76" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> **2** <span class="pp">|</span> <span class="co">[</span><span class="ot">FEMA flood-zone and Flood Factor coverage</span><span class="co">](descriptive_statistics.qmd#dissertation-page-2)</span> <span class="pp">|</span> Data, calculations, and code supporting the comparison between FEMA-designated SFHAs and First Street major-risk properties. <span class="pp">|</span></span>
+<span id="cb1-77"><a href="#cb1-77" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> **22** <span class="pp">|</span> <span class="co">[</span><span class="ot">Replication materials and methods overview</span><span class="co">](replication-guide.qmd#materials-overview)</span> <span class="pp">|</span> Repository map, supporting outputs, data dependencies, and workflow. <span class="pp">|</span></span>
+<span id="cb1-78"><a href="#cb1-78" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> **35** <span class="pp">|</span> <span class="co">[</span><span class="ot">Question 1 research-design assumptions</span><span class="co">](q1-text-material.qmd#appendix-a)</span> <span class="pp">|</span> Parallel trends, event studies, placebo tests, and functional-form diagnostics for the FEMA map analysis. <span class="pp">|</span></span>
+<span id="cb1-79"><a href="#cb1-79" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> **56** <span class="pp">|</span> <span class="co">[</span><span class="ot">Alternative definitions of flood exposure</span><span class="co">](q1-text-material.qmd#q1-spatial-definitions)</span> <span class="pp">|</span> Models comparing building and parcel intersections with the SFHA and 1-in-500-year floodplain. <span class="pp">|</span></span>
+<span id="cb1-80"><a href="#cb1-80" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> **62** <span class="pp">|</span> <span class="co">[</span><span class="ot">Question 1 additional robustness checks</span><span class="co">](q1-robustness-nearby-properties-check.qmd#dissertation-page-62)</span>  <span class="pp">|</span> Spatial buffers, spillover exclusions, and alternative geographic time controls. <span class="pp">|</span></span>
+<span id="cb1-81"><a href="#cb1-81" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> **69** <span class="pp">|</span> <span class="co">[</span><span class="ot">Question 2 research-design assumptions</span><span class="co">](q2-text-material.qmd#appendix-b)</span> <span class="pp">|</span> Parallel-trend visualizations, slope tests, functional-form checks, and placebo-event results for the Flood Factor analysis. <span class="pp">|</span></span>
+<span id="cb1-82"><a href="#cb1-82" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> **77** <span class="pp">|</span> <span class="co">[</span><span class="ot">Full Question 2 regression coefficients</span><span class="co">](q2-text-material.qmd#appendix-c)</span> <span class="pp">|</span> Unaggregated coefficients underlying the reported marginal effects. <span class="pp">|</span></span>
+<span id="cb1-83"><a href="#cb1-83" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> **111** <span class="pp">|</span> <span class="co">[</span><span class="ot">Reproducibility and computational workflow</span><span class="co">](replication-guide.qmd#computational-workflow)</span> <span class="pp">|</span> Code, data-source instructions, R and Quarto files, pipelines, and replication guidance. <span class="pp">|</span></span>
+<span id="cb1-84"><a href="#cb1-84" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-85"><a href="#cb1-85" aria-hidden="true" tabindex="-1"></a><span class="fu">## Page 2: FEMA flood-zone and Flood Factor coverage</span></span>
+<span id="cb1-86"><a href="#cb1-86" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-87"><a href="#cb1-87" aria-hidden="true" tabindex="-1"></a>The supporting page explains the source files and the numerator and denominator in the existing Flood Factor calculation. It also identifies what remains to be verified before reproducing the exact FEMA-versus-First-Street percentages in the dissertation.</span>
+<span id="cb1-88"><a href="#cb1-88" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-89"><a href="#cb1-89" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Source provenance and population definition</span><span class="co">](descriptive_statistics.qmd#dissertation-page-2)</span>.</span>
+<span id="cb1-90"><a href="#cb1-90" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Existing high-Flood-Factor calculation</span><span class="co">](descriptive_statistics.qmd#residential-parcels-with-high-flood-factor-scores)</span>.</span>
+<span id="cb1-91"><a href="#cb1-91" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Numerator, denominator, and matching checks</span><span class="co">](descriptive_statistics.qmd#coverage-counts)</span>.</span>
+<span id="cb1-92"><a href="#cb1-92" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-93"><a href="#cb1-93" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Open supporting material</span><span class="co">](descriptive_statistics.qmd#dissertation-page-2)</span>{.btn .btn-primary}</span>
+<span id="cb1-94"><a href="#cb1-94" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-95"><a href="#cb1-95" aria-hidden="true" tabindex="-1"></a><span class="fu">## Page 22: Replication materials and methods overview</span></span>
+<span id="cb1-96"><a href="#cb1-96" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-97"><a href="#cb1-97" aria-hidden="true" tabindex="-1"></a>The dissertation promises a guide to the data, code, supplemental results, and methodology. The guide below maps each dissertation reference to its source and explains the distinction between existing saved outputs and a verified clean rebuild.</span>
+<span id="cb1-98"><a href="#cb1-98" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-99"><a href="#cb1-99" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Dissertation-to-output map</span><span class="co">](replication-guide.qmd#materials-overview)</span>.</span>
+<span id="cb1-100"><a href="#cb1-100" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Repository organization</span><span class="co">](replication-guide.qmd#repository-organization)</span>.</span>
+<span id="cb1-101"><a href="#cb1-101" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Data and software requirements</span><span class="co">](replication-guide.qmd#data-and-software)</span>.</span>
+<span id="cb1-102"><a href="#cb1-102" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-103"><a href="#cb1-103" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Open supporting material</span><span class="co">](replication-guide.qmd#materials-overview)</span>{.btn .btn-primary}</span>
+<span id="cb1-104"><a href="#cb1-104" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-105"><a href="#cb1-105" aria-hidden="true" tabindex="-1"></a><span class="fu">## Page 35: Question 1 research-design assumptions</span></span>
+<span id="cb1-106"><a href="#cb1-106" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-107"><a href="#cb1-107" aria-hidden="true" tabindex="-1"></a>Page 35 directs readers to Appendix A (printed pages 91-99) for the Q1 difference-in-differences assumptions. The supporting sections below explain the existing event studies and placebo tests, assemble supplementary regional and transformation comparisons, and display saved distributional diagnostics with their specification history.</span>
+<span id="cb1-108"><a href="#cb1-108" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-109"><a href="#cb1-109" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Addition event study and joint pretrend test</span><span class="co">](q1-text-material.qmd#q1-added-event-study)</span>.</span>
+<span id="cb1-110"><a href="#cb1-110" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Removal event study and joint pretrend test</span><span class="co">](q1-text-material.qmd#q1-removed-event-study)</span>.</span>
+<span id="cb1-111"><a href="#cb1-111" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Placebo-treatment tests</span><span class="co">](q1-text-material.qmd#q1-placebo-tests)</span>: move the preliminary date two years earlier and restrict sales to before the actual date.</span>
+<span id="cb1-112"><a href="#cb1-112" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Outcome transformations</span><span class="co">](q1-text-material.qmd#q1-outcome-transformations)</span>: compare levels, logs, inverse price, and inverse hyperbolic sine on common pretreatment samples.</span>
+<span id="cb1-113"><a href="#cb1-113" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Saved distributional parallel-trends diagnostics</span><span class="co">](q1-text-material.qmd#q1-distributional-tests)</span>: display the historical results and distinguish their samples and specifications.</span>
+<span id="cb1-114"><a href="#cb1-114" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Conditional parallel trends and regional controls</span><span class="co">](q1-text-material.qmd#q1-conditional-trends)</span>: compare common year effects with triad-by-year effects.</span>
+<span id="cb1-115"><a href="#cb1-115" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-116"><a href="#cb1-116" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Open supporting material</span><span class="co">](q1-text-material.qmd#appendix-a)</span>{.btn .btn-primary}</span>
+<span id="cb1-117"><a href="#cb1-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-118"><a href="#cb1-118" aria-hidden="true" tabindex="-1"></a><span class="fu">## Page 56: Alternative definitions of flood exposure</span></span>
+<span id="cb1-119"><a href="#cb1-119" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-120"><a href="#cb1-120" aria-hidden="true" tabindex="-1"></a>The dissertation refers to Tables XIII and XIV for alternative spatial definitions. The existing Q1 page displays the saved grids for building versus parcel exposure, SFHA versus 1-in-500-year exposure, and preliminary versus effective timing. It now also includes a separately labeled inventory of treated observations in the current input datasets.</span>
+<span id="cb1-121"><a href="#cb1-121" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-122"><a href="#cb1-122" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Definitions and conventional TWFE comparison</span><span class="co">](q1-text-material.qmd#q1-spatial-definitions)</span>.</span>
+<span id="cb1-123"><a href="#cb1-123" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Extended-TWFE comparison</span><span class="co">](q1-text-material.qmd#q1-spatial-etwfe)</span>.</span>
+<span id="cb1-124"><a href="#cb1-124" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Current treated-sales and treated-parcel counts</span><span class="co">](q1-text-material.qmd#q1-exposure-counts)</span>.</span>
+<span id="cb1-125"><a href="#cb1-125" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-126"><a href="#cb1-126" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Open supporting material</span><span class="co">](q1-text-material.qmd#q1-spatial-definitions)</span>{.btn .btn-primary}</span>
+<span id="cb1-127"><a href="#cb1-127" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-128"><a href="#cb1-128" aria-hidden="true" tabindex="-1"></a><span class="fu">## Page 62: Question 1 additional robustness checks</span></span>
+<span id="cb1-129"><a href="#cb1-129" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-130"><a href="#cb1-130" aria-hidden="true" tabindex="-1"></a>Section 5.4.9 of the dissertation (printed pages 61-62) examines whether the Q1 FEMA map results depend on the choice of nearby comparison properties or on controls for local housing-market changes. The supporting page contains the existing model tables, with explanations of the samples and fixed effects used.</span>
+<span id="cb1-131"><a href="#cb1-131" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-132"><a href="#cb1-132" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Properties within 300 meters of an SFHA</span><span class="co">](q1-robustness-nearby-properties-check.qmd#nearby-control-properties-only)</span>: restrict the estimation sample to the existing GIS proximity list.</span>
+<span id="cb1-133"><a href="#cb1-133" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Spatial spillover exclusion</span><span class="co">](q1-robustness-nearby-properties-check.qmd#spatial-spillover-concerns)</span>: exclude nearby properties without a recorded SFHA transition, retaining properties that were ever added or removed.</span>
+<span id="cb1-134"><a href="#cb1-134" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Year-by-municipality controls</span><span class="co">](q1-robustness-nearby-properties-check.qmd#yearmuni-fixed-effects)</span>: allow annual housing-market conditions to differ across municipalities within the nearby sample.</span>
+<span id="cb1-135"><a href="#cb1-135" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Year-by-township controls</span><span class="co">](q1-robustness-nearby-properties-check.qmd#yeartownship-fixed-effects-within-300-meters-of-treated-properties)</span>: show the nearby-sample models, followed by a comparison using the full prepared sample.</span>
+<span id="cb1-136"><a href="#cb1-136" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Year-by-FIRM-panel controls</span><span class="co">](q1-robustness-nearby-properties-check.qmd#yearfirm_pan-fixed-effects)</span>: allow annual conditions to differ across FIRM panels within the nearby sample.</span>
+<span id="cb1-137"><a href="#cb1-137" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-138"><a href="#cb1-138" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Open supporting material</span><span class="co">](q1-robustness-nearby-properties-check.qmd#dissertation-page-62)</span>{.btn .btn-primary}</span>
+<span id="cb1-139"><a href="#cb1-139" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-140"><a href="#cb1-140" aria-hidden="true" tabindex="-1"></a><span class="fu">## Page 69: Question 2 research-design assumptions</span></span>
+<span id="cb1-141"><a href="#cb1-141" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-142"><a href="#cb1-142" aria-hidden="true" tabindex="-1"></a>Appendix B is supported by saved trend figures, existing slope and placebo tests, and historical distributional diagnostics. The linked explanations identify differences in samples and clarify what each diagnostic can establish.</span>
+<span id="cb1-143"><a href="#cb1-143" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-144"><a href="#cb1-144" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Countywide and regional trends</span><span class="co">](q2-text-material.qmd#q2-trend-figures)</span>.</span>
+<span id="cb1-145"><a href="#cb1-145" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Outcome transformations</span><span class="co">](q2-text-material.qmd#q2-transformations)</span>.</span>
+<span id="cb1-146"><a href="#cb1-146" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Pre-event slope tests</span><span class="co">](q2-text-material.qmd#q2-pretrend-tests)</span>.</span>
+<span id="cb1-147"><a href="#cb1-147" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Saved distributional diagnostics</span><span class="co">](q2-text-material.qmd#q2-distributional-tests)</span>.</span>
+<span id="cb1-148"><a href="#cb1-148" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Placebo analysis with the existing 2017 cutoff</span><span class="co">](q2-text-material.qmd#q2-placebo-tests)</span>.</span>
+<span id="cb1-149"><a href="#cb1-149" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Anticipation and interpretation</span><span class="co">](q2-text-material.qmd#q2-anticipation)</span>.</span>
+<span id="cb1-150"><a href="#cb1-150" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-151"><a href="#cb1-151" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Open supporting material</span><span class="co">](q2-text-material.qmd#appendix-b)</span>{.btn .btn-primary}</span>
+<span id="cb1-152"><a href="#cb1-152" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-153"><a href="#cb1-153" aria-hidden="true" tabindex="-1"></a><span class="fu">## Page 77: Full Question 2 regression coefficients</span></span>
+<span id="cb1-154"><a href="#cb1-154" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-155"><a href="#cb1-155" aria-hidden="true" tabindex="-1"></a>Appendix C's supporting section displays the saved main-model coefficients before marginal-effect aggregation, including terms omitted from the formatted summary and a separate list of collinear terms. It explains the construction of subgroup contrasts and identifies a saved-model/current-code version discrepancy that still requires reconciliation with the dissertation.</span>
+<span id="cb1-156"><a href="#cb1-156" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-157"><a href="#cb1-157" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">All estimated slope coefficients</span><span class="co">](q2-text-material.qmd#q2-full-coefficients)</span>.</span>
+<span id="cb1-158"><a href="#cb1-158" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Interaction coefficients and subgroup contrasts</span><span class="co">](q2-text-material.qmd#q2-coefficient-contrasts)</span>.</span>
+<span id="cb1-159"><a href="#cb1-159" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Existing marginal-effect results and code</span><span class="co">](q2-text-material.qmd#main-marginal-effects)</span>.</span>
+<span id="cb1-160"><a href="#cb1-160" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-161"><a href="#cb1-161" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Open supporting material</span><span class="co">](q2-text-material.qmd#appendix-c)</span>{.btn .btn-primary}</span>
+<span id="cb1-162"><a href="#cb1-162" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-163"><a href="#cb1-163" aria-hidden="true" tabindex="-1"></a><span class="fu">## Page 111: Reproducibility and computational workflow</span></span>
+<span id="cb1-164"><a href="#cb1-164" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-165"><a href="#cb1-165" aria-hidden="true" tabindex="-1"></a>The workflow guide documents software, input sources, analysis order, output locations, and rendering instructions. It distinguishes the available saved materials from unresolved requirements for rebuilding the dissertation from a clean checkout.</span>
+<span id="cb1-166"><a href="#cb1-166" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-167"><a href="#cb1-167" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Data and software requirements</span><span class="co">](replication-guide.qmd#data-and-software)</span>.</span>
+<span id="cb1-168"><a href="#cb1-168" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Processing, estimation, and reporting order</span><span class="co">](replication-guide.qmd#computational-workflow)</span>.</span>
+<span id="cb1-169"><a href="#cb1-169" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">Remaining reproducibility limits</span><span class="co">](replication-guide.qmd#reproducibility-limits)</span>.</span>
+<span id="cb1-170"><a href="#cb1-170" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-171"><a href="#cb1-171" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Open supporting material</span><span class="co">](replication-guide.qmd#computational-workflow)</span>{.btn .btn-primary}</span>
+<span id="cb1-172"><a href="#cb1-172" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-173"><a href="#cb1-173" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-174"><a href="#cb1-174" aria-hidden="true" tabindex="-1"></a><span class="fu"># Data Sources</span></span>
+<span id="cb1-175"><a href="#cb1-175" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-176"><a href="#cb1-176" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-177"><a href="#cb1-177" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">data sources</span><span class="co">](descriptive_statistics.qmd#data-sources)</span></span>
+<span id="cb1-178"><a href="#cb1-178" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-179"><a href="#cb1-179" aria-hidden="true" tabindex="-1"></a>The analysis combines several property, flood risk, and spatial data sources, including:</span>
+<span id="cb1-180"><a href="#cb1-180" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-181"><a href="#cb1-181" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Cook County residential property sales data</span>
+<span id="cb1-182"><a href="#cb1-182" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Cook County parcel data</span>
+<span id="cb1-183"><a href="#cb1-183" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>FEMA National Flood Hazard Layer data</span>
+<span id="cb1-184"><a href="#cb1-184" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>FEMA Flood Insurance Rate Map panel information</span>
+<span id="cb1-185"><a href="#cb1-185" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Microsoft building footprint data</span>
+<span id="cb1-186"><a href="#cb1-186" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>First Street Foundation Flood Factor data</span>
+<span id="cb1-187"><a href="#cb1-187" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-188"><a href="#cb1-188" aria-hidden="true" tabindex="-1"></a>Some source data may not be redistributed directly through this website because of file size. Where direct redistribution is not possible, this site documents the relevant data source, processing steps, and derived variables used in the analysis.</span>
+<span id="cb1-189"><a href="#cb1-189" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-190"><a href="#cb1-190" aria-hidden="true" tabindex="-1"></a>Spatial data and data cleaning/merging largely take place in the _targets.R file. Models and exploration are done in the .qmd files. </span>
+<span id="cb1-191"><a href="#cb1-191" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-192"><a href="#cb1-192" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-193"><a href="#cb1-193" aria-hidden="true" tabindex="-1"></a><span class="fu"># Repository Structure</span></span>
+<span id="cb1-194"><a href="#cb1-194" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-195"><a href="#cb1-195" aria-hidden="true" tabindex="-1"></a>The <span class="co">[</span><span class="ot">repository and workflow guide</span><span class="co">](replication-guide.qmd#repository-organization)</span> describes the actual data, script, output, and website folders. The <span class="co">[</span><span class="ot">file inventory</span><span class="co">](file_info.qmd)</span> provides additional detail, including historical files.</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 
